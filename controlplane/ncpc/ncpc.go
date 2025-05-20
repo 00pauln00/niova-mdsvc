@@ -1,12 +1,12 @@
 package main
 
 import (
-	leaseClientLib "LeaseLib/leaseClient"
+	leaseClientLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/client"
 	"bytes"
-	serviceDiscovery "common/clientAPI"
-	leaseLib "common/leaseLib"
-	"common/requestResponseLib"
-	compressionLib "common/specificCompressionLib"
+	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
+	leaseLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/common"
+	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
@@ -15,7 +15,7 @@ import (
 	"io/ioutil"
 	"math"
 	"math/rand"
-	PumiceDBCommon "niova/go-pumicedb-lib/common"
+	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"os"
 	"strconv"
 	"strings"

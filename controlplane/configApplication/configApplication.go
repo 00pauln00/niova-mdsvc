@@ -2,9 +2,9 @@ package main
 
 import (
 	"bytes"
-	"common/requestResponseLib"
-	"common/serfClient"
-	compressionLib "common/specificCompressionLib"
+	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+	serfClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfclient"
+	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
@@ -12,8 +12,8 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
-	pmdbClient "niova/go-pumicedb-lib/client"
-	PumiceDBCommon "niova/go-pumicedb-lib/common"
+	pmdbClient "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
+	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"os"
 	"sort"
 	"strconv"
