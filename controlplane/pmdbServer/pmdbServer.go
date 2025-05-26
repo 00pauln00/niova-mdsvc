@@ -5,7 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
-	lookout "github.com/00pauln00/niova-lookout/pkg/monitor"
+	lookout "github.com/00pauln00/niova-pumicedb/go/pkg/utils/ctlmonitor"
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
