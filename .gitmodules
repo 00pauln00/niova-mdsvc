@@ -1,9 +1,3 @@
-[submodule "modules/niova-core"]
-	path = modules/niova-core
-	url = git@github.com:00pauln00/niova-core.git
-[submodule "modules/niova-raft"]
-	path = modules/niova-raft
-	url = git@github.com:00pauln00/niova-raft.git
 [submodule "modules/niova-pumicedb"]
 	path = modules/niova-pumicedb
 	url = git@github.com:00pauln00/niova-pumicedb.git
