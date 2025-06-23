@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	//"bufio"
@@ -90,23 +90,26 @@ Return(s) : None
 
 Description : Function to get command line parameters while starting of the proxy.
 */
-func (handler *proxyHandler) getCmdParams() {
+func (handler *proxyHandler) getCmdParams(args []string) {
 	var tempRaftUUID, tempClientUUID string
 
 	//Prepare default logpath
 	defaultLogPath := "/" + "tmp" + "/" + "niovaKVServer" + ".log"
-	flag.StringVar(&tempRaftUUID, "r", "NULL", "Raft UUID")
-	flag.StringVar(&tempClientUUID, "u", uuid.NewV4().String(), "Client UUID")
-	flag.StringVar(&handler.logPath, "l", defaultLogPath, "Log filepath")
-	flag.StringVar(&handler.configPath, "c", "./", "Configuration file path")
-	flag.StringVar(&handler.serfAgentName, "n", "NULL", "Serf agent name")
-	flag.StringVar(&handler.limit, "e", "500", "Number of concurrent HTTP connections")
-	flag.StringVar(&handler.serfLogger, "sl", "ignore", "Serf logger file [default:ignore]")
-	flag.StringVar(&handler.logLevel, "ll", "", "Set log level for the execution")
-	flag.StringVar(&handler.requireStat, "s", "0", "HTTP server stat : provides status of requests, If needed provide 1")
-	flag.StringVar(&handler.serfPeersFilePath, "pa", "NULL", "Path to pmdb server serf configuration file")
-	flag.StringVar(&handler.coverageOutDir, "cov", "", "Path to write code coverage data")
-	flag.Parse()
+	
+	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
+	fs.StringVar(&tempRaftUUID, "r", "NULL", "Raft UUID")
+	fs.StringVar(&tempClientUUID, "u", uuid.NewV4().String(), "Client UUID")
+	fs.StringVar(&handler.logPath, "l", defaultLogPath, "Log filepath")
+	fs.StringVar(&handler.configPath, "c", "./", "Configuration file path")
+	fs.StringVar(&handler.serfAgentName, "n", "NULL", "Serf agent name")
+	fs.StringVar(&handler.limit, "e", "500", "Number of concurrent HTTP connections")
+	fs.StringVar(&handler.serfLogger, "sl", "ignore", "Serf logger file [default:ignore]")
+	fs.StringVar(&handler.logLevel, "ll", "", "Set log level for the execution")
+	fs.StringVar(&handler.requireStat, "s", "0", "HTTP server stat : provides status of requests, If needed provide 1")
+	fs.StringVar(&handler.serfPeersFilePath, "pa", "NULL", "Path to pmdb server serf configuration file")
+	fs.StringVar(&handler.coverageOutDir, "cov", "", "Path to write code coverage data")
+	fs.Parse(args)
+
 	handler.raftUUID, _ = uuid.FromString(tempRaftUUID)
 	//FIXME: For testing purpose
 	handler.clientUUID, _ = uuid.FromString(tempClientUUID)
@@ -608,14 +611,14 @@ func (handler *proxyHandler) checkHTTPLiveness() {
 	}
 }
 
-func main() {
+func Run(args []string) {
 
 	var err error
 	var i int
 
 	proxyObj := proxyHandler{}
 	//Get commandline paraameters.
-	proxyObj.getCmdParams()
+	proxyObj.getCmdParams(args)
 
 	flag.Usage = usage
 	flag.Parse()
