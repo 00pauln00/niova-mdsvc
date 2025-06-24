@@ -107,9 +107,11 @@ func main() {
 	portAddr := &RecvdPort
 
 	//Start lookout monitoring
-	CTL_SVC_DIR_PATH := os.Getenv("NIOVA_LOCAL_CTL_SVC_DIR")
-	fmt.Println("Path CTL :  ", CTL_SVC_DIR_PATH[:len(CTL_SVC_DIR_PATH)-7]+"ctl-interface/")
-	ctl_path := CTL_SVC_DIR_PATH[:len(CTL_SVC_DIR_PATH)-7] + "ctl-interface/"
+	ctl_path := os.Getenv("NIOVA_INOTIFY_BASE_PATH")
+	if len(ctl_path) == 0 {
+		ctl_path = "/ctl-interface/"
+	}
+
 	serverHandler.lookoutInstance = lookout.EPContainer{
 		MonitorUUID:      nso.peerUuid.String(),
 		AppType:          "PMDB",
