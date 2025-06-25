@@ -37,7 +37,9 @@ install:
 	cp libexec/ncpc ${DIR}/libexec/niova/ncpc
 	cp libexec/cfgApp ${DIR}/libexec/niova/cfgApp
 	cp libexec/testApp ${DIR}/libexec/niova/testApp
-	cp scripts/Dockerfile ${DIR}
-	cp scripts/run-controlplane.sh ${DIR}
+	cp scripts/docker/Dockerfile ${DIR}
+	cp scripts/docker/controlplane.sh ${DIR}
+	cp scripts/docker/raft-config.sh ${DIR}
+	cp scripts/docker/run-cpcontainer.sh ${DIR}	
 clean:
 	rm -rf libexec
