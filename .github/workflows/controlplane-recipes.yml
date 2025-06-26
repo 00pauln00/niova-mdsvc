@@ -28,10 +28,34 @@ jobs:
            export PATH=$PATH:/home/runner/work/go/go/bin &&
            go version
 
+    - name: Install python libraries
+      run:  pip3 install setuptools wheel func_timeout sockets psutil dpath jmespath
+
     # Install Ansible
     - name: Install Ansible
       run:  pip3 install ansible
 
+    # Init submodules
+    - name: Init submodule
+      run: git submodule update --init --recursive
+    
+    #Build niova-core
+    - name: build niova-core                                                  
+      run: git submodule update && cd modules/niova-pumicedb/modules/niova-raft/modules/niova-core && git pull && ./prepare.sh &&                                    
+        ./configure --enable-devel --prefix=/home/runner/work/niovad/niovad/build_dir/ &&
+        make -j 4 && make -j 4 check && make install         
+
+    #Build niova-raft 
+    - name: Compile niova-raft                                                
+      run: cd modules/niova-pumicedb/modules/niova-raft && ./prepare.sh && 
+      ./configure --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-asan --enable-devel && make clean && 
+      make -j 4 && make install
+  
+    - name: Compile niova-pumicedb                                                
+      run: cd modules/niova-pumicedb && ./prepare.sh && 
+      ./configure --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-asan --enable-devel && make clean && 
+      make -j 4 && make install
+    
     - name: make
       run: ./prepare.sh &&
            ./configure --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-devel &&
