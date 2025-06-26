@@ -15,6 +15,7 @@ install_only: compile pmdbserver proxyserver ncpcclient configapp testapp instal
 compile:
 	echo "Compiling controlPlane"
 	mkdir -p libexec
+	go mod tidy
 
 pmdbserver:
 	go build -o libexec/CTLPlane_pmdbServer controlplane/pmdbServer/pmdbServer.go 
