@@ -31,6 +31,9 @@ jobs:
     # Install Ansible
     - name: Install Ansible
       run:  pip3 install ansible
+
+    - name: Init submodule
+      run: git submodule init && git submodule update
     
     - name: Build go applications using makefile
       run: export PATH=$PATH:/home/runner/work/go/go/bin && make -e DIR=/home/runner/work/niovad/niovad/build_dir
