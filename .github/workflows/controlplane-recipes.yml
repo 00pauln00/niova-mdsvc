@@ -1,7 +1,7 @@
 name: holon_controlplane_app_recipes_workflow
 on:
   push:
-    branches: [ main ]
+    branches: [ control_plane_recipe_fix ]
   pull_request:
     branches: [ main ]
 
