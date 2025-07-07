@@ -38,7 +38,7 @@ jobs:
     #        make clean && make && make install
     
     - name: make
-      run: make -e DIR=/home/runner/work/niovad/niovad/build_dir
+      run: make -e DIR=$PATH:/home/runner/work/niovad/niovad/build_dir
 
       env:
         LD_LIBRARY_PATH: /home/runner/work/niovad/niovad/build_dir/lib
