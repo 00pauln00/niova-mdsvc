@@ -13,9 +13,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        repository: 00pauln00/niova-md
-        # ref: 
-        token: ${{ secrets.HOLON_NIOVA_CI_21_12_2020 }} # 'GitHub_PAT' is a secret that contains your PAT
+        submodules: 'recursive'
+        fetch-depth: 0
     
     - name: apt update
       run: sudo apt update
@@ -35,9 +34,6 @@ jobs:
     # Install Ansible
     - name: Install Ansible
       run:  pip3 install ansible
-
-    - name: Init submodule
-      run: git submodule init && git submodule update
     
     - name: Build go applications using makefile
       run: export PATH=$PATH:/home/runner/work/go/go/bin && make -e DIR=/home/runner/work/niovad/niovad/build_dir
