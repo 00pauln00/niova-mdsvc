@@ -35,8 +35,13 @@ jobs:
     - name: Install Ansible
       run:  pip3 install ansible
 
+    - name: build libbacktrace
+      run: cd modules/niova-pumicedb/modules/libbacktrace/ && 
+           ./configure && 
+           make && sudo make install
+
     - name: Build niova-core
-      run: cd /modules/niova-pumicedb/modules/niova-core/ && 
+      run: cd modules/niova-pumicedb/modules/niova-core/ && 
            ./prepare.sh &&
            ./configure --enable-devel --prefix=/home/runner/work/niovad/niovad/build_dir/ &&
            make -j 4 && 
