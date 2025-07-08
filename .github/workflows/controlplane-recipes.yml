@@ -82,11 +82,6 @@ jobs:
       #  token: ${{ secrets.HOLON_NIOVA_CI_21_12_2020 }} # 'GitHub_PAT' is a secret that contains your PAT
        path: ./holon
 
-    #Build nisd monitor
-    - name: Build nisd lookout monitor
-      run:  export PATH=$PATH:/home/runner/work/go/go/bin &&
-            cd go/lookout/nisdMonitor && go build && cp nisdLookout /home/runner/work/niovad/niovad/build_dir/libexec/niova
-
     - name: Copy holon repo
       run: cp -r ./holon /home/runner/work/niovad/niovad/build_dir/
 
