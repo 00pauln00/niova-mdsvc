@@ -13,7 +13,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
+        repository: 00pauln00/niova-md
+        # ref: 
         token: ${{ secrets.HOLON_NIOVA_CI_21_12_2020 }} # 'GitHub_PAT' is a secret that contains your PAT
+    
     - name: apt update
       run: sudo apt update
 
