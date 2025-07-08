@@ -71,7 +71,7 @@ jobs:
 
     - name: Copy script to run recipes
       run: cp scripts/run-recipes.sh /home/runner/work/niovad/niovad/build_dir/ &&
-           cp scripts/control_plane_recipes.txt /home/runner/work/niovad/niovad/build_dir/
+           cp scripts/controlplane_recipes.txt /home/runner/work/niovad/niovad/build_dir/
 
     # Checkout holon repo
     - name: Checkout repository
