@@ -22,6 +22,7 @@ import (
 	"net"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	pmdbClient "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
+	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	"os"
 	"os/signal"
 	"sort"
@@ -501,6 +502,49 @@ func (handler *proxyHandler) GetHandlerCB(request []byte, response *[]byte) erro
 	return res
 }
 
+
+func encode(data interface{}) []byte {
+	var buffer bytes.Buffer
+	enc := gob.NewEncoder(&buffer)
+	err := enc.Encode(data)
+	if err != nil {
+		log.Error("Error encoding data: ", err)
+		return nil
+	}
+	return buffer.Bytes()
+}
+
+/*
+Structure : proxyHandler
+Method    : FuncHandlerCB
+Arguments : string, 
+Return(s) : error
+
+Description : Call back for PMDB read requests to HTTP server.
+*/
+func (handler *proxyHandler) FuncHandlerCB(name string, rncui string, xmlbody []byte, response *[]byte) error {
+	log.Info("FuncHandlerCB called with name: ", name)
+	r := &funclib.FuncReq{Name: name, Args: xmlbody}
+	request := encode(PumiceDBCommon.PumiceRequest{
+		ReqType:    PumiceDBCommon.FUNC_REQ,
+		ReqPayload:   encode(r),
+	})
+	var replySize int64
+	reqArgs := &pmdbClient.PmdbReqArgs{
+		Rncui:       rncui,
+		ReqByteArr:  request,
+		ReplySize:   &replySize,
+		GetResponse: 1,
+		Response:    response,
+	}
+	err := handler.pmdbClientObj.WriteEncodedAndGetResponse(reqArgs)
+	if err != nil {
+		log.Error("Error in WriteEncoded and Response: ", err)
+		return err
+	}
+	return nil
+}
+
 /*
 Structure : proxyHandler
 Method    : startHTTPServer
@@ -516,6 +560,7 @@ func (handler *proxyHandler) startHTTPServer() error {
 		PortRange:        handler.portRange,
 		PUTHandler:       handler.PutHandlerCB,
 		GETHandler:       handler.GetHandlerCB,
+		FuncHandler: 	 handler.FuncHandlerCB,
 		PMDBServerConfig: handler.PMDBServerConfigByteMap,
 		RecvdPort:        &RecvdPort,
 		AppType:          "Proxy",
