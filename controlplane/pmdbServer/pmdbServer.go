@@ -10,11 +10,9 @@ import (
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
-	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +23,7 @@ import (
 	"net"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs"
 	"os"
 	"sort"
 	"strconv"
@@ -127,9 +126,11 @@ func main() {
 	go serverHandler.lookoutInstance.Start()
 
 	//Wait till HTTP Server has started
+	ctlplanefuncs.SetClmFamily(colmfamily)
 	funcAPI := PumiceDBFunc.NewFuncServer()
-	funcAPI.RegisterWritePrepFunc("CreateSnap", WritePrepCreateSnap)
-	funcAPI.RegisterApplyFunc("*", ApplyFunc)
+	funcAPI.RegisterWritePrepFunc("CreateSnap", ctlplanefuncs.WritePrepCreateSnap)
+	funcAPI.RegisterReadFunc("ReadSnapByName", ctlplanefuncs.ReadSnapByName)
+	funcAPI.RegisterApplyFunc("*", ctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
@@ -153,127 +154,6 @@ func main() {
 
 	serverHandler.checkPMDBLiveness()
 	serverHandler.exportTags()
-}
-
-func decode(payload []byte, s interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(payload))
-	return dec.Decode(s)
-}
-
-func encode(s interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
-	//Define Snapshot XML structure
-	type SnapName struct {
-		Name string `xml:"Name,attr"`
-		Sucess bool `xml:"Success"`
-	}
-	
-	type SnapResponseXML struct {
-		SnapName  SnapName `xml:"Snap"`
-	}
-
-	type ChunkXML struct {
-		Seq  int64  `xml:"Seq,attr"`
-	}
-	
-	type VdevXML struct {
-		VdevName string `xml:"Name,attr"`
-		Chunks   []ChunkXML `xml:"Chunk"`
-	}
-
-	type SnapXML struct {
-		SnapName string `xml:"Name,attr"` 
-		Vdevs    []VdevXML `xml:"Vdev"`
-	}
-
-	var Snap SnapXML
-
-	// Decode the input buffer into structure format
-	err := xml.Unmarshal(args[0].([]byte), &Snap)
-	if err != nil {
-		return nil, err
-	}
-
-	commitChgs := make([]funclib.CommitChg, 0)
-	for _, vdev := range Snap.Vdevs {
-		for index, chunk := range vdev.Chunks {
-			// Create a CommitChg for each chunk
-			chg := funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s/%d", Snap.SnapName, vdev.VdevName, index)),
-				Value: []byte(fmt.Sprintf("%d", chunk.Seq)),
-			}
-			commitChgs = append(commitChgs, chg)
-		}
-	}
-
-	//Fill the response structure
-	snapResponse := SnapResponseXML{
-		SnapName: SnapName{
-			Name:   Snap.SnapName,
-			Sucess: true,
-		},
-	}
-
-	r, err := xml.Marshal(snapResponse)
-	if err != nil {
-		log.Error("Failed to marshal snapshot response: ", err)
-		return nil, fmt.Errorf("failed to marshal snapshot response: %v", err)
-	}
-
-	//Fill in FuncIntrm structure
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-
-	return encode(funcIntrm)
-}
-
-func ApplyFunc(args ...interface{}) (interface{}, error) {
-	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	
-	var intrm funclib.FuncIntrm
-	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
-	err := decode(buf, &intrm)
-	if err != nil {
-		log.Error("Failed to decode the apply changes: ", err)
-		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
-	}
-
-
-	Chgs := intrm.Changes
-	for _, Chg := range Chgs {
-		log.Info(string(Chg.Key), " : ", string(Chg.Value))
-
-		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
-		string(Chg.Key),
-		int64(len(Chg.Key)), string(Chg.Value),
-		int64(len(Chg.Value)), colmfamily)
-
-		if rc < 0 {
-			//Should we revert the changes?
-			log.Error("Failed to apply changes for key: ", Chg.Key)
-			return nil, fmt.Errorf("failed to apply changes for key: %s", Chg.Key)
-		}
-	}
-
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(intrm.Response,  cbargs.ReplyBuf)
-	if err != nil {
-		log.Error("Failed to Copy result in the buffer: %s", err)
-		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
-	}
-
-	//Empty return for the interface as we are filling the reply buf in the function
-	return replySize, nil
 }
 
 func (handler *pmdbServerHandler) checkPMDBLiveness() {
