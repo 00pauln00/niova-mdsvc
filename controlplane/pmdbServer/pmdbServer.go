@@ -23,7 +23,7 @@ import (
 	"net"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
-	"github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs"
+	"github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
 	"os"
 	"sort"
 	"strconv"
@@ -126,11 +126,11 @@ func main() {
 	go serverHandler.lookoutInstance.Start()
 
 	//Wait till HTTP Server has started
-	ctlplanefuncs.SetClmFamily(colmfamily)
+	srvctlplanefuncs.SetClmFamily(colmfamily)
 	funcAPI := PumiceDBFunc.NewFuncServer()
-	funcAPI.RegisterWritePrepFunc("CreateSnap", ctlplanefuncs.WritePrepCreateSnap)
-	funcAPI.RegisterReadFunc("ReadSnapByName", ctlplanefuncs.ReadSnapByName)
-	funcAPI.RegisterApplyFunc("*", ctlplanefuncs.ApplyFunc)
+	funcAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
+	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
+	funcAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
@@ -497,7 +497,7 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	return int64(rc)
 }
 
-func (nso *NiovaKVServer) RetryWrite(RetryWriteArgs *PumiceDBServer.PmdbCbArgs) int64 {
+func (nso *NiovaKVServer) FillReply(RetryWriteArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	return 0
 }
 
