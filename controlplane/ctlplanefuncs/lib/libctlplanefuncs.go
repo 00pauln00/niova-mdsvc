@@ -1,4 +1,4 @@
-package ctlplanefuncs
+package libctlplanefuncs
 
 //Define Snapshot XML structure
 type SnapName struct {
@@ -11,7 +11,7 @@ type SnapResponseXML struct {
 }
 
 type ChunkXML struct {
-	Seq  int64  `xml:"Seq,attr"`
+	Seq  uint64  `xml:"Seq,attr"`
 }
 
 type VdevXML struct {

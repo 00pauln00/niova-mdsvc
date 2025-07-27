@@ -1,12 +1,14 @@
-package ctlplanefuncs
+package srvctlplanefuncs
 
 import (
  "fmt"
  "encoding/gob"
  "encoding/xml"
+ "encoding/binary"
  log "github.com/sirupsen/logrus"
  PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
  funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
+ ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
  "C"
  "bytes"
 )
@@ -35,7 +37,7 @@ func SetClmFamily(cf string) {
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	var Snap SnapXML
+	var Snap ctlplfl.SnapXML
 	// Decode the input buffer into structure format
 	err := xml.Unmarshal(args[1].([]byte), &Snap)
 	if err != nil {
@@ -55,7 +57,7 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 
 func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	
-	var Snap SnapXML
+	var Snap ctlplfl.SnapXML
 
 	// Decode the input buffer into structure format
 	err := xml.Unmarshal(args[0].([]byte), &Snap)
@@ -66,18 +68,29 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	for _, vdev := range Snap.Vdevs {
 		for index, chunk := range vdev.Chunks {
-			// Create a CommitChg for each chunk
+			//Convert sequence number to little endian byte array format
+			chSeq := make([]byte, 8)
+			binary.LittleEndian.PutUint64(chSeq, chunk.Seq)
+
+			// Schema: snapshot/{vdev}/{chunk}/{snapName} -> Seq
 			chg := funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s/%d", Snap.SnapName, vdev.VdevName, index)),
-				Value: []byte(fmt.Sprintf("%d", chunk.Seq)),
+				Key:   []byte(fmt.Sprintf("snapshot/%s/%d/%s", vdev.VdevName, index, Snap.SnapName)),
+				Value: chSeq,
 			}
 			commitChgs = append(commitChgs, chg)
 		}
+
+		// Schema: {snapName}/{vdev} -> 1
+		chg := funclib.CommitChg{
+			Key: []byte(fmt.Sprintf("%s/%s", Snap.SnapName, vdev.VdevName)),
+			Value: []byte("1"),
+		}
+		commitChgs = append(commitChgs, chg)
 	}
 
 	//Fill the response structure
-	snapResponse := SnapResponseXML{
-		SnapName: SnapName{
+	snapResponse := ctlplfl.SnapResponseXML{
+		SnapName: ctlplfl.SnapName{
 			Name:   Snap.SnapName,
 			Sucess: true,
 		},
