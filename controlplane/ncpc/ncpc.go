@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	ctlplcl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	maps "golang.org/x/exp/maps"
@@ -821,6 +821,13 @@ func main() {
 	case "RefreshLease":
 		rdata, err = clientObj.performLeaseReq(clientObj.requestKey, clientObj.requestValue)
 		break
+	case "CreateSnap":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		chkSeq := []uint64{12, 1}
+		err := c.CreateSnap(uuid.NewV4().String(), chkSeq, "sample")
+		if err != nil {
+			log.Error(err)
+		}
 	}
 	if err != nil {
 		log.Error(err)

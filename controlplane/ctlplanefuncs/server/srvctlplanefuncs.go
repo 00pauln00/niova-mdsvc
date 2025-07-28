@@ -45,14 +45,21 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	}
 
 	//FIX: Arbitrary read size
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, Snap.SnapName, int64(len(Snap.SnapName)), Snap.SnapName, 1000, false, 0, colmfamily)
+	key := fmt.Sprintf("snap/%s", Snap.SnapName)
+	log.Info("Key to be read : ",key)
+	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, key, int64(len(key)), colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
 
-	log.Info("Read result for ReadSnapByNam : ", readResult)
-	return nil, nil
+	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(readResult,  cbArgs.ReplyBuf)
+	if err != nil {
+		log.Error("Failed to Copy result in the buffer: %s", err)
+		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
+	}
+
+	return replySize, nil
 }
 
 func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
@@ -66,27 +73,27 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-	for _, vdev := range Snap.Vdevs {
-		for index, chunk := range vdev.Chunks {
-			//Convert sequence number to little endian byte array format
-			chSeq := make([]byte, 8)
-			binary.LittleEndian.PutUint64(chSeq, chunk.Seq)
+	for index, chunk := range Snap.Chunks {
+		//Convert sequence number to little endian byte array format
+		chSeq := make([]byte, 8)
+		binary.LittleEndian.PutUint64(chSeq, chunk.Seq)
 
-			// Schema: snapshot/{vdev}/{chunk}/{snapName} -> Seq
-			chg := funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("snapshot/%s/%d/%s", vdev.VdevName, index, Snap.SnapName)),
-				Value: chSeq,
-			}
-			commitChgs = append(commitChgs, chg)
-		}
-
-		// Schema: {snapName}/{vdev} -> 1
+		// Schema: {vdev}/snap/{chunk}/{Seq} : {Ref count}
+		// TODO: Change the dummy ref count
 		chg := funclib.CommitChg{
-			Key: []byte(fmt.Sprintf("%s/%s", Snap.SnapName, vdev.VdevName)),
-			Value: []byte("1"),
+			Key:   []byte(fmt.Sprintf("%s/snap/%d/%ld", Snap.Vdev, index,chSeq)),
+			Value: []byte{uint8(1)},
 		}
 		commitChgs = append(commitChgs, chg)
 	}
+
+	// Schema: snap/{name}:{blob}
+	chg := funclib.CommitChg{
+		Key: []byte(fmt.Sprintf("snap/%s",Snap.SnapName)),
+		Value: args[0].([]byte),
+	}
+
+	commitChgs = append(commitChgs, chg)
 
 	//Fill the response structure
 	snapResponse := ctlplfl.SnapResponseXML{

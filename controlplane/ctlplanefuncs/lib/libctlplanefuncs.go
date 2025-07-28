@@ -14,12 +14,8 @@ type ChunkXML struct {
 	Seq  uint64  `xml:"Seq,attr"`
 }
 
-type VdevXML struct {
-	VdevName string `xml:"Name,attr"`
-	Chunks   []ChunkXML `xml:"Chunk"`
-}
-
 type SnapXML struct {
-	SnapName string `xml:"Name,attr"`
-	Vdevs    []VdevXML `xml:"Vdev"`
+	SnapName string `xml:"SName,attr"`
+	Vdev    string `xml:"Vdev,attr"`
+	Chunks	[]ChunkXML `xml:"Chunk"`
 }

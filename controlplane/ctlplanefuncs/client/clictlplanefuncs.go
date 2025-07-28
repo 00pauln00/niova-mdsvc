@@ -44,6 +44,18 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
     return rsp, nil
 }
 
+func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) {
+    ccf.writePathLock.Lock()
+    defer ccf.writePathLock.Unlock()
+
+    rncui := ccf.appUUID + fmt.Sprintf("0:0:0:%ld", ccf.writeSeq)
+    ccf.writeSeq += 1
+    urla += "&rncui="+rncui
+    rsb, err := ccf.request(rqb, urla, true)
+
+    return rsb
+}
+
 func encode(data interface{}) ([]byte, error) {
     return xml.Marshal(data)
 }
@@ -60,24 +72,15 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
     }
     var Snap ctlplfl.SnapXML
     Snap.SnapName = snapName
-    Snap.Vdevs = append(Snap.Vdevs, ctlplfl.VdevXML{
-        VdevName : vdev,
-        Chunks: chks,
-    })
+    Snap.Vdev = vdev
+    Snap.Chunks = chks
 
     rqb, err := encode(Snap)
     if err != nil {
         return err
     }
-    fmt.Println("Create snap : ", string(rqb))
+    
+    ccf.doWrite(urla, rqb)
 
-    ccf.writePathLock.Lock()
-    rncui := ccf.appUUID + fmt.Sprintf("0:0:0:%ld", ccf.writeSeq)
-    ccf.writeSeq += 1
-    urla += "&rncui="+rncui
-    rsb, err := ccf.request(rqb, urla, true)
-    ccf.writePathLock.Unlock()
-    fmt.Println("Create snap : ", string(rsb))
     return err
 }
-
