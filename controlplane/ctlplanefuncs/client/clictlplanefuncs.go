@@ -49,7 +49,7 @@ func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) ([]byte, error) {
     ccf.writePathLock.Lock()
     defer ccf.writePathLock.Unlock()
 
-    rncui := ccf.appUUID + fmt.Sprintf("0:0:0:%ld", ccf.writeSeq)
+    rncui := fmt.Sprintf("%s:0:0:0:%d", ccf.appUUID, ccf.writeSeq)
     ccf.writeSeq += 1
     urla += "&rncui="+rncui
     rsb, err := ccf.request(rqb, urla, true)
@@ -101,4 +101,18 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
     }
 
     return nil
+}
+
+
+func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
+    urla := "name=ReadSnapByName"
+
+    var snap ctlplfl.SnapXML
+    snap.SnapName = name
+    rqb, err := encode(snap)
+    if err != nil {
+        return nil, err
+    }
+
+    return ccf.request(rqb, urla, false)
 }
