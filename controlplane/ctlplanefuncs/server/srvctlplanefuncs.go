@@ -1,17 +1,17 @@
 package srvctlplanefuncs
 
 import (
- "fmt"
- "encoding/gob"
- "encoding/xml"
- log "github.com/sirupsen/logrus"
- PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
- funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
- ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
- "C"
- "bytes"
- "strings"
- "strconv"
+	"C"
+	"bytes"
+	"encoding/gob"
+	"encoding/xml"
+	"fmt"
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
+	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	log "github.com/sirupsen/logrus"
+	"strconv"
+	"strings"
 )
 
 var colmfamily string
@@ -32,7 +32,7 @@ func encode(s interface{}) ([]byte, error) {
 }
 
 func SetClmFamily(cf string) {
-	colmfamily = cf 
+	colmfamily = cf
 }
 
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
@@ -47,14 +47,14 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 
 	//FIX: Arbitrary read size
 	key := fmt.Sprintf("snap/%s", Snap.SnapName)
-	log.Info("Key to be read : ",key)
+	log.Info("Key to be read : ", key)
 	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, key, int64(len(key)), colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
 
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(readResult,  cbArgs.ReplyBuf)
+	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(readResult, cbArgs.ReplyBuf)
 	if err != nil {
 		log.Error("Failed to Copy result in the buffer: %s", err)
 		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
@@ -75,7 +75,7 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 
 	//FIX: Arbitrary read size
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-	log.Info("Key to be read : ",key)
+	log.Info("Key to be read : ", key)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, 4096, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -93,8 +93,8 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 		}
 
 		Snap.Chunks = append(Snap.Chunks, ctlplfl.ChunkXML{
-			Idx : uint32(idx),
-			Seq : seq,
+			Idx: uint32(idx),
+			Seq: seq,
 		})
 	}
 
@@ -103,7 +103,7 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(rsb,  cbArgs.ReplyBuf)
+	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(rsb, cbArgs.ReplyBuf)
 	if err != nil {
 		log.Error("Failed to Copy result in the buffer: %s", err)
 		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
@@ -113,7 +113,7 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 }
 
 func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
-	
+
 	var Snap ctlplfl.SnapXML
 
 	// Decode the input buffer into structure format
@@ -135,7 +135,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 	// Schema: snap/{name}:{blob}
 	chg := funclib.CommitChg{
-		Key: []byte(fmt.Sprintf("snap/%s",Snap.SnapName)),
+		Key:   []byte(fmt.Sprintf("snap/%s", Snap.SnapName)),
 		Value: args[0].([]byte),
 	}
 
@@ -144,7 +144,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	//Fill the response structure
 	snapResponse := ctlplfl.SnapResponseXML{
 		SnapName: ctlplfl.SnapName{
-			Name:   Snap.SnapName,
+			Name:    Snap.SnapName,
 			Success: true,
 		},
 	}
@@ -166,7 +166,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 func ApplyFunc(args ...interface{}) (interface{}, error) {
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	
+
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
 	err := decode(buf, &intrm)
@@ -175,15 +175,14 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-
 	Chgs := intrm.Changes
 	for _, Chg := range Chgs {
 		log.Info(string(Chg.Key), " : ", string(Chg.Value))
 
 		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
-		string(Chg.Key),
-		int64(len(Chg.Key)), string(Chg.Value),
-		int64(len(Chg.Value)), colmfamily)
+			string(Chg.Key),
+			int64(len(Chg.Key)), string(Chg.Value),
+			int64(len(Chg.Value)), colmfamily)
 
 		if rc < 0 {
 			//Should we revert the changes?
@@ -192,7 +191,7 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(intrm.Response,  cbargs.ReplyBuf)
+	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(intrm.Response, cbargs.ReplyBuf)
 	if err != nil {
 		log.Error("Failed to Copy result in the buffer: %s", err)
 		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
