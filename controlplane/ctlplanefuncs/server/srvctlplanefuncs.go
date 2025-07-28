@@ -4,13 +4,14 @@ import (
  "fmt"
  "encoding/gob"
  "encoding/xml"
- "encoding/binary"
  log "github.com/sirupsen/logrus"
  PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
  funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
  ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
  "C"
  "bytes"
+ "strings"
+ "strconv"
 )
 
 var colmfamily string
@@ -62,6 +63,55 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	return replySize, nil
 }
 
+func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var Snap ctlplfl.SnapXML
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[1].([]byte), &Snap)
+	if err != nil {
+		return nil, err
+	}
+
+	//FIX: Arbitrary read size
+	key := fmt.Sprintf("%s/snap", Snap.Vdev)
+	log.Info("Key to be read : ",key)
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, 4096, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+
+	log.Info("Read result by Vdev", readResult)
+	for key, _ := range readResult {
+		c := strings.Split(key, "/")
+
+		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
+		seq, err := strconv.ParseUint(c[len(c)-1], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		Snap.Chunks = append(Snap.Chunks, ctlplfl.ChunkXML{
+			Idx : uint32(idx),
+			Seq : seq,
+		})
+	}
+
+	rsb, err := xml.Marshal(Snap)
+	if err != nil {
+		return nil, err
+	}
+
+	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(rsb,  cbArgs.ReplyBuf)
+	if err != nil {
+		log.Error("Failed to Copy result in the buffer: %s", err)
+		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
+	}
+
+	return replySize, nil
+}
+
 func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	
 	var Snap ctlplfl.SnapXML
@@ -73,15 +123,11 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-	for index, chunk := range Snap.Chunks {
-		//Convert sequence number to little endian byte array format
-		chSeq := make([]byte, 8)
-		binary.LittleEndian.PutUint64(chSeq, chunk.Seq)
-
+	for _, chunk := range Snap.Chunks {
 		// Schema: {vdev}/snap/{chunk}/{Seq} : {Ref count}
 		// TODO: Change the dummy ref count
 		chg := funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/snap/%d/%ld", Snap.Vdev, index,chSeq)),
+			Key:   []byte(fmt.Sprintf("%s/snap/%d/%d", Snap.Vdev, chunk.Idx, chunk.Seq)),
 			Value: []byte{uint8(1)},
 		}
 		commitChgs = append(commitChgs, chg)

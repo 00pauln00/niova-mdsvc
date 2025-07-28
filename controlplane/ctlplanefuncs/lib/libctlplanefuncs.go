@@ -11,7 +11,8 @@ type SnapResponseXML struct {
 }
 
 type ChunkXML struct {
-	Seq  uint64  `xml:"Seq,attr"`
+	Idx uint32 `xml:Idx,attr`
+	Seq  uint64  `xml:"Seq"`
 }
 
 type SnapXML struct {

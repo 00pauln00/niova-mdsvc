@@ -69,9 +69,10 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
     urla := "name=CreateSnap"
 
     chks := make([]ctlplfl.ChunkXML, 0)
-    for _, seq := range chunkSeq {
+    for idx, seq := range chunkSeq {
         chks = append(chks, 
         ctlplfl.ChunkXML{
+            Idx : uint32(idx),
             Seq : seq,
         })
     }
@@ -114,5 +115,18 @@ func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
         return nil, err
     }
 
+    return ccf.request(rqb, urla, false)
+}
+
+func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
+    urla := "name=ReadSnapForVdev"
+    
+    var snap ctlplfl.SnapXML
+    snap.Vdev = vdev
+    rqb, err := encode(snap)
+    if err != nil {
+        return nil, err
+    }
+    
     return ccf.request(rqb, urla, false)
 }
