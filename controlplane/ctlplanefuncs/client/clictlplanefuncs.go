@@ -6,6 +6,7 @@ import (
  "encoding/xml"
  "sync"
  "fmt"
+ "errors"
 )
 
 //Client side interferace for control plane functions
@@ -44,7 +45,7 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
     return rsp, nil
 }
 
-func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) {
+func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) ([]byte, error) {
     ccf.writePathLock.Lock()
     defer ccf.writePathLock.Unlock()
 
@@ -53,11 +54,15 @@ func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) {
     urla += "&rncui="+rncui
     rsb, err := ccf.request(rqb, urla, true)
 
-    return rsb
+    return rsb, err
 }
 
 func encode(data interface{}) ([]byte, error) {
     return xml.Marshal(data)
+}
+
+func decode(bin []byte, st interface{}) error {
+    return xml.Unmarshal(bin, &st)
 }
 
 func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string) error {
@@ -80,7 +85,20 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
         return err
     }
     
-    ccf.doWrite(urla, rqb)
+    rsb, err := ccf.doWrite(urla, rqb)
+    if err != nil {
+        return err
+    }
 
-    return err
+    var snapRes ctlplfl.SnapResponseXML
+    err = decode(rsb, snapRes)
+    if err != nil {
+        return err
+    }
+
+    if !snapRes.SnapName.Success {
+        return errors.New("Snap not created")
+    }
+
+    return nil
 }

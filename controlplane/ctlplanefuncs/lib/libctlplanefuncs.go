@@ -3,7 +3,7 @@ package libctlplanefuncs
 //Define Snapshot XML structure
 type SnapName struct {
 	Name string `xml:"Name,attr"`
-	Sucess bool `xml:"Success"`
+	Success bool `xml:"Success"`
 }
 
 type SnapResponseXML struct {

@@ -99,7 +99,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	snapResponse := ctlplfl.SnapResponseXML{
 		SnapName: ctlplfl.SnapName{
 			Name:   Snap.SnapName,
-			Sucess: true,
+			Success: true,
 		},
 	}
 
