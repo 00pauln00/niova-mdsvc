@@ -54,13 +54,7 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(readResult, cbArgs.ReplyBuf)
-	if err != nil {
-		log.Error("Failed to Copy result in the buffer: %s", err)
-		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
-	}
-
-	return replySize, nil
+	return readResult, nil
 }
 
 func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
@@ -73,10 +67,8 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	//FIX: Arbitrary read size
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-	log.Info("Key to be read : ", key)
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, 4096, false, 0, colmfamily)
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -98,18 +90,12 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
+	//Need to figure out what if rsb size blows up more than 4MB?
 	rsb, err := xml.Marshal(Snap)
 	if err != nil {
 		return nil, err
 	}
-
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(rsb, cbArgs.ReplyBuf)
-	if err != nil {
-		log.Error("Failed to Copy result in the buffer: %s", err)
-		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
-	}
-
-	return replySize, nil
+	return rsb, nil
 }
 
 func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
@@ -160,7 +146,6 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 		Changes:  commitChgs,
 		Response: r,
 	}
-
 	return encode(funcIntrm)
 }
 
@@ -190,13 +175,6 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 			return nil, fmt.Errorf("failed to apply changes for key: %s", Chg.Key)
 		}
 	}
-
-	replySize, err := PumiceDBServer.PmdbCopyBytesToBuffer(intrm.Response, cbargs.ReplyBuf)
-	if err != nil {
-		log.Error("Failed to Copy result in the buffer: %s", err)
-		return nil, fmt.Errorf("failed to copy result to buffer: %v", err)
-	}
-
 	//Empty return for the interface as we are filling the reply buf in the function
-	return replySize, nil
+	return intrm.Response, nil
 }

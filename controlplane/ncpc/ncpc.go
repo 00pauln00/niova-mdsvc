@@ -831,7 +831,7 @@ func main() {
 	
 	case "ReadSnapByName":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		ret, err := c.ReadSnapByName("sample")
+		ret, err := c.ReadSnapByName("sample1")
 		if err != nil {
 			log.Error(err)
 		}
