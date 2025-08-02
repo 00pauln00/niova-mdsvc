@@ -14,20 +14,20 @@ The container shares:
 
 ## Installation and Setup
 
-Follow these steps to prepare and run the environment:
+Follow these steps to prepare and run the environment, all paths mentioned are from the root of the git repo.
 
-### 1. Install `niova-core`
-
-### 2. Install `niova-block`
+### 1. Install submodules
 
 ```bash
-./prepare --prefix=<INSTALL_DIR> --with-niova=<INSTALL_DIR>
+1. Install niova-core, set the prefix path to <INSTALL_DIR>
+2. Install niova-raft
+3. Install niova-pumicedb
 ```
 
 ### 3. Install `controlplane`
 
 ```bash
-cd s3
+cd controlplane
 make -e DIR=<INSTALL_DIR>
 ```
 
