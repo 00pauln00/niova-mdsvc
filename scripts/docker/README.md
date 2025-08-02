@@ -27,7 +27,6 @@ Follow these steps to prepare and run the environment, all paths mentioned are f
 ### 3. Install `controlplane`
 
 ```bash
-cd controlplane
 make -e DIR=<INSTALL_DIR>
 ```
 
