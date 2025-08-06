@@ -457,7 +457,7 @@ func (handler *proxyHandler) PutHandlerCB(request []byte, response *[]byte) erro
 			Response:    response,
 		}
 
-		err = handler.pmdbClientObj.WriteEncodedAndGetResponse(reqArgs)
+		err = handler.pmdbClientObj.PutEncodedAndGetResponse(reqArgs)
 	} else {
 		reqArgs := &pmdbClient.PmdbReqArgs{
 			Rncui:       rncui,
@@ -466,7 +466,7 @@ func (handler *proxyHandler) PutHandlerCB(request []byte, response *[]byte) erro
 			ReplySize:   &replySize,
 		}
 
-		_, err = handler.pmdbClientObj.WriteEncoded(reqArgs)
+		_, err = handler.pmdbClientObj.PutEncoded(reqArgs)
 
 		var responseObj requestResponseLib.KVResponse
 		if err != nil {
@@ -498,7 +498,7 @@ func (handler *proxyHandler) GetHandlerCB(request []byte, response *[]byte) erro
 		ReqByteArr: request,
 		Response:   response,
 	}
-	res := handler.pmdbClientObj.ReadEncoded(reqArgs)
+	res := handler.pmdbClientObj.GetEncoded(reqArgs)
 	return res
 }
 
@@ -536,7 +536,7 @@ func (handler *proxyHandler) ReadFuncHandlerCB(name string, xmlbody []byte, resp
 		GetResponse: 1,
 		Response:    response,
 	}
-	err := handler.pmdbClientObj.ReadEncoded(reqArgs)
+	err := handler.pmdbClientObj.GetEncoded(reqArgs)
 	if err != nil {
 		log.Error("Error in WriteEncoded and Response: ", err)
 		return err
@@ -567,7 +567,7 @@ func (handler *proxyHandler) WriteFuncHandlerCB(name string, rncui string, xmlbo
 		GetResponse: 1,
 		Response:    response,
 	}
-	err := handler.pmdbClientObj.WriteEncodedAndGetResponse(reqArgs)
+	err := handler.pmdbClientObj.PutEncodedAndGetResponse(reqArgs)
 	if err != nil {
 		log.Error("Error in WriteEncoded and Response: ", err)
 		return err
