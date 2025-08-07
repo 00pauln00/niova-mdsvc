@@ -9,6 +9,7 @@ import (
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"net"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
 	"os"
 	"sort"
 	"strconv"
@@ -124,11 +126,18 @@ func main() {
 	go serverHandler.lookoutInstance.Start()
 
 	//Wait till HTTP Server has started
+	srvctlplanefuncs.SetClmFamily(colmfamily)
+	funcAPI := PumiceDBFunc.NewFuncServer()
+	funcAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
+	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
+	funcAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
+	funcAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
 		PeerUuid:       nso.peerUuid.String(),
 		PmdbAPI:        nso,
+		FuncAPI:	  funcAPI,
 		SyncWrites:     false,
 		CoalescedWrite: true,
 		LeaseEnabled:   true,
@@ -487,6 +496,10 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		int64(valLen), colmfamily)
 
 	return int64(rc)
+}
+
+func (nso *NiovaKVServer) FillReply(RetryWriteArgs *PumiceDBServer.PmdbCbArgs) int64 {
+	return 0
 }
 
 func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {

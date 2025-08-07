@@ -219,7 +219,7 @@ func (handler *configApplication) Write(key string, data []byte) error {
 		ReplySize:   &replySize,
 	}
 
-	_, err := handler.pmdbClientObj.WriteEncoded(reqArgs)
+	_, err := handler.pmdbClientObj.PutEncoded(reqArgs)
 	return err
 }
 
@@ -236,7 +236,7 @@ func (handler *configApplication) Read(key string, response *[]byte) error {
 		Response:   response,
 	}
 
-	return handler.pmdbClientObj.ReadEncoded(reqArgs)
+	return handler.pmdbClientObj.GetEncoded(reqArgs)
 }
 
 func main() {

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	ctlplcl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	maps "golang.org/x/exp/maps"
@@ -821,6 +821,30 @@ func main() {
 	case "RefreshLease":
 		rdata, err = clientObj.performLeaseReq(clientObj.requestKey, clientObj.requestValue)
 		break
+	case "CreateSnap":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		chkSeq := []uint64{200, 100}
+		err := c.CreateSnap("ebd099a1-b123-4473-b6c9-580e37f70677", chkSeq, "sample1")
+		if err != nil {
+			log.Error(err)
+		}
+	
+	case "ReadSnapByName":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		ret, err := c.ReadSnapByName("sample1")
+		if err != nil {
+			log.Error(err)
+		}
+		fmt.Println(string(ret))
+	
+	case "ReadSnapForVdev":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		ret, err := c.ReadSnapForVdev("ebd099a1-b123-4473-b6c9-580e37f70677")
+		if err != nil {
+			log.Error(err)
+		}
+		fmt.Println(string(ret))
+
 	}
 	if err != nil {
 		log.Error(err)
