@@ -4,9 +4,12 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"sync"
+
+	log "github.com/sirupsen/logrus"
+
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
-	"sync"
 )
 
 // Client side interferace for control plane functions
@@ -29,13 +32,16 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 		RaftUUID:  key,
 	}
 	stop := make(chan int)
+	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
 
+	log.Info("Init CP functions successfull: ", appUUID)
 	return &ccf
 }
 
 func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, error) {
 	ccf.sdObj.TillReady("PROXY", 5)
+	log.Info("sending request to url: ", urla)
 	rsp, err := ccf.sdObj.Request(rqb, "/func?"+urla, isWrite)
 	if err != nil {
 		return nil, err
@@ -126,4 +132,35 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	}
 
 	return ccf.request(rqb, urla, false)
+}
+
+func (ccf *CliCFuncs) GetNisdDetails(device string) (*ctlplfl.Nisd, error) {
+	urla := "name=ReadNisdConfig"
+
+	nisd := ctlplfl.Nisd{
+		DeviceID: device,
+	}
+	log.Info("Get nisd details from CP for: ", nisd.DeviceID)
+	rqb, err := encode(nisd)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("Sending request to CP on endpoint: ", urla)
+	res, err := ccf.request(rqb, urla, false)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("Decoding response from CP: ", res)
+	err = decode(res, nisd)
+	if err != nil {
+		return nil, err
+	}
+
+	if nisd.DeviceID != device {
+		return nil, fmt.Errorf("Invalid data: requested for %s, got %:", device, nisd.DeviceID)
+	}
+	log.Info("Successfully Got Nisd Details: ", nisd)
+	return &nisd, nil
 }

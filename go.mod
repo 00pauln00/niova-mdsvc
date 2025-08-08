@@ -10,6 +10,7 @@ toolchain go1.23.9
 
 require (
 	github.com/00pauln00/niova-pumicedb/go v0.0.0-00010101000000-000000000000
+	github.com/google/uuid v1.6.0
 	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6
@@ -24,9 +25,8 @@ require (
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
 	github.com/fatih/color v1.9.0 // indirect
-	github.com/fsnotify/fsnotify v1.7.0 // indirect
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-metrics v0.5.4 // indirect

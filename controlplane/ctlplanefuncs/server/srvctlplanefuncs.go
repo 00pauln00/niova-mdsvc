@@ -6,12 +6,13 @@ import (
 	"encoding/gob"
 	"encoding/xml"
 	"fmt"
+	"strconv"
+	"strings"
+
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	log "github.com/sirupsen/logrus"
-	"strconv"
-	"strings"
 )
 
 var colmfamily string
@@ -177,4 +178,23 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	}
 	//Empty return for the interface as we are filling the reply buf in the function
 	return intrm.Response, nil
+}
+
+func ReadNisdConfig(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var nisd ctlplfl.Nisd
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[1].([]byte), &nisd)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("Key to be read : ", nisd.DeviceID)
+	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, nisd.DeviceID, int64(len(nisd.DeviceID)), colmfamily)
+	if err != nil {
+		log.Error("read failure ", err)
+		return nil, err
+	}
+	return readResult, nil
 }
