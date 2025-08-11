@@ -209,14 +209,19 @@ func WritePrepNisd(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-
-	// Schema: snap/{name}:{blob}
-	chg := funclib.CommitChg{
-		Key:   []byte(nisd.DeviceID),
-		Value: args[0].([]byte),
+	data := map[string]interface{}{
+		"conf_d":  nisd.DeviceID,
+		"conf_cp": nisd.ClientPort,
+		"conf_pp": nisd.PeerPort,
 	}
 
-	commitChgs = append(commitChgs, chg)
+	baseKey := fmt.Sprintf("/n/%v/", nisd.DeviceUUID)
+	for prefix, val := range data {
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(baseKey + prefix),
+			Value: []byte(fmt.Sprintf("%v", val)),
+		})
+	}
 
 	//Fill the response structure
 	nisdResponse := ctlplfl.NisdResponseXML{
