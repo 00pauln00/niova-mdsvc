@@ -198,3 +198,42 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	}
 	return readResult, nil
 }
+
+func WritePrepNisd(args ...interface{}) (interface{}, error) {
+
+	var nisd ctlplfl.Nisd
+
+	err := xml.Unmarshal(args[0].([]byte), &nisd)
+	if err != nil {
+		return nil, err
+	}
+
+	commitChgs := make([]funclib.CommitChg, 0)
+
+	// Schema: snap/{name}:{blob}
+	chg := funclib.CommitChg{
+		Key:   []byte(nisd.DeviceID),
+		Value: args[0].([]byte),
+	}
+
+	commitChgs = append(commitChgs, chg)
+
+	//Fill the response structure
+	nisdResponse := ctlplfl.NisdResponseXML{
+		DeviceID: nisd.DeviceID,
+		Success:  true,
+	}
+
+	r, err := xml.Marshal(nisdResponse)
+	if err != nil {
+		log.Error("Failed to marshal nisd response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+
+	//Fill in FuncIntrm structure
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
+}

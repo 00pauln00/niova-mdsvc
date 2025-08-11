@@ -1,12 +1,7 @@
 package main
 
 import (
-	leaseClientLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/client"
 	"bytes"
-	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
-	leaseLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/common"
-	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
-	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
@@ -15,13 +10,20 @@ import (
 	"io/ioutil"
 	"math"
 	"math/rand"
-	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
 	ctlplcl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	leaseClientLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/client"
+	leaseLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/common"
+	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	maps "golang.org/x/exp/maps"
@@ -193,7 +195,7 @@ func (co *clientHandler) generateVdevRange() []clientReq {
 	return kvArr
 }
 
-//Function to get command line parameters
+// Function to get command line parameters
 func (handler *clientHandler) getCmdParams() {
 
 	flag.StringVar(&handler.requestKey, "k", "", "Key - For ReadRange pass '<prefix>*' e.g. : -k 'vdev.*'")
@@ -630,7 +632,6 @@ func (clientObj *clientHandler) waitServiceInit(service string) error {
 	if err != nil {
 		opStat := prepareOutput(-1, "setup", "", err.Error(), 0)
 		clientObj.writeData2Json(opStat)
-		log.Error(err)
 	}
 	return err
 }
@@ -673,7 +674,7 @@ func getLeaseOperationType(op string) int {
 	}
 }
 
-//Write to Json
+// Write to Json
 func (cli *clientHandler) writeData2Json(data interface{}) {
 	file, err := json.MarshalIndent(data, "", " ")
 	err = ioutil.WriteFile(cli.resultFile+".json", file, 0644)
@@ -713,7 +714,7 @@ func isRangeRequest(requestKey string) bool {
 	return requestKey[len(requestKey)-1:] == "*"
 }
 
-//Check if for single key write operation, value has been passed.
+// Check if for single key write operation, value has been passed.
 func isSingleWriteReqValid(cli *clientHandler) bool {
 	if cli.operation == "write" && cli.count == 1 && cli.requestValue == "" {
 		return false
@@ -725,7 +726,8 @@ func isSingleWriteReqValid(cli *clientHandler) bool {
 func main() {
 	//Intialize client object
 	clientObj := clientHandler{}
-
+	var nisdDetails string
+	flag.StringVar(&nisdDetails, "nd", "", "enter nisd details in json format")
 	//Get commandline parameters.
 	clientObj.getCmdParams()
 
@@ -750,7 +752,7 @@ func main() {
 		if err != nil {
 			opStat := prepareOutput(-1, "setup", "", err.Error(), 0)
 			clientObj.writeData2Json(opStat)
-			log.Error(err)
+			log.Error("failed to start client api: ", err)
 			os.Exit(1)
 		}
 	}()
@@ -828,7 +830,7 @@ func main() {
 		if err != nil {
 			log.Error(err)
 		}
-	
+
 	case "ReadSnapByName":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		ret, err := c.ReadSnapByName("sample1")
@@ -836,7 +838,7 @@ func main() {
 			log.Error(err)
 		}
 		fmt.Println(string(ret))
-	
+
 	case "ReadSnapForVdev":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		ret, err := c.ReadSnapForVdev("ebd099a1-b123-4473-b6c9-580e37f70677")
@@ -845,7 +847,18 @@ func main() {
 		}
 		fmt.Println(string(ret))
 
+	case "CreateNisd":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		var nisd cpLib.Nisd
+		if err := json.Unmarshal([]byte(nisdDetails), &nisd); err != nil {
+			log.Error("failed to unmarshal nisd json string:", err)
+		}
+		err := c.CreateNisd(nisd)
+		if err != nil {
+			log.Error(err)
+		}
 	}
+
 	if err != nil {
 		log.Error(err)
 		os.Exit(-1)

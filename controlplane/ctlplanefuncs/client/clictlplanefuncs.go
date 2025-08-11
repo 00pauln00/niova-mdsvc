@@ -44,6 +44,7 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
 	log.Info("sending request to url: ", urla)
 	rsp, err := ccf.sdObj.Request(rqb, "/func?"+urla, isWrite)
 	if err != nil {
+		log.Error("request failure: ", err)
 		return nil, err
 	}
 	return rsp, nil
@@ -134,7 +135,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) GetNisdDetails(device string) (*ctlplfl.Nisd, error) {
+func (ccf *CliCFuncs) GetNisdDetails(device string) error {
 	urla := "name=ReadNisdConfig"
 
 	nisd := ctlplfl.Nisd{
@@ -143,24 +144,31 @@ func (ccf *CliCFuncs) GetNisdDetails(device string) (*ctlplfl.Nisd, error) {
 	log.Info("Get nisd details from CP for: ", nisd.DeviceID)
 	rqb, err := encode(nisd)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	log.Info("Sending request to CP on endpoint: ", urla)
 	res, err := ccf.request(rqb, urla, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	log.Info("Decoding response from CP: ", res)
-	err = decode(res, nisd)
+	log.Info("response from CP: ", string(res))
+	return nil
+}
+
+func (ccf *CliCFuncs) CreateNisd(nisd ctlplfl.Nisd) error {
+	urla := "name=CreateNisd"
+
+	rqb, err := encode(nisd)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if nisd.DeviceID != device {
-		return nil, fmt.Errorf("Invalid data: requested for %s, got %:", device, nisd.DeviceID)
+	_, err = ccf.doWrite(urla, rqb)
+	if err != nil {
+		return err
 	}
-	log.Info("Successfully Got Nisd Details: ", nisd)
-	return &nisd, nil
+
+	return nil
 }

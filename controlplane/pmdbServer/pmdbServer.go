@@ -130,6 +130,7 @@ func main() {
 	srvctlplanefuncs.SetClmFamily(colmfamily)
 	funcAPI := PumiceDBFunc.NewFuncServer()
 	funcAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
+	funcAPI.RegisterWritePrepFunc("CreateNisd", srvctlplanefuncs.WritePrepNisd)
 	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
 	funcAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
 	funcAPI.RegisterReadFunc("ReadNisdConfig", srvctlplanefuncs.ReadNisdConfig)
