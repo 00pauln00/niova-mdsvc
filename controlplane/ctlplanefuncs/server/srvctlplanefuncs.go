@@ -203,20 +203,24 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 func RangeReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	var nisd string
+	var key string
 	// Decode the input buffer into structure format
-	err := xml.Unmarshal(args[1].([]byte), &nisd)
+	err := xml.Unmarshal(args[1].([]byte), &key)
 	if err != nil {
 		return nil, err
 	}
-	key := nisd
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
-		log.Error("Range read failure ", err)
+		log.Error("failed to read nisd config:", err)
 		return nil, err
 	}
-	log.Info("Range Read response: ", readResult)
-	return readResult, nil
+
+	encRes, err := encode(readResult)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug("Range read nisd config result: ", readResult)
+	return encRes, nil
 }
 
 func WritePrepNisd(args ...interface{}) (interface{}, error) {

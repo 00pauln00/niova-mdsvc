@@ -1,6 +1,8 @@
 package clictlplanefuncs
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -158,8 +160,10 @@ func (ccf *CliCFuncs) GetNisdDetails(device string) error {
 }
 
 func (ccf *CliCFuncs) GetAllNisdDetails(device string) error {
-	urla := "name=RangeReadNisdConfig"
 
+	var nisd map[string][]byte
+
+	urla := "name=RangeReadNisdConfig"
 	key := "/n/" + device
 	log.Info("Get nisd details from CP for: ", key)
 	rqb, err := encode(key)
@@ -172,8 +176,8 @@ func (ccf *CliCFuncs) GetAllNisdDetails(device string) error {
 	if err != nil {
 		return err
 	}
-
-	log.Info("response from CP: ", res)
+	gob.NewDecoder(bytes.NewBuffer(res)).Decode(&nisd)
+	log.Info("response from CP: ", nisd)
 	return nil
 }
 

@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 	log.Infof("starting config app - raft: %s, config: %s, device id: %s", *raftID, *configPath, *deviceID)
 	c := cpClient.InitCliCFuncs(uuid.NewV4().String(), *raftID, *configPath)
-	err := c.GetNisdDetails(*deviceID)
+	err := c.GetAllNisdDetails(*deviceID)
 	if err != nil {
 		log.Error(err)
 	}
