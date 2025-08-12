@@ -196,6 +196,26 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 		log.Error("read failure ", err)
 		return nil, err
 	}
+
+	return readResult, nil
+}
+
+func RangeReadNisdConfig(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var nisd string
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[1].([]byte), &nisd)
+	if err != nil {
+		return nil, err
+	}
+	key := nisd
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	log.Info("Range Read response: ", readResult)
 	return readResult, nil
 }
 

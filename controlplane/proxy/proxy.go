@@ -526,7 +526,7 @@ Return(s) : error
 Description : Call back for PMDB read func requests to HTTP server.
 */
 func (handler *proxyHandler) ReadFuncHandlerCB(name string, xmlbody []byte, response *[]byte) error {
-	log.Info("ReadFuncHandlerCB called with name: ", name)
+	log.Info("ReadFuncHandlerCB called with name: ", name, string(xmlbody))
 	r := &funclib.FuncReq{Name: name, Args: xmlbody}
 	request := encode(PumiceDBCommon.PumiceRequest{
 		ReqType:    PumiceDBCommon.FUNC_REQ,

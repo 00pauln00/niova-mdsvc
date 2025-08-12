@@ -157,6 +157,26 @@ func (ccf *CliCFuncs) GetNisdDetails(device string) error {
 	return nil
 }
 
+func (ccf *CliCFuncs) GetAllNisdDetails(device string) error {
+	urla := "name=RangeReadNisdConfig"
+
+	key := "/n/" + device
+	log.Info("Get nisd details from CP for: ", key)
+	rqb, err := encode(key)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Sending request to CP on endpoint: ", urla)
+	res, err := ccf.request(rqb, urla, false)
+	if err != nil {
+		return err
+	}
+
+	log.Info("response from CP: ", res)
+	return nil
+}
+
 func (ccf *CliCFuncs) CreateNisd(nisd ctlplfl.Nisd) error {
 	urla := "name=CreateNisd"
 
