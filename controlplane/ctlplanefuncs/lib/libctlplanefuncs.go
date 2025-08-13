@@ -30,10 +30,10 @@ type SnapXML struct {
 }
 
 type Nisd struct {
-	DeviceID   string    `xml:"DeviceID"`
-	DeviceUUID uuid.UUID `xml:"DeviceUUID"`
-	ClientPort uint16    `xml:"ClientPort"`
-	PeerPort   uint16    `xml:"PeerPort"`
+	DeviceID   string    `yaml:"name" xml:"DeviceID"`
+	DeviceUUID uuid.UUID `yaml:"uuid" xml:"DeviceUUID"`
+	ClientPort uint16    `yaml:"client_port" xml:"ClientPort"`
+	PeerPort   uint16    `yaml:"peer_port" xml:"PeerPort"`
 }
 
 type NisdResponseXML struct {
