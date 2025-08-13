@@ -183,51 +183,33 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	var nisd ctlplfl.Nisd
-	// Decode the input buffer into structure format
-	err := xml.Unmarshal(args[1].([]byte), &nisd)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Info("Key to be read : ", nisd.DeviceID)
-	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, nisd.DeviceID, int64(len(nisd.DeviceID)), colmfamily)
-	if err != nil {
-		log.Error("read failure ", err)
-		return nil, err
-	}
-
-	return readResult, nil
-}
-
-func RangeReadNisdConfig(args ...interface{}) (interface{}, error) {
-	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-
 	var key string
 	// Decode the input buffer into structure format
-	err := xml.Unmarshal(args[1].([]byte), &key)
+	err := ctlplfl.XMLDecode(args[1].([]byte), key)
 	if err != nil {
+		log.Errorf("failed xml decode:", err)
 		return nil, err
 	}
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	response, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("failed to read nisd config:", err)
 		return nil, err
 	}
 
-	encRes, err := encode(readResult)
+	encRes, err := ctlplfl.GobEncode(response)
 	if err != nil {
+		log.Errorf("failed gob encode:", err)
 		return nil, err
 	}
-	log.Debug("Range read nisd config result: ", readResult)
+	log.Debug("range read nisd config result: ", response)
 	return encRes, nil
 }
 
-func WritePrepNisd(args ...interface{}) (interface{}, error) {
+func WriteNisdInfo(args ...interface{}) (interface{}, error) {
 
 	var nisd ctlplfl.Nisd
 
-	err := xml.Unmarshal(args[0].([]byte), &nisd)
+	err := ctlplfl.XMLDecode(args[0].([]byte), &nisd)
 	if err != nil {
 		return nil, err
 	}
@@ -253,13 +235,12 @@ func WritePrepNisd(args ...interface{}) (interface{}, error) {
 		Success:  true,
 	}
 
-	r, err := xml.Marshal(nisdResponse)
+	r, err := ctlplfl.XMLEncode(nisdResponse)
 	if err != nil {
 		log.Error("Failed to marshal nisd response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
 
-	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -272,26 +253,26 @@ func ReadDeviceUUID(args ...interface{}) (interface{}, error) {
 
 	var dev string
 	// Decode the input buffer into structure format
-	err := xml.Unmarshal(args[1].([]byte), &dev)
+	err := ctlplfl.XMLDecode(args[1].([]byte), &dev)
 	if err != nil {
 		return nil, err
 	}
 
-	log.Info("Key to be read : ", dev)
-	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, dev, int64(len(dev)), colmfamily)
+	log.Debug("Read nisd uuid for block device: ", dev)
+	response, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, dev, int64(len(dev)), colmfamily)
 	if err != nil {
 		log.Error("read failure ", err)
 		return nil, err
 	}
 
-	return readResult, nil
+	return response, nil
 }
 
 func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
 
 	var dev ctlplfl.DeviceInfo
 
-	err := xml.Unmarshal(args[0].([]byte), &dev)
+	err := ctlplfl.XMLDecode(args[0].([]byte), &dev)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +298,7 @@ func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
 		Success:  true,
 	}
 
-	r, err := xml.Marshal(nisdResponse)
+	r, err := ctlplfl.XMLEncode(nisdResponse)
 	if err != nil {
 		log.Error("Failed to marshal nisd response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
@@ -329,5 +310,4 @@ func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
 		Response: r,
 	}
 	return encode(funcIntrm)
-
 }

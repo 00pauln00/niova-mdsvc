@@ -17,12 +17,14 @@ func main() {
 	flag.Parse()
 	log.Infof("starting config app - raft: %s, config: %s, device id: %s", *raftID, *configPath, *deviceID)
 	c := cpClient.InitCliCFuncs(uuid.NewV4().String(), *raftID, *configPath)
-	err := c.GetDeviceUUID(*deviceID)
+	uid, err := c.GetDeviceUUID(*deviceID)
 	if err != nil {
-		log.Error(err)
+		log.Error("failed to get device uuid", err)
 	}
-	// err = c.GetAllNisdDetails()
-	// if err != nil {
-	// 	log.Error(err)
-	// }
+	log.Info("device uuid: ", string(uid))
+	nisd, err := c.GetNisdDetails(string(uid))
+	if err != nil {
+		log.Error("failed to get nisd details:", err)
+	}
+	log.Info("nisd details: ", nisd)
 }

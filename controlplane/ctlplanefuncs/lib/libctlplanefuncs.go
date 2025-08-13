@@ -1,6 +1,12 @@
 package libctlplanefuncs
 
-import "github.com/google/uuid"
+import (
+	"bytes"
+	"encoding/gob"
+	"encoding/xml"
+
+	"github.com/google/uuid"
+)
 
 // Define Snapshot XML structure
 type SnapName struct {
@@ -35,10 +41,32 @@ type NisdResponseXML struct {
 	Success  bool
 }
 
-// TODO: use a separate struct for the Device ID and uuid
 type DeviceInfo struct {
 	ID           string
 	UniqID       uuid.UUID
 	SerialNumber string
 	Status       uint16
+}
+
+func GobDecode(payload []byte, s interface{}) error {
+	dec := gob.NewDecoder(bytes.NewBuffer(payload))
+	return dec.Decode(s)
+}
+
+func GobEncode(s interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(s)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func XMLEncode(data interface{}) ([]byte, error) {
+	return xml.Marshal(data)
+}
+
+func XMLDecode(bin []byte, st interface{}) error {
+	return xml.Unmarshal(bin, &st)
 }

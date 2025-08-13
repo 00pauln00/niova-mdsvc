@@ -1,8 +1,6 @@
 package clictlplanefuncs
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -137,54 +135,10 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) GetNisdDetails(device string) error {
-	urla := "name=ReadNisdConfig"
+func (ccf *CliCFuncs) WriteNisd(nisd ctlplfl.Nisd) error {
+	urla := "name=WriteNisd"
 
-	nisd := ctlplfl.Nisd{
-		DeviceID: device,
-	}
-	log.Info("Get nisd details from CP for: ", nisd.DeviceID)
-	rqb, err := encode(nisd)
-	if err != nil {
-		return err
-	}
-
-	log.Info("Sending request to CP on endpoint: ", urla)
-	res, err := ccf.request(rqb, urla, false)
-	if err != nil {
-		return err
-	}
-
-	log.Info("response from CP: ", string(res))
-	return nil
-}
-
-func (ccf *CliCFuncs) GetAllNisdDetails(device string) error {
-
-	var nisd map[string][]byte
-
-	urla := "name=RangeReadNisdConfig"
-	key := "/n/" + device
-	log.Info("Get nisd details from CP for: ", key)
-	rqb, err := encode(key)
-	if err != nil {
-		return err
-	}
-
-	log.Info("Sending request to CP on endpoint: ", urla)
-	res, err := ccf.request(rqb, urla, false)
-	if err != nil {
-		return err
-	}
-	gob.NewDecoder(bytes.NewBuffer(res)).Decode(&nisd)
-	log.Info("response from CP: ", nisd)
-	return nil
-}
-
-func (ccf *CliCFuncs) CreateNisd(nisd ctlplfl.Nisd) error {
-	urla := "name=CreateNisd"
-
-	rqb, err := encode(nisd)
+	rqb, err := ctlplfl.XMLEncode(nisd)
 	if err != nil {
 		return err
 	}
@@ -197,16 +151,18 @@ func (ccf *CliCFuncs) CreateNisd(nisd ctlplfl.Nisd) error {
 	return nil
 }
 
-func (ccf *CliCFuncs) CreateDevice(dev ctlplfl.DeviceInfo) error {
-	urla := "name=CreateDevice"
+func (ccf *CliCFuncs) WriteDevice(dev ctlplfl.DeviceInfo) error {
+	urla := "name=WriteDevice"
 
-	rqb, err := encode(dev)
+	rqb, err := ctlplfl.XMLEncode(dev)
 	if err != nil {
+		log.Error("failed to encode device info: ", err)
 		return err
 	}
 
 	_, err = ccf.doWrite(urla, rqb)
 	if err != nil {
+		log.Error("failed to write dev info: ", err)
 		return err
 	}
 
@@ -214,22 +170,41 @@ func (ccf *CliCFuncs) CreateDevice(dev ctlplfl.DeviceInfo) error {
 }
 
 func (ccf *CliCFuncs) GetDeviceUUID(device string) ([]byte, error) {
-
-	urla := "name=ReadDeviceUUID"
 	key := "/d/" + device + "/n_"
-	var res []byte
-	log.Info("Get nisd details from CP for: ", key)
-	rqb, err := encode(key)
+	log.Info("get device uuid key:", key)
+	return ccf.QueryPMDB(key, "ReadDeviceUUID")
+}
+
+func (ccf *CliCFuncs) GetNisdDetails(device string) (map[string][]byte, error) {
+
+	var nisd map[string][]byte
+	key := "/n/" + device
+	res, err := ccf.QueryPMDB(key, "ReadNisdConfig")
 	if err != nil {
-		return res, err
+		return nil, err
+	}
+	err = ctlplfl.GobDecode(res, &nisd)
+	if err != nil {
+		log.Error("failed to decode nisd details: ", err)
+		return nil, err
+	}
+	log.Info("response from CP: ", nisd)
+	return nisd, nil
+}
+
+func (ccf *CliCFuncs) QueryPMDB(key, method string) ([]byte, error) {
+
+	urla := "name=" + method
+	rqb, err := ctlplfl.XMLEncode(key)
+	if err != nil {
+		return nil, err
 	}
 
-	log.Info("Sending request to CP on endpoint: ", urla)
-	res, err = ccf.request(rqb, urla, false)
+	log.Debug("Sending request to CP on endpoint: ", urla)
+	res, err := ccf.request(rqb, urla, false)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
-
-	log.Info("response from CP: ", string(res))
+	log.Trace("query pmdb: ", res)
 	return res, nil
 }

@@ -756,7 +756,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
 	//Wait till client API Object is ready
 	clientObj.waitServiceInit("")
 
@@ -847,26 +846,27 @@ func main() {
 		}
 		fmt.Println(string(ret))
 
-	case "CreateNisd":
+	case "WriteNisd":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		var nisd cpLib.Nisd
 		if err := json.Unmarshal([]byte(nisdDetails), &nisd); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
 		}
-		err := c.CreateNisd(nisd)
+		err := c.WriteNisd(nisd)
 		if err != nil {
-			log.Error(err)
+			log.Error("failed to write nisd info:", err)
 		}
 
-	case "CreateDeviceInfo":
+	case "WriteDevice":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		var dev cpLib.DeviceInfo
 		if err := json.Unmarshal([]byte(nisdDetails), &dev); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
 		}
-		err := c.CreateDevice(dev)
+		log.Info("writing device info into pmdb", dev)
+		err := c.WriteDevice(dev)
 		if err != nil {
-			log.Error(err)
+			log.Error("failed to write device info", err)
 		}
 	}
 
