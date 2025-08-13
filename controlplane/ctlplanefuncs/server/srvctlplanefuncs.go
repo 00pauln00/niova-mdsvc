@@ -266,3 +266,68 @@ func WritePrepNisd(args ...interface{}) (interface{}, error) {
 	}
 	return encode(funcIntrm)
 }
+
+func ReadDeviceUUID(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var dev string
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[1].([]byte), &dev)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("Key to be read : ", dev)
+	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, dev, int64(len(dev)), colmfamily)
+	if err != nil {
+		log.Error("read failure ", err)
+		return nil, err
+	}
+
+	return readResult, nil
+}
+
+func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
+
+	var dev ctlplfl.DeviceInfo
+
+	err := xml.Unmarshal(args[0].([]byte), &dev)
+	if err != nil {
+		return nil, err
+	}
+
+	commitChgs := make([]funclib.CommitChg, 0)
+	data := map[string]interface{}{
+		"n_": dev.UniqID,
+		"S_": dev.SerialNumber,
+		"s_": dev.Status,
+	}
+
+	baseKey := fmt.Sprintf("/d/%v/", dev.ID)
+	for prefix, val := range data {
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(baseKey + prefix),
+			Value: []byte(fmt.Sprintf("%v", val)),
+		})
+	}
+
+	// TODO: use a common response struct for all the read functions
+	nisdResponse := ctlplfl.NisdResponseXML{
+		DeviceID: dev.ID,
+		Success:  true,
+	}
+
+	r, err := xml.Marshal(nisdResponse)
+	if err != nil {
+		log.Error("Failed to marshal nisd response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+
+	//Fill in FuncIntrm structure
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
+
+}

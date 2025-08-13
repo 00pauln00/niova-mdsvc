@@ -857,6 +857,17 @@ func main() {
 		if err != nil {
 			log.Error(err)
 		}
+
+	case "CreateDeviceInfo":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		var dev cpLib.DeviceInfo
+		if err := json.Unmarshal([]byte(nisdDetails), &dev); err != nil {
+			log.Error("failed to unmarshal nisd json string:", err)
+		}
+		err := c.CreateDevice(dev)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 	if err != nil {

@@ -131,9 +131,11 @@ func main() {
 	funcAPI := PumiceDBFunc.NewFuncServer()
 	funcAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
 	funcAPI.RegisterWritePrepFunc("CreateNisd", srvctlplanefuncs.WritePrepNisd)
+	funcAPI.RegisterWritePrepFunc("CreateDevice", srvctlplanefuncs.WriteDeviceInfo)
 	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
 	funcAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
 	funcAPI.RegisterReadFunc("ReadNisdConfig", srvctlplanefuncs.ReadNisdConfig)
+	funcAPI.RegisterReadFunc("ReadDeviceUUID", srvctlplanefuncs.ReadDeviceUUID)
 	funcAPI.RegisterReadFunc("RangeReadNisdConfig", srvctlplanefuncs.RangeReadNisdConfig)
 	funcAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 

@@ -34,3 +34,11 @@ type NisdResponseXML struct {
 	DeviceID string `xml:"DeviceID"`
 	Success  bool
 }
+
+// TODO: use a separate struct for the Device ID and uuid
+type DeviceInfo struct {
+	ID           string
+	UniqID       uuid.UUID
+	SerialNumber string
+	Status       uint16
+}

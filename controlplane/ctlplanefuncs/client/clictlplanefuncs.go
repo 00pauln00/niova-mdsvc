@@ -196,3 +196,40 @@ func (ccf *CliCFuncs) CreateNisd(nisd ctlplfl.Nisd) error {
 
 	return nil
 }
+
+func (ccf *CliCFuncs) CreateDevice(dev ctlplfl.DeviceInfo) error {
+	urla := "name=CreateDevice"
+
+	rqb, err := encode(dev)
+	if err != nil {
+		return err
+	}
+
+	_, err = ccf.doWrite(urla, rqb)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ccf *CliCFuncs) GetDeviceUUID(device string) ([]byte, error) {
+
+	urla := "name=ReadDeviceUUID"
+	key := "/d/" + device + "/n_"
+	var res []byte
+	log.Info("Get nisd details from CP for: ", key)
+	rqb, err := encode(key)
+	if err != nil {
+		return res, err
+	}
+
+	log.Info("Sending request to CP on endpoint: ", urla)
+	res, err = ccf.request(rqb, urla, false)
+	if err != nil {
+		return res, err
+	}
+
+	log.Info("response from CP: ", string(res))
+	return res, nil
+}
