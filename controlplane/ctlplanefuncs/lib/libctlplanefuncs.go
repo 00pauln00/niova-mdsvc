@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/xml"
+	"net"
 
 	"github.com/google/uuid"
 )
@@ -29,23 +30,31 @@ type SnapXML struct {
 	Chunks   []ChunkXML `xml:"Chunk"`
 }
 
-type Nisd struct {
-	DeviceID   string    `yaml:"name" xml:"DeviceID"`
-	DeviceUUID uuid.UUID `yaml:"uuid" xml:"DeviceUUID"`
-	ClientPort uint16    `yaml:"client_port" xml:"ClientPort"`
-	PeerPort   uint16    `yaml:"peer_port" xml:"PeerPort"`
+type ResponseXML struct {
+	Name    string `xml:"name"`
+	Success bool
 }
 
-type NisdResponseXML struct {
-	DeviceID string `xml:"DeviceID"`
-	Success  bool
+type Device struct {
+	DiskID string
+	NisdID uuid.UUID
 }
 
 type DeviceInfo struct {
-	ID           string
-	UniqID       uuid.UUID
-	SerialNumber string
-	Status       uint16
+	Dev           Device
+	SerialNumber  string
+	Status        uint16
+	HyperVisorID  string
+	FailureDomain string
+}
+
+type Nisd struct {
+	Dev           Device
+	ClientPort    uint16 `yaml:"client_port" xml:"ClientPort"`
+	PeerPort      uint16 `yaml:"peer_port" xml:"PeerPort"`
+	HyperVisorID  string
+	FailureDomain string
+	IPAddr        net.IP
 }
 
 func GobDecode(payload []byte, s interface{}) error {
