@@ -216,12 +216,12 @@ func WriteNisdInfo(args ...interface{}) (interface{}, error) {
 
 	commitChgs := make([]funclib.CommitChg, 0)
 	data := map[string]interface{}{
-		"conf_d":  nisd.DeviceID,
+		"conf_d":  nisd.Dev.DiskID,
 		"conf_cp": nisd.ClientPort,
 		"conf_pp": nisd.PeerPort,
 	}
 
-	baseKey := fmt.Sprintf("/n/%v/", nisd.DeviceUUID)
+	baseKey := fmt.Sprintf("/n/%v/", nisd.Dev.NisdID)
 	for prefix, val := range data {
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(baseKey + prefix),
@@ -230,9 +230,9 @@ func WriteNisdInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	//Fill the response structure
-	nisdResponse := ctlplfl.NisdResponseXML{
-		DeviceID: nisd.DeviceID,
-		Success:  true,
+	nisdResponse := ctlplfl.ResponseXML{
+		Name:    nisd.Dev.DiskID,
+		Success: true,
 	}
 
 	r, err := ctlplfl.XMLEncode(nisdResponse)
@@ -279,12 +279,12 @@ func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
 
 	commitChgs := make([]funclib.CommitChg, 0)
 	data := map[string]interface{}{
-		"n_": dev.UniqID,
+		"n_": dev.Dev.NisdID,
 		"S_": dev.SerialNumber,
 		"s_": dev.Status,
 	}
 
-	baseKey := fmt.Sprintf("/d/%v/", dev.ID)
+	baseKey := fmt.Sprintf("/d/%v/", dev.Dev.DiskID)
 	for prefix, val := range data {
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(baseKey + prefix),
@@ -293,9 +293,9 @@ func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	// TODO: use a common response struct for all the read functions
-	nisdResponse := ctlplfl.NisdResponseXML{
-		DeviceID: dev.ID,
-		Success:  true,
+	nisdResponse := ctlplfl.ResponseXML{
+		Name:    dev.Dev.DiskID,
+		Success: true,
 	}
 
 	r, err := ctlplfl.XMLEncode(nisdResponse)
