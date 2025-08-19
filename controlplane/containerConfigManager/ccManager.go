@@ -28,12 +28,18 @@ type NisdConfig struct {
 	Peer   uint16 `yaml:"peer_port"`
 }
 
+type Gossip struct {
+	IPAddr []string `yaml:"ipaddr"`
+	Ports  []uint16 `yaml:"ports"`
+}
+
 type ContainerConfig struct {
 	S3Config   s3Config     `yaml:"s3_config"`
+	Gossip     Gossip       `yaml:"gossip"`
 	NisdConfig []NisdConfig `yaml:"nisd_config"`
 }
 
-func populateNisd(nisd cpLib.Nisd, UniqID string) NisdConfig {
+func populateNisd(nisd cpLib.Nisd) NisdConfig {
 	return NisdConfig{
 		Name:   nisd.DevID,
 		Nisd:   nisd.NisdID,
@@ -82,17 +88,18 @@ func main() {
 		os.Exit(-1)
 	}
 	for _, deviceID := range deviceIDs {
-		uid, err := c.GetDeviceUUID(deviceID)
+		devInfo, err := c.GetDeviceCfg(deviceID)
 		if err != nil {
 			log.Error("failed to get device uuid", err)
 			os.Exit(-1)
 		}
-		log.Info("device uuid: ", string(uid))
-		nisd, err := c.GetNisdCfgs(string(uid))
+		log.Info("device uuid: ", devInfo)
+		nisd, err := c.GetNisdCfgs(devInfo.NisdID)
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
+			os.Exit(-1)
 		}
-		cc.NisdConfig = append(cc.NisdConfig, populateNisd(nisd, string(uid)))
+		cc.NisdConfig = append(cc.NisdConfig, populateNisd(nisd))
 	}
 
 	log.Info("config struct: ", cc)
