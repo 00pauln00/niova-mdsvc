@@ -30,25 +30,25 @@ type SnapXML struct {
 type ResponseXML struct {
 	Name    string `xml:"name"`
 	Success bool
-}	
+}
 
 type DeviceInfo struct {
-	DevID        uuid.UUID
-	NisdID      uuid.UUID
-	SerialNumber string
-	Status       uint16
-	HyperVisorID string
-	FailureDomain string
+	DevID         string `xml:"DevID" json:"DevID"`
+	NisdID        string `xml:"NisdID" json:"NisdID"`
+	SerialNumber  string `xml:"SerialNumber" json:"SerialNumber"`
+	Status        uint16 `xml:"Status" json:"Status"`
+	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
+	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 }
 
 type Nisd struct {
-	NisdID 		  uuid.UUID
-	DevID         uuid.UUID
-	ClientPort    uint16 `yaml:"client_port" xml:"ClientPort"`
-	PeerPort      uint16 `yaml:"peer_port" xml:"PeerPort"`
-	HyperVisorID  string
-	FailureDomain string
-	IPAddr        net.IP
+	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort"`
+	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort"`
+	NisdID        string `xml:"NisdID" json:"NisdID"`
+	DevID         string `xml:"DevID" json:"DevID"`
+	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
+	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
+	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
 }
 
 func GobDecode(payload []byte, s interface{}) error {

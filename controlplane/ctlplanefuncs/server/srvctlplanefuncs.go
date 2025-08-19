@@ -7,7 +7,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"strconv"
-	"net"
 	"strings"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
@@ -192,7 +191,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := fmt.Sprintf("/n/%s/cfg", nisd.NisdID.String())
+	key := fmt.Sprintf("/n/%s/cfg", nisd.NisdID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -200,7 +199,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
-		k := fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID.String(), field)
+		k := fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID, field)
 		if val, ok := readResult[k]; ok {
 			switch field {
 			case "ClientPort":
@@ -214,7 +213,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 			case "FailureDomain":
 				nisd.FailureDomain = string(val)
 			case "IPAddr":
-				nisd.IPAddr = net.ParseIP(string(val))
+				nisd.IPAddr = string(val)
 			}
 		}
 	}
@@ -229,7 +228,6 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	log.Debug("range read nisd config result: ", response)
 	return response, nil
 }
-
 
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
 
@@ -254,19 +252,19 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 		case "FailureDomain":
 			value = nisd.FailureDomain
 		case "IPAddr":
-			value = nisd.IPAddr.String()
+			value = nisd.IPAddr
 		default:
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID.String(), field)),
+			Key:   []byte(fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID, field)),
 			Value: []byte(value),
 		})
 	}
 	//Fill the response structure
 	nisdResponse := ctlplfl.ResponseXML{
-		Name: nisd.DevID.String(),
-		Success:  true,
+		Name:    nisd.DevID,
+		Success: true,
 	}
 
 	r, err := ctlplfl.XMLEncode(nisdResponse)
@@ -311,7 +309,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := fmt.Sprintf("/d/%v/cfg", dev.DevID.String())
+	k := fmt.Sprintf("/d/%v/cfg", dev.DevID)
 	commitChgs := make([]funclib.CommitChg, 1)
 	commitChgs[0] = funclib.CommitChg{
 		Key:   []byte(k),
@@ -320,7 +318,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 
 	// TODO: use a common response struct for all the read functions
 	nisdResponse := ctlplfl.ResponseXML{
-		Name:    dev.DevID.String(),
+		Name:    dev.DevID,
 		Success: true,
 	}
 

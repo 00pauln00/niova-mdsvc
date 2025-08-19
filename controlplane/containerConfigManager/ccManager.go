@@ -2,16 +2,15 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
 
 	cpClient "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 
 	"github.com/google/uuid"
 )
@@ -34,14 +33,12 @@ type ContainerConfig struct {
 	NisdConfig []NisdConfig `yaml:"nisd_config"`
 }
 
-func populateNisd(nisd map[string][]byte, UniqID string) NisdConfig {
-	cp, _ := strconv.ParseUint(string(nisd[fmt.Sprintf("/n/%s/conf_cp", UniqID)]), 10, 16)
-	pp, _ := strconv.ParseUint(string(nisd[fmt.Sprintf("/n/%s/conf_pp", UniqID)]), 10, 16)
+func populateNisd(nisd cpLib.Nisd, UniqID string) NisdConfig {
 	return NisdConfig{
-		Name:   string(nisd[fmt.Sprintf("/n/%s/conf_d", UniqID)]),
-		Nisd:   UniqID,
-		Client: uint16(cp),
-		Peer:   uint16(pp),
+		Name:   nisd.DevID,
+		Nisd:   nisd.NisdID,
+		Client: nisd.ClientPort,
+		Peer:   nisd.PeerPort,
 	}
 }
 
@@ -91,7 +88,7 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Info("device uuid: ", string(uid))
-		nisd, err := c.GetNisdDetails(string(uid))
+		nisd, err := c.GetNisdCfgs(string(uid))
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
 		}

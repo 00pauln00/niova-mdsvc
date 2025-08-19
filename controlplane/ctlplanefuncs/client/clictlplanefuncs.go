@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/google/uuid"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
@@ -198,15 +197,11 @@ func (ccf *CliCFuncs) PutDeviceCfg(device ctlplfl.DeviceInfo) error {
 	return nil
 }
 
-func (ccf *CliCFuncs) GetDeviceCfg(device string)  (ctlplfl.DeviceInfo, error) {
+func (ccf *CliCFuncs) GetDeviceCfg(device string) (ctlplfl.DeviceInfo, error) {
 	var dev ctlplfl.DeviceInfo
 	var err error
 
-	dev.DevID, err = uuid.Parse(device)
-	if err != nil {
-		log.Error("failed to parse device uuid: ", err)
-		return dev, err
-	}
+	dev.DevID = device
 
 	res, err := ccf.QueryPMDB(dev, "GetDeviceCfg")
 	if err != nil {
@@ -248,12 +243,7 @@ func (ccf *CliCFuncs) GetNisdCfgs(NisdID string) (ctlplfl.Nisd, error) {
 
 	var err error
 	ni := ctlplfl.Nisd{}
-	ni.NisdID, err = uuid.Parse(NisdID)
-	if err != nil {
-		log.Error("failed to parse nisd uuid: ", err)
-		return ni, err
-	}
-
+	ni.NisdID = NisdID
 	res, err := ccf.QueryPMDB(ni, "GetNisdCfg")
 	if err != nil {
 		return ni, err
