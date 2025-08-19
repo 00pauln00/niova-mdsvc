@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"strconv"
+	"net"
 	"strings"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
@@ -180,32 +181,57 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	return intrm.Response, nil
 }
 
-func ReadNisdConfig(args ...interface{}) (interface{}, error) {
+func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	var key string
+	var nisd ctlplfl.Nisd
 	// Decode the input buffer into structure format
-	err := ctlplfl.XMLDecode(args[1].([]byte), key)
+	err := ctlplfl.XMLDecode(args[1].([]byte), &nisd)
 	if err != nil {
 		log.Errorf("failed xml decode:", err)
 		return nil, err
 	}
-	response, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+
+	key := fmt.Sprintf("/n/%s/cfg", nisd.NisdID.String())
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
-		log.Error("failed to read nisd config:", err)
+		log.Error("Range read failure ", err)
 		return nil, err
 	}
 
-	encRes, err := ctlplfl.GobEncode(response)
-	if err != nil {
-		log.Errorf("failed gob encode:", err)
-		return nil, err
+	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
+		k := fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID.String(), field)
+		if val, ok := readResult[k]; ok {
+			switch field {
+			case "ClientPort":
+				p, _ := strconv.Atoi(string(val))
+				nisd.ClientPort = uint16(p)
+			case "PeerPort":
+				p, _ := strconv.Atoi(string(val))
+				nisd.PeerPort = uint16(p)
+			case "HyperVisorID":
+				nisd.HyperVisorID = string(val)
+			case "FailureDomain":
+				nisd.FailureDomain = string(val)
+			case "IPAddr":
+				nisd.IPAddr = net.ParseIP(string(val))
+			}
+		}
 	}
+
+	log.Debug("Read nisd config: ", nisd)
+	response, err := ctlplfl.XMLEncode(nisd)
+	if err != nil {
+		log.Error("failed to encode nisd config:", err)
+		return nil, fmt.Errorf("failed to encode nisd config: %v", err)
+	}
+
 	log.Debug("range read nisd config result: ", response)
-	return encRes, nil
+	return response, nil
 }
 
-func WriteNisdInfo(args ...interface{}) (interface{}, error) {
+
+func WPNisdCfg(args ...interface{}) (interface{}, error) {
 
 	var nisd ctlplfl.Nisd
 
@@ -215,24 +241,32 @@ func WriteNisdInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-	data := map[string]interface{}{
-		"conf_d":  nisd.Dev.DiskID,
-		"conf_cp": nisd.ClientPort,
-		"conf_pp": nisd.PeerPort,
-	}
-
-	baseKey := fmt.Sprintf("/n/%v/", nisd.Dev.NisdID)
-	for prefix, val := range data {
+	// Schema: /n/{nisdID}/cfg_{field} : {value}
+	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
+		var value string
+		switch field {
+		case "ClientPort":
+			value = strconv.Itoa(int(nisd.ClientPort))
+		case "PeerPort":
+			value = strconv.Itoa(int(nisd.PeerPort))
+		case "HyperVisorID":
+			value = nisd.HyperVisorID
+		case "FailureDomain":
+			value = nisd.FailureDomain
+		case "IPAddr":
+			value = nisd.IPAddr.String()
+		default:
+			continue
+		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(baseKey + prefix),
-			Value: []byte(fmt.Sprintf("%v", val)),
+			Key:   []byte(fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID.String(), field)),
+			Value: []byte(value),
 		})
 	}
-
 	//Fill the response structure
 	nisdResponse := ctlplfl.ResponseXML{
-		Name:    nisd.Dev.DiskID,
-		Success: true,
+		Name: nisd.DevID.String(),
+		Success:  true,
 	}
 
 	r, err := ctlplfl.XMLEncode(nisdResponse)
@@ -248,7 +282,7 @@ func WriteNisdInfo(args ...interface{}) (interface{}, error) {
 	return encode(funcIntrm)
 }
 
-func ReadDeviceUUID(args ...interface{}) (interface{}, error) {
+func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
 	var dev string
@@ -268,7 +302,7 @@ func ReadDeviceUUID(args ...interface{}) (interface{}, error) {
 	return response, nil
 }
 
-func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
+func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 
 	var dev ctlplfl.DeviceInfo
 
@@ -277,24 +311,16 @@ func WriteDeviceInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	commitChgs := make([]funclib.CommitChg, 0)
-	data := map[string]interface{}{
-		"n_": dev.Dev.NisdID,
-		"S_": dev.SerialNumber,
-		"s_": dev.Status,
-	}
-
-	baseKey := fmt.Sprintf("/d/%v/", dev.Dev.DiskID)
-	for prefix, val := range data {
-		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(baseKey + prefix),
-			Value: []byte(fmt.Sprintf("%v", val)),
-		})
+	k := fmt.Sprintf("/d/%v/cfg", dev.DevID.String())
+	commitChgs := make([]funclib.CommitChg, 1)
+	commitChgs[0] = funclib.CommitChg{
+		Key:   []byte(k),
+		Value: []byte(args[0].([]byte)),
 	}
 
 	// TODO: use a common response struct for all the read functions
 	nisdResponse := ctlplfl.ResponseXML{
-		Name:    dev.Dev.DiskID,
+		Name:    dev.DevID.String(),
 		Success: true,
 	}
 

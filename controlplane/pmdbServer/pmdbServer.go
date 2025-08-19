@@ -130,13 +130,13 @@ func main() {
 	srvctlplanefuncs.SetClmFamily(colmfamily)
 	funcAPI := PumiceDBFunc.NewFuncServer()
 	funcAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
-	funcAPI.RegisterWritePrepFunc("WriteNisd", srvctlplanefuncs.WriteNisdInfo)
-	funcAPI.RegisterWritePrepFunc("WriteDevice", srvctlplanefuncs.WriteDeviceInfo)
+	funcAPI.RegisterWritePrepFunc("PutNisdCfg", srvctlplanefuncs.WPNisdCfg)
+	funcAPI.RegisterWritePrepFunc("PutDeviceCfg", srvctlplanefuncs.WPDeviceCfg)
 	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
 	funcAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
 	// funcAPI.RegisterReadFunc("ReadNisdConfig", srvctlplanefuncs.ReadNisdConfig)
-	funcAPI.RegisterReadFunc("ReadDeviceUUID", srvctlplanefuncs.ReadDeviceUUID)
-	funcAPI.RegisterReadFunc("ReadNisdConfig", srvctlplanefuncs.ReadNisdConfig)
+	funcAPI.RegisterReadFunc("GetNisdCfg", srvctlplanefuncs.RdNisdCfg)
+	funcAPI.RegisterReadFunc("GetDeviceCfg", srvctlplanefuncs.RdDeviceCfg)
 	funcAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{

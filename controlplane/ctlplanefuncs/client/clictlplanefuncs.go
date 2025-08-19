@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/google/uuid"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
@@ -175,23 +176,99 @@ func (ccf *CliCFuncs) GetDeviceUUID(device string) ([]byte, error) {
 	return ccf.QueryPMDB(key, "ReadDeviceUUID")
 }
 
-func (ccf *CliCFuncs) GetNisdDetails(device string) (map[string][]byte, error) {
+func (ccf *CliCFuncs) PutDeviceCfg(device ctlplfl.DeviceInfo) error {
+	var resp ctlplfl.ResponseXML
 
-	var nisd map[string][]byte
-	key := "/n/" + device
-	res, err := ccf.QueryPMDB(key, "ReadNisdConfig")
+	res, err := ccf.QueryPMDB(device, "PutDeviceCfg")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	err = ctlplfl.GobDecode(res, &nisd)
+
+	err = ctlplfl.XMLDecode(res, &resp)
 	if err != nil {
-		log.Error("failed to decode nisd details: ", err)
-		return nil, err
+		log.Error("failed to decode device cfg: ", err)
+		return err
 	}
-	return nisd, nil
+
+	if !resp.Success {
+		log.Error("failed to read device cfg: ", resp.Name)
+		return fmt.Errorf("failed to read device cfg: %s", resp.Name)
+	}
+
+	return nil
 }
 
-func (ccf *CliCFuncs) QueryPMDB(key, method string) ([]byte, error) {
+func (ccf *CliCFuncs) GetDeviceCfg(device string)  (ctlplfl.DeviceInfo, error) {
+	var dev ctlplfl.DeviceInfo
+	var err error
+
+	dev.DevID, err = uuid.Parse(device)
+	if err != nil {
+		log.Error("failed to parse device uuid: ", err)
+		return dev, err
+	}
+
+	res, err := ccf.QueryPMDB(dev, "GetDeviceCfg")
+	if err != nil {
+		return dev, err
+	}
+
+	err = ctlplfl.XMLDecode(res, &dev)
+	if err != nil {
+		log.Error("failed to decode device cfg: ", err)
+		return dev, err
+	}
+	log.Info("response from CP: ", dev)
+	return dev, nil
+}
+
+func (ccf *CliCFuncs) PutNisdCfg(Nisd ctlplfl.Nisd) error {
+
+	res, err := ccf.QueryPMDB(Nisd, "PutNisdCfg")
+	if err != nil {
+		return err
+	}
+
+	var resp ctlplfl.ResponseXML
+	err = ctlplfl.XMLDecode(res, &resp)
+	if err != nil {
+		log.Error("failed to decode nisd cfg: ", err)
+		return err
+	}
+
+	if !resp.Success {
+		log.Error("failed to read nisd cfg: ", resp.Name)
+		return fmt.Errorf("failed to read nisd cfg: %s", resp.Name)
+	}
+
+	return nil
+}
+
+func (ccf *CliCFuncs) GetNisdCfgs(NisdID string) (ctlplfl.Nisd, error) {
+
+	var err error
+	ni := ctlplfl.Nisd{}
+	ni.NisdID, err = uuid.Parse(NisdID)
+	if err != nil {
+		log.Error("failed to parse nisd uuid: ", err)
+		return ni, err
+	}
+
+	res, err := ccf.QueryPMDB(ni, "GetNisdCfg")
+	if err != nil {
+		return ni, err
+	}
+
+	err = ctlplfl.XMLDecode(res, &ni)
+	if err != nil {
+		log.Error("failed to decode nisd details: ", err)
+		return ni, err
+	}
+
+	return ni, nil
+}
+
+func (ccf *CliCFuncs) QueryPMDB(key interface{}, method string) ([]byte, error) {
 
 	urla := "name=" + method
 	rqb, err := ctlplfl.XMLEncode(key)
@@ -204,6 +281,7 @@ func (ccf *CliCFuncs) QueryPMDB(key, method string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	log.Trace("query pmdb: ", res)
 	return res, nil
 }
