@@ -188,7 +188,6 @@ func (ccf *CliCFuncs) GetNisdDetails(device string) (map[string][]byte, error) {
 		log.Error("failed to decode nisd details: ", err)
 		return nil, err
 	}
-	log.Info("response from CP: ", nisd)
 	return nisd, nil
 }
 

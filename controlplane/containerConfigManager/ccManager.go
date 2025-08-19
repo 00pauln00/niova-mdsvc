@@ -17,21 +17,21 @@ import (
 )
 
 type s3Config struct {
-	URL  string `yaml: "url"`
-	Opts string `yaml: "opts"`
-	Auth string `yaml: "auth"`
+	URL  string `yaml:"url"`
+	Opts string `yaml:"opts"`
+	Auth string `yaml:"auth"`
 }
 
 type NisdConfig struct {
-	Name   string `yaml: "name"`
-	Nisd   string `yaml: "uuid"`
-	Client uint16 `yaml: "client_port"`
-	Peer   uint16 `yaml: "peer_port"`
+	Name   string `yaml:"name"`
+	Nisd   string `yaml:"uuid"`
+	Client uint16 `yaml:"client_port"`
+	Peer   uint16 `yaml:"peer_port"`
 }
 
 type ContainerConfig struct {
-	S3Config   s3Config     `yaml: "s3_config"`
-	NisdConfig []NisdConfig `yaml: "nisd_config"`
+	S3Config   s3Config     `yaml:"s3_config"`
+	NisdConfig []NisdConfig `yaml:"nisd_config"`
 }
 
 func populateNisd(nisd map[string][]byte, UniqID string) NisdConfig {
@@ -78,13 +78,12 @@ func main() {
 
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
 	var cc ContainerConfig
+	cc.NisdConfig = make([]NisdConfig, 0)
 	err := LoadOrCreateConfig(*setupConfig, &cc)
 	if err != nil {
 		log.Error("failed to load or create config file: ", err)
 		os.Exit(-1)
 	}
-	cc.NisdConfig = make([]NisdConfig, 0)
-
 	for _, deviceID := range deviceIDs {
 		uid, err := c.GetDeviceUUID(deviceID)
 		if err != nil {
@@ -105,7 +104,7 @@ func main() {
 		log.Error("Error marshaling YAML:", err)
 		os.Exit(-1)
 	}
-	err = os.WriteFile(*setupConfig, configY, 0644)
+	err = os.WriteFile(filepath.Dir(*setupConfig)+"/config-gen.yaml", configY, 0644)
 	if err != nil {
 		log.Error("Error writing YAML file:", err)
 		os.Exit(-1)
