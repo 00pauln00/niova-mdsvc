@@ -13,6 +13,8 @@ import (
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/google/uuid"
 )
 
 var colmfamily string
@@ -283,7 +285,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	var dev string
+	var dev ctlplfl.DeviceInfo
 	// Decode the input buffer into structure format
 	err := ctlplfl.XMLDecode(args[1].([]byte), &dev)
 	if err != nil {
@@ -291,10 +293,38 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	log.Debug("Read nisd uuid for block device: ", dev)
-	response, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, dev, int64(len(dev)), colmfamily)
+	
+	key := fmt.Sprintf("/d/%s/cfg", dev)
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
-		log.Error("read failure ", err)
+		log.Error("Range read failure ", err)
 		return nil, err
+	}
+
+	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
+		k := fmt.Sprintf("/d/%s/cfg_%s", dev, field)
+		if val, ok := readResult[k]; ok {
+			switch field {
+			case "NisdID":
+				dev.NisdID, _ = uuid.Parse(string(val))
+			case "SerialNumber":
+				dev.SerialNumber = string(val)
+			case "Status":
+				status, _ := strconv.Atoi(string(val))
+				dev.Status = uint16(status)
+			case "HyperVisorID":
+				dev.HyperVisorID = string(val)
+			case "FailureDomain":
+				dev.FailureDomain = string(val)
+			}
+		}
+	}
+
+	log.Debug("Read device config: ", dev)
+	response, err := ctlplfl.XMLEncode(dev)
+	if err != nil {
+		log.Error("failed to encode device config:", err)
+		return nil, fmt.Errorf("failed to encode device config: %v", err)
 	}
 
 	return response, nil
@@ -309,11 +339,29 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := fmt.Sprintf("/d/%v/cfg", dev.DevID)
-	commitChgs := make([]funclib.CommitChg, 1)
-	commitChgs[0] = funclib.CommitChg{
-		Key:   []byte(k),
-		Value: []byte(args[0].([]byte)),
+	k := fmt.Sprintf("/d/%v/cfg", dev.DevID.String())
+	//Schema : /d/{devID}/cfg_{field} : {value}
+	commitChgs := make([]funclib.CommitChg, 0)
+	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
+		var value string
+		switch field {
+		case "NisdID":
+			value = dev.NisdID.String()
+		case "SerialNumber":
+			value = dev.SerialNumber
+		case "Status":
+			value = strconv.Itoa(int(dev.Status))
+		case "HyperVisorID":
+			value = dev.HyperVisorID
+		case "FailureDomain":
+			value = dev.FailureDomain
+		default:
+			continue
+		}
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/cfg_%s", k, field)),
+			Value: []byte(value),
+		})
 	}
 
 	// TODO: use a common response struct for all the read functions
