@@ -13,8 +13,6 @@ import (
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/google/uuid"
 )
 
 var colmfamily string
@@ -306,7 +304,7 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 		if val, ok := readResult[k]; ok {
 			switch field {
 			case "NisdID":
-				dev.NisdID, _ = uuid.Parse(string(val))
+				dev.NisdID = string(val)
 			case "SerialNumber":
 				dev.SerialNumber = string(val)
 			case "Status":
@@ -339,14 +337,14 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := fmt.Sprintf("/d/%v/cfg", dev.DevID.String())
+	k := fmt.Sprintf("/d/%v/cfg", dev.DevID)
 	//Schema : /d/{devID}/cfg_{field} : {value}
 	commitChgs := make([]funclib.CommitChg, 0)
 	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
 		var value string
 		switch field {
 		case "NisdID":
-			value = dev.NisdID.String()
+			value = dev.NisdID
 		case "SerialNumber":
 			value = dev.SerialNumber
 		case "Status":
