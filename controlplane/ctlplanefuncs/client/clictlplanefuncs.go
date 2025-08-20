@@ -172,16 +172,25 @@ func (ccf *CliCFuncs) WriteDevice(dev ctlplfl.DeviceInfo) error {
 func (ccf *CliCFuncs) GetDeviceUUID(device string) ([]byte, error) {
 	key := "/d/" + device + "/n_"
 	log.Info("get device uuid key:", key)
-	return ccf.QueryPMDB(key, "ReadDeviceUUID")
+	return ccf.QueryPMDB(key, "ReadDeviceUUID", false)
 }
 
 func (ccf *CliCFuncs) PutDeviceCfg(device ctlplfl.DeviceInfo) error {
 	var resp ctlplfl.ResponseXML
 
-	res, err := ccf.QueryPMDB(device, "PutDeviceCfg")
+	// Encode the device info to XML
+	rqb, err := ctlplfl.XMLEncode(device)
+	if err != nil {
+		log.Error("failed to encode device cfg: ", err)
+		return err
+	}
+
+	res, err := ccf.doWrite("name=PutDeviceCfg", rqb)
 	if err != nil {
 		return err
 	}
+
+	log.Info("response from CP: ", string(res))
 
 	err = ctlplfl.XMLDecode(res, &resp)
 	if err != nil {
@@ -203,7 +212,7 @@ func (ccf *CliCFuncs) GetDeviceCfg(device string) (ctlplfl.DeviceInfo, error) {
 
 	dev.DevID = device
 
-	res, err := ccf.QueryPMDB(dev, "GetDeviceCfg")
+	res, err := ccf.QueryPMDB(dev, "GetDeviceCfg", false)
 	if err != nil {
 		return dev, err
 	}
@@ -219,7 +228,7 @@ func (ccf *CliCFuncs) GetDeviceCfg(device string) (ctlplfl.DeviceInfo, error) {
 
 func (ccf *CliCFuncs) PutNisdCfg(Nisd ctlplfl.Nisd) error {
 
-	res, err := ccf.QueryPMDB(Nisd, "PutNisdCfg")
+	res, err := ccf.QueryPMDB(Nisd, "PutNisdCfg", true)
 	if err != nil {
 		return err
 	}
@@ -244,7 +253,7 @@ func (ccf *CliCFuncs) GetNisdCfgs(NisdID string) (ctlplfl.Nisd, error) {
 	var err error
 	ni := ctlplfl.Nisd{}
 	ni.NisdID = NisdID
-	res, err := ccf.QueryPMDB(ni, "GetNisdCfg")
+	res, err := ccf.QueryPMDB(ni, "GetNisdCfg", false)
 	if err != nil {
 		return ni, err
 	}
@@ -258,16 +267,16 @@ func (ccf *CliCFuncs) GetNisdCfgs(NisdID string) (ctlplfl.Nisd, error) {
 	return ni, nil
 }
 
-func (ccf *CliCFuncs) QueryPMDB(key interface{}, method string) ([]byte, error) {
+func (ccf *CliCFuncs) QueryPMDB(key interface{}, method string, isWrite bool) ([]byte, error) {
 
-	urla := "name=" + method
+	urla := "/func?name=" + method
 	rqb, err := ctlplfl.XMLEncode(key)
 	if err != nil {
 		return nil, err
 	}
 
 	log.Debug("Sending request to CP on endpoint: ", urla)
-	res, err := ccf.request(rqb, urla, false)
+	res, err := ccf.request(rqb, urla, isWrite)
 	if err != nil {
 		return nil, err
 	}
