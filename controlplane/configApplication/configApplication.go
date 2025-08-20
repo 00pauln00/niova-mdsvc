@@ -219,7 +219,7 @@ func (handler *configApplication) Write(key string, data []byte) error {
 		ReplySize:   &replySize,
 	}
 
-	_, err := handler.pmdbClientObj.PutEncoded(reqArgs)
+	err := handler.pmdbClientObj.PutEncoded(reqArgs)
 	return err
 }
 
