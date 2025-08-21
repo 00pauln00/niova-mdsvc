@@ -65,10 +65,9 @@ func (ccf *CliCFuncs) decode(bin []byte, st interface{}) error {
 
 func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, error) {
 	ccf.sdObj.TillReady("PROXY", 5)
-	log.Info("sending request to url: ", urla)
 	rsp, err := ccf.sdObj.Request(rqb, "/func?"+urla, isWrite)
 	if err != nil {
-		log.Error("request failure: ", err)
+		log.Error("failed to send request to server: ", err)
 		return nil, err
 	}
 	return rsp, nil

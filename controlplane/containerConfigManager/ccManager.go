@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const GEN_CONF_FILE = "config-gen.yaml"
+
 type s3Config struct {
 	URL  string `yaml:"url"`
 	Opts string `yaml:"opts"`
@@ -21,11 +23,11 @@ type s3Config struct {
 }
 
 type NisdConfig struct {
-	Name   string `yaml:"name"`
-	Nisd   string `yaml:"uuid"`
-	Client uint16 `yaml:"client_port"`
-	Peer   uint16 `yaml:"peer_port"`
-	Init   bool   `yaml:"init"`
+	DevID   string `yaml:"name"`
+	NisdID  string `yaml:"uuid"`
+	CPort   uint16 `yaml:"client_port"`
+	PPort   uint16 `yaml:"peer_port"`
+	InitDev bool   `yaml:"init"`
 }
 
 type Gossip struct {
@@ -33,21 +35,21 @@ type Gossip struct {
 	Ports  []uint16 `yaml:"ports"`
 }
 
-type ContainerConfig struct {
+type NisdCntrConfig struct {
 	S3Config   s3Config      `yaml:"s3_config"`
 	Gossip     Gossip        `yaml:"gossip"`
 	NisdConfig []*NisdConfig `yaml:"nisd_config"`
 }
 
-func populateNisd(nisdC *NisdConfig, nisd cpLib.Nisd) {
-	nisdC.Name = nisd.DevID
-	nisdC.Nisd = nisd.NisdID
-	nisdC.Client = nisd.ClientPort
-	nisdC.Peer = nisd.PeerPort
+func updateNisdConfig(nisdConf *NisdConfig, nisdCP cpLib.Nisd) {
+	nisdConf.DevID = nisdCP.DevID
+	nisdConf.NisdID = nisdCP.NisdID
+	nisdConf.CPort = nisdCP.ClientPort
+	nisdConf.PPort = nisdCP.PeerPort
 }
 
-// LoadOrCreateConfig loads config from file if present, otherwise creates a new one.
-func LoadOrCreateConfig(setupConfig string, cc *ContainerConfig) error {
+// loadConfig loads config from file if present, otherwise creates a new one.
+func loadConfig(setupConfig string, cc *NisdCntrConfig) error {
 	if err := os.MkdirAll(filepath.Dir(setupConfig), os.ModePerm); err != nil {
 		return err
 	}
@@ -76,45 +78,45 @@ func main() {
 	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
-	var cc ContainerConfig
-	cc.NisdConfig = make([]*NisdConfig, 0)
-	err := LoadOrCreateConfig(*setupConfig, &cc)
+	var conf NisdCntrConfig
+	conf.NisdConfig = make([]*NisdConfig, 0)
+	err := loadConfig(*setupConfig, &conf)
 	if err != nil {
 		log.Error("failed to load or create config file: ", err)
 		os.Exit(-1)
 	}
 
-	for _, nisd := range cc.NisdConfig {
+	for _, nisd := range conf.NisdConfig {
 		devInfo := cpLib.DeviceInfo{
-			DevID: nisd.Name,
+			DevID: nisd.DevID,
 		}
 		err := c.GetDeviceCfg(&devInfo)
 		if err != nil {
 			log.Error("failed to get device uuid", err)
 			os.Exit(-1)
 		}
-		log.Info("device info: ", devInfo)
-		nisdInfo := cpLib.Nisd{
+		log.Info("fetched device info from control plane: ", devInfo)
+		nisdCP := cpLib.Nisd{
 			DevID:  devInfo.DevID,
 			NisdID: devInfo.NisdID,
 		}
-		err = c.GetNisdCfg(&nisdInfo)
+		err = c.GetNisdCfg(&nisdCP)
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
 			os.Exit(-1)
 		}
-		populateNisd(nisd, nisdInfo)
+		updateNisdConfig(nisd, nisdCP)
 	}
 
-	log.Info("config struct: ", cc)
-	configY, err := yaml.Marshal(cc)
+	configY, err := yaml.Marshal(conf)
 	if err != nil {
 		log.Error("Error marshaling YAML:", err)
 		os.Exit(-1)
 	}
-	err = os.WriteFile(filepath.Dir(*setupConfig)+"/config-gen.yaml", configY, 0644)
+	err = os.WriteFile(filepath.Join(filepath.Dir(*setupConfig), GEN_CONF_FILE), configY, 0644)
 	if err != nil {
 		log.Error("Error writing YAML file:", err)
 		os.Exit(-1)
 	}
+	log.Info("generated nisd configuration yaml file for container automation: ", conf)
 }
