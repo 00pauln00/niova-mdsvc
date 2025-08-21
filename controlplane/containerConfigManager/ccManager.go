@@ -88,18 +88,25 @@ func main() {
 		os.Exit(-1)
 	}
 	for _, deviceID := range deviceIDs {
-		devInfo, err := c.GetDeviceCfg(deviceID)
+		devInfo := cpLib.DeviceInfo{
+			DevID: deviceID,
+		}
+		err := c.GetDeviceCfg(&devInfo)
 		if err != nil {
 			log.Error("failed to get device uuid", err)
 			os.Exit(-1)
 		}
-		log.Info("device uuid: ", devInfo)
-		nisd, err := c.GetNisdCfgs(devInfo.NisdID)
+		log.Info("device info: ", devInfo)
+		nisdInfo := cpLib.Nisd{
+			DevID:  devInfo.DevID,
+			NisdID: devInfo.NisdID,
+		}
+		err = c.GetNisdCfg(&nisdInfo)
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
 			os.Exit(-1)
 		}
-		cc.NisdConfig = append(cc.NisdConfig, populateNisd(nisd))
+		cc.NisdConfig = append(cc.NisdConfig, populateNisd(nisdInfo))
 	}
 
 	log.Info("config struct: ", cc)
