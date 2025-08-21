@@ -4,7 +4,6 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
@@ -26,6 +25,7 @@ type NisdConfig struct {
 	Nisd   string `yaml:"uuid"`
 	Client uint16 `yaml:"client_port"`
 	Peer   uint16 `yaml:"peer_port"`
+	Init   bool   `yaml:"init"`
 }
 
 type Gossip struct {
@@ -34,18 +34,16 @@ type Gossip struct {
 }
 
 type ContainerConfig struct {
-	S3Config   s3Config     `yaml:"s3_config"`
-	Gossip     Gossip       `yaml:"gossip"`
-	NisdConfig []NisdConfig `yaml:"nisd_config"`
+	S3Config   s3Config      `yaml:"s3_config"`
+	Gossip     Gossip        `yaml:"gossip"`
+	NisdConfig []*NisdConfig `yaml:"nisd_config"`
 }
 
-func populateNisd(nisd cpLib.Nisd) NisdConfig {
-	return NisdConfig{
-		Name:   nisd.DevID,
-		Nisd:   nisd.NisdID,
-		Client: nisd.ClientPort,
-		Peer:   nisd.PeerPort,
-	}
+func populateNisd(nisdC *NisdConfig, nisd cpLib.Nisd) {
+	nisdC.Name = nisd.DevID
+	nisdC.Nisd = nisd.NisdID
+	nisdC.Client = nisd.ClientPort
+	nisdC.Peer = nisd.PeerPort
 }
 
 // LoadOrCreateConfig loads config from file if present, otherwise creates a new one.
@@ -74,22 +72,21 @@ func main() {
 	raftID := flag.String("r", "", "pass the raft uuid")
 	configPath := flag.String("c", "./gossipNodes", "pass the gossip config path")
 	setupConfig := flag.String("sc", "./config.yaml", "pass the gossip config path")
-	deviceList := flag.String("d", "", "pass the nisd device id")
 	flag.Parse()
-	deviceIDs := strings.Split(*deviceList, ",")
-	log.Infof("starting config app - raft: %s, config: %s, device id: %s", *raftID, *configPath, *deviceList)
+	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
 	var cc ContainerConfig
-	cc.NisdConfig = make([]NisdConfig, 0)
+	cc.NisdConfig = make([]*NisdConfig, 0)
 	err := LoadOrCreateConfig(*setupConfig, &cc)
 	if err != nil {
 		log.Error("failed to load or create config file: ", err)
 		os.Exit(-1)
 	}
-	for _, deviceID := range deviceIDs {
+
+	for _, nisd := range cc.NisdConfig {
 		devInfo := cpLib.DeviceInfo{
-			DevID: deviceID,
+			DevID: nisd.Name,
 		}
 		err := c.GetDeviceCfg(&devInfo)
 		if err != nil {
@@ -106,7 +103,7 @@ func main() {
 			log.Error("failed to get nisd details:", err)
 			os.Exit(-1)
 		}
-		cc.NisdConfig = append(cc.NisdConfig, populateNisd(nisdInfo))
+		populateNisd(nisd, nisdInfo)
 	}
 
 	log.Info("config struct: ", cc)
