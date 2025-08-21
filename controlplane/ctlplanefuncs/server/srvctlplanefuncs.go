@@ -199,7 +199,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
-		k := fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID, field)
+		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			switch field {
 			case "ClientPort":
@@ -239,7 +239,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-	// Schema: /n/{nisdID}/cfg_{field} : {value}
+	// Schema: /n/{nisdID}/cfg/{field} : {value}
 	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
 		var value string
 		switch field {
@@ -257,7 +257,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("/n/%s/cfg_%s", nisd.NisdID, field)),
+			Key:   []byte(fmt.Sprintf("/n/%s/cfg/%s", nisd.NisdID, field)),
 			Value: []byte(value),
 		})
 	}
@@ -289,10 +289,8 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	log.Debug("Read nisd uuid for block device: ", dev)
 	
-	key := fmt.Sprintf("/d/%s/cfg", dev)
+	key := fmt.Sprintf("/d/%s/cfg", dev.DevID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -300,8 +298,9 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
-		k := fmt.Sprintf("/d/%s/cfg_%s", dev, field)
+		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
+			log.Info("Value for key ", k, " : ", string(val))
 			switch field {
 			case "NisdID":
 				dev.NisdID = string(val)
@@ -318,7 +317,6 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	log.Debug("Read device config: ", dev)
 	response, err := ctlplfl.XMLEncode(dev)
 	if err != nil {
 		log.Error("failed to encode device config:", err)
@@ -337,8 +335,8 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := fmt.Sprintf("/d/%v/cfg", dev.DevID)
-	//Schema : /d/{devID}/cfg_{field} : {value}
+	k := fmt.Sprintf("/d/%s/cfg", dev.DevID)
+	//Schema : /d/{devID}/cfg/{field} : {value}
 	commitChgs := make([]funclib.CommitChg, 0)
 	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
 		var value string
@@ -357,7 +355,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/cfg_%s", k, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
 			Value: []byte(value),
 		})
 	}
