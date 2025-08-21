@@ -1,7 +1,6 @@
 package clictlplanefuncs
 
 import (
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"sync"
@@ -12,18 +11,27 @@ import (
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
 
+type EncodeType int
+
+const (
+	XML EncodeType = iota
+	GoBinary
+)
+
 // Client side interferace for control plane functions
 type CliCFuncs struct {
 	appUUID       string
 	writeSeq      uint64
 	sdObj         *sd.ServiceDiscoveryHandler
 	writePathLock sync.Mutex
+	encType EncodeType	  
 }
 
 func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFuncs {
 	ccf := CliCFuncs{
 		appUUID:  appUUID,
 		writeSeq: uint64(0),
+		encType: XML, // Default encoding type
 	}
 
 	ccf.sdObj = &sd.ServiceDiscoveryHandler{
@@ -39,6 +47,24 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	return &ccf
 }
 
+func (ccf *CliCFuncs) encode(data interface{}) ([]byte, error) {
+	if ccf.encType == GoBinary {
+		return ctlplfl.GobEncode(data)
+	} else if ccf.encType == XML {
+		return ctlplfl.XMLEncode(data)
+	}
+	return nil, errors.New("unsupported encoding type")
+}
+
+func (ccf *CliCFuncs) decode(bin []byte, st interface{}) error {
+	if ccf.encType == GoBinary {
+		return ctlplfl.GobDecode(bin, st)
+	} else if ccf.encType == XML {
+		return ctlplfl.XMLDecode(bin, st)
+	}
+	return errors.New("unsupported encoding type")
+}
+
 func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, error) {
 	ccf.sdObj.TillReady("PROXY", 5)
 	log.Info("sending request to url: ", urla)
@@ -50,7 +76,7 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
 	return rsp, nil
 }
 
-func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) ([]byte, error) {
+func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 	ccf.writePathLock.Lock()
 	defer ccf.writePathLock.Unlock()
 
@@ -62,13 +88,51 @@ func (ccf *CliCFuncs) doWrite(urla string, rqb []byte) ([]byte, error) {
 	return rsb, err
 }
 
-func encode(data interface{}) ([]byte, error) {
-	return xml.Marshal(data)
+
+func (ccf *CliCFuncs) put(data interface{}, urla string) error {
+	rqb, err := ccf.encode(data)
+	if err != nil {
+		log.Error("failed to encode data: ", err)
+		return err
+	}
+
+	rsb, err := ccf._put(urla, rqb)
+	if err != nil {
+		return err
+	}
+
+	var resp ctlplfl.ResponseXML
+	err = ccf.decode(rsb, &resp)
+	if err != nil {
+		log.Error("failed to decode response: ", err)
+		return err
+	}
+
+	return nil
 }
 
-func decode(bin []byte, st interface{}) error {
-	return xml.Unmarshal(bin, &st)
+func (ccf *CliCFuncs) get(data interface{}, urla string) error {
+	rqb, err := ccf.encode(data)
+	if err != nil {
+		log.Error("failed to encode data: ", err)
+		return err
+	}
+	
+	rsb, err := ccf.request(rqb, urla, false)
+	if err != nil {
+		log.Error("request failed: ", err)
+		return err
+	}
+
+	err = ccf.decode(rsb, data)
+	if err != nil {
+		log.Error("failed to decode response: ", err)
+		return err
+	}
+
+	return nil
 }
+
 
 func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string) error {
 	urla := "name=CreateSnap"
@@ -86,18 +150,18 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 	Snap.Vdev = vdev
 	Snap.Chunks = chks
 
-	rqb, err := encode(Snap)
+	rqb, err := ccf.encode(Snap)
 	if err != nil {
 		return err
 	}
 
-	rsb, err := ccf.doWrite(urla, rqb)
+	rsb, err := ccf._put(urla, rqb)
 	if err != nil {
 		return err
 	}
 
 	var snapRes ctlplfl.SnapResponseXML
-	err = decode(rsb, snapRes)
+	err = ccf.decode(rsb, snapRes)
 	if err != nil {
 		return err
 	}
@@ -114,7 +178,7 @@ func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
 
 	var snap ctlplfl.SnapXML
 	snap.SnapName = name
-	rqb, err := encode(snap)
+	rqb, err := ccf.encode(snap)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +191,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 
 	var snap ctlplfl.SnapXML
 	snap.Vdev = vdev
-	rqb, err := encode(snap)
+	rqb, err := ccf.encode(snap)
 	if err != nil {
 		return nil, err
 	}
@@ -135,152 +199,23 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) WriteNisd(nisd ctlplfl.Nisd) error {
-	urla := "name=WriteNisd"
 
-	rqb, err := ctlplfl.XMLEncode(nisd)
-	if err != nil {
-		return err
-	}
-
-	_, err = ccf.doWrite(urla, rqb)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) error {
+	urla := "name=PutDeviceCfg"
+	return ccf.put(device, urla)
 }
 
-func (ccf *CliCFuncs) WriteDevice(dev ctlplfl.DeviceInfo) error {
-	urla := "name=WriteDevice"
-
-	rqb, err := ctlplfl.XMLEncode(dev)
-	if err != nil {
-		log.Error("failed to encode device info: ", err)
-		return err
-	}
-
-	_, err = ccf.doWrite(urla, rqb)
-	if err != nil {
-		log.Error("failed to write dev info: ", err)
-		return err
-	}
-
-	return nil
+func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
+	urla := "name=GetDeviceCfg"
+	return ccf.get(dev, urla)
 }
 
-func (ccf *CliCFuncs) GetDeviceUUID(device string) ([]byte, error) {
-	key := "/d/" + device + "/n_"
-	log.Info("get device uuid key:", key)
-	return ccf.QueryPMDB(key, "ReadDeviceUUID", false)
+func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
+	urla := "name=PutNisdCfg"
+	return ccf.put(ncfg, urla)
 }
 
-func (ccf *CliCFuncs) PutDeviceCfg(device ctlplfl.DeviceInfo) error {
-	var resp ctlplfl.ResponseXML
-
-	// Encode the device info to XML
-	rqb, err := ctlplfl.XMLEncode(device)
-	if err != nil {
-		log.Error("failed to encode device cfg: ", err)
-		return err
-	}
-
-	res, err := ccf.doWrite("name=PutDeviceCfg", rqb)
-	if err != nil {
-		return err
-	}
-
-	log.Info("response from CP: ", string(res))
-
-	err = ctlplfl.XMLDecode(res, &resp)
-	if err != nil {
-		log.Error("failed to decode device cfg: ", err)
-		return err
-	}
-
-	if !resp.Success {
-		log.Error("failed to read device cfg: ", resp.Name)
-		return fmt.Errorf("failed to read device cfg: %s", resp.Name)
-	}
-
-	return nil
-}
-
-func (ccf *CliCFuncs) GetDeviceCfg(device string) (ctlplfl.DeviceInfo, error) {
-	var dev ctlplfl.DeviceInfo
-	var err error
-
-	dev.DevID = device
-
-	res, err := ccf.QueryPMDB(dev, "GetDeviceCfg", false)
-	if err != nil {
-		return dev, err
-	}
-
-	err = ctlplfl.XMLDecode(res, &dev)
-	if err != nil {
-		log.Error("failed to decode device cfg: ", err)
-		return dev, err
-	}
-	log.Info("response from CP: ", dev)
-	return dev, nil
-}
-
-func (ccf *CliCFuncs) PutNisdCfg(Nisd ctlplfl.Nisd) error {
-
-	res, err := ccf.QueryPMDB(Nisd, "PutNisdCfg", true)
-	if err != nil {
-		return err
-	}
-
-	var resp ctlplfl.ResponseXML
-	err = ctlplfl.XMLDecode(res, &resp)
-	if err != nil {
-		log.Error("failed to decode nisd cfg: ", err)
-		return err
-	}
-
-	if !resp.Success {
-		log.Error("failed to read nisd cfg: ", resp.Name)
-		return fmt.Errorf("failed to read nisd cfg: %s", resp.Name)
-	}
-
-	return nil
-}
-
-func (ccf *CliCFuncs) GetNisdCfgs(NisdID string) (ctlplfl.Nisd, error) {
-
-	var err error
-	ni := ctlplfl.Nisd{}
-	ni.NisdID = NisdID
-	res, err := ccf.QueryPMDB(ni, "GetNisdCfg", false)
-	if err != nil {
-		return ni, err
-	}
-
-	err = ctlplfl.XMLDecode(res, &ni)
-	if err != nil {
-		log.Error("failed to decode nisd details: ", err)
-		return ni, err
-	}
-
-	return ni, nil
-}
-
-func (ccf *CliCFuncs) QueryPMDB(key interface{}, method string, isWrite bool) ([]byte, error) {
-
-	urla := "/func?name=" + method
-	rqb, err := ctlplfl.XMLEncode(key)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Debug("Sending request to CP on endpoint: ", urla)
-	res, err := ccf.request(rqb, urla, isWrite)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Trace("query pmdb: ", res)
-	return res, nil
+func (ccf *CliCFuncs) GetNisdCfgs(ncfg *ctlplfl.Nisd) error {
+	urla := "name=GetNisdCfgs"
+	return ccf.get(ncfg, urla)
 }

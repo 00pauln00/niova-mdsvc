@@ -853,7 +853,7 @@ func main() {
 			log.Error("failed to unmarshal nisd json string:", err)
 		}
 		log.Info("writing nisd details to pmdb: ", nisd)
-		err := c.PutNisdCfg(nisd)
+		err := c.PutNisdCfg(&nisd)
 		if err != nil {
 			log.Error("failed to write nisd info:", err)
 		}
@@ -866,7 +866,7 @@ func main() {
 			log.Error("failed to unmarshal nisd json string:", err)
 		}
 		log.Info("writing device info into pmdb", dev)
-		err := c.PutDeviceCfg(dev)
+		err := c.PutDeviceCfg(&dev)
 		if err != nil {
 			log.Error("failed to write device info", err)
 		}
