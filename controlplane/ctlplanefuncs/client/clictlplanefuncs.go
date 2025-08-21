@@ -3,7 +3,6 @@ package clictlplanefuncs
 import (
 	"errors"
 	"fmt"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
 
@@ -20,17 +19,17 @@ const (
 
 // Client side interferace for control plane functions
 type CliCFuncs struct {
-	appUUID       string
-	writeSeq      uint64
-	sdObj         *sd.ServiceDiscoveryHandler
-	encType EncodeType	  
+	appUUID  string
+	writeSeq uint64
+	sdObj    *sd.ServiceDiscoveryHandler
+	encType  EncodeType
 }
 
 func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFuncs {
 	ccf := CliCFuncs{
 		appUUID:  appUUID,
 		writeSeq: uint64(0),
-		encType: XML, // Default encoding type
+		encType:  XML, // Default encoding type
 	}
 
 	ccf.sdObj = &sd.ServiceDiscoveryHandler{
@@ -84,7 +83,6 @@ func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 	return rsb, err
 }
 
-
 func (ccf *CliCFuncs) put(data interface{}, urla string) error {
 	rqb, err := ccf.encode(data)
 	if err != nil {
@@ -113,7 +111,7 @@ func (ccf *CliCFuncs) get(data interface{}, urla string) error {
 		log.Error("failed to encode data: ", err)
 		return err
 	}
-	
+
 	rsb, err := ccf.request(rqb, urla, false)
 	if err != nil {
 		log.Error("request failed: ", err)
@@ -128,7 +126,6 @@ func (ccf *CliCFuncs) get(data interface{}, urla string) error {
 
 	return nil
 }
-
 
 func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string) error {
 	urla := "name=CreateSnap"
@@ -195,7 +192,6 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-
 func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) error {
 	urla := "name=PutDeviceCfg"
 	return ccf.put(device, urla)
@@ -211,7 +207,7 @@ func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
 	return ccf.put(ncfg, urla)
 }
 
-func (ccf *CliCFuncs) GetNisdCfgs(ncfg *ctlplfl.Nisd) error {
-	urla := "name=GetNisdCfgs"
+func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
+	urla := "name=GetNisdCfg"
 	return ccf.get(ncfg, urla)
 }
