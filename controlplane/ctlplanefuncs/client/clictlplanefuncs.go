@@ -23,7 +23,6 @@ type CliCFuncs struct {
 	appUUID       string
 	writeSeq      uint64
 	sdObj         *sd.ServiceDiscoveryHandler
-	writePathLock sync.Mutex
 	encType EncodeType	  
 }
 
@@ -77,9 +76,6 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
 }
 
 func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
-	ccf.writePathLock.Lock()
-	defer ccf.writePathLock.Unlock()
-
 	rncui := fmt.Sprintf("%s:0:0:0:%d", ccf.appUUID, ccf.writeSeq)
 	ccf.writeSeq += 1
 	urla += "&rncui=" + rncui
