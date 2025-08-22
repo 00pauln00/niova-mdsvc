@@ -18,14 +18,14 @@ import (
 var colmfamily string
 
 const (
-	NISD_ID        = "NisdID"
-	SERIAL_NUM     = "SerialNumber"
-	STATUS         = "Status"
-	HV_ID          = "HyperVisorID"
-	FAILURE_DOMAIN = "FailureDomain"
-	CLIENT_PORT    = "ClientPort"
-	PEER_PORT      = "PeerPort"
-	IP_ADDR        = "IPAddr"
+	NISD_ID        = "n"
+	SERIAL_NUM     = "sn"
+	STATUS         = "s"
+	HV_ID          = "hv"
+	FAILURE_DOMAIN = "fd"
+	CLIENT_PORT    = "cp"
+	PEER_PORT      = "pp"
+	IP_ADDR        = "ip"
 )
 
 func decode(payload []byte, s interface{}) error {
@@ -210,7 +210,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
-		k := fmt.Sprintf("%s/%s", key, field)
+		k := fmt.Sprintf("%s/%s_", key, field)
 		if val, ok := readResult[k]; ok {
 			switch field {
 			case CLIENT_PORT:
@@ -269,7 +269,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s_", key, field)),
 			Value: []byte(value),
 		})
 	}
@@ -310,7 +310,7 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
-		k := fmt.Sprintf("%s/%s", key, field)
+		k := fmt.Sprintf("%s/%s_", key, field)
 		if val, ok := readResult[k]; ok {
 			log.Info("Value for key ", k, " : ", string(val))
 			switch field {
@@ -367,7 +367,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s_", k, field)),
 			Value: []byte(value),
 		})
 	}
