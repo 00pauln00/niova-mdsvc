@@ -191,7 +191,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := fmt.Sprintf("/n/%s/cfg", nisd.NisdID)
+	key := nisd.GetKey()
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -239,6 +239,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
+	key := nisd.GetKey()
 	// Schema: /n/{nisdID}/cfg/{field} : {value}
 	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
 		var value string
@@ -257,7 +258,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("/n/%s/cfg/%s", nisd.NisdID, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
 			Value: []byte(value),
 		})
 	}
@@ -289,8 +290,8 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	
-	key := fmt.Sprintf("/d/%s/cfg", dev.DevID)
+
+	key := dev.GetKey()
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -335,7 +336,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := fmt.Sprintf("/d/%s/cfg", dev.DevID)
+	k := dev.GetKey()
 	//Schema : /d/{devID}/cfg/{field} : {value}
 	commitChgs := make([]funclib.CommitChg, 0)
 	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {

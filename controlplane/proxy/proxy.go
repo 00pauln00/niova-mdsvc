@@ -525,7 +525,7 @@ Return(s) : error
 
 Description : Call back for PMDB read func requests to HTTP server.
 */
-func (handler *proxyHandler) ReadFuncHandlerCB(name string, xmlbody []byte, response *[]byte) error {
+func (handler *proxyHandler) ReadHandlerCB(name string, xmlbody []byte, response *[]byte) error {
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(xmlbody))
 	r := &funclib.FuncReq{Name: name, Args: xmlbody}
 	request := encode(PumiceDBCommon.PumiceRequest{
@@ -549,13 +549,13 @@ func (handler *proxyHandler) ReadFuncHandlerCB(name string, xmlbody []byte, resp
 
 /*
 Structure : proxyHandler
-Method    : WriteFuncHandlerCB
+Method    : WriteHandlerCB
 Arguments : string,
 Return(s) : error
 
 Description : Call back for PMDB write func requests to HTTP server.
 */
-func (handler *proxyHandler) WriteFuncHandlerCB(name string, rncui string, xmlbody []byte, response *[]byte) error {
+func (handler *proxyHandler) WriteHandlerCB(name string, rncui string, xmlbody []byte, response *[]byte) error {
 	log.Info("FuncHandlerCB called with name: ", name)
 	r := &funclib.FuncReq{Name: name, Args: xmlbody}
 	request := encode(PumiceDBCommon.PumiceRequest{
@@ -593,8 +593,8 @@ func (handler *proxyHandler) startHTTPServer() error {
 		PortRange:        handler.portRange,
 		PUTHandler:       handler.PutHandlerCB,
 		GETHandler:       handler.GetHandlerCB,
-		WriteFuncHandler: handler.WriteFuncHandlerCB,
-		ReadFuncHandler:  handler.ReadFuncHandlerCB,
+		WriteHandler:     handler.WriteHandlerCB,
+		ReadHandler:      handler.ReadHandlerCB,
 		PMDBServerConfig: handler.PMDBServerConfigByteMap,
 		RecvdPort:        &RecvdPort,
 		AppType:          "Proxy",

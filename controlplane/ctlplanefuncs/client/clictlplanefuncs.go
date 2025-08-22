@@ -83,13 +83,14 @@ func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 }
 
 func (ccf *CliCFuncs) put(data interface{}, urla string) error {
+	url := "name=" + urla
 	rqb, err := ccf.encode(data)
 	if err != nil {
 		log.Error("failed to encode data: ", err)
 		return err
 	}
 
-	rsb, err := ccf._put(urla, rqb)
+	rsb, err := ccf._put(url, rqb)
 	if err != nil {
 		return err
 	}
@@ -105,13 +106,14 @@ func (ccf *CliCFuncs) put(data interface{}, urla string) error {
 }
 
 func (ccf *CliCFuncs) get(data interface{}, urla string) error {
+	url := "name=" + urla
 	rqb, err := ccf.encode(data)
 	if err != nil {
 		log.Error("failed to encode data: ", err)
 		return err
 	}
 
-	rsb, err := ccf.request(rqb, urla, false)
+	rsb, err := ccf.request(rqb, url, false)
 	if err != nil {
 		log.Error("request failed: ", err)
 		return err
@@ -192,21 +194,17 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 }
 
 func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) error {
-	urla := "name=PutDeviceCfg"
-	return ccf.put(device, urla)
+	return ccf.put(device, ctlplfl.PUT_DEVICE)
 }
 
 func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
-	urla := "name=GetDeviceCfg"
-	return ccf.get(dev, urla)
+	return ccf.get(dev, ctlplfl.GET_DEVICE)
 }
 
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
-	urla := "name=PutNisdCfg"
-	return ccf.put(ncfg, urla)
+	return ccf.put(ncfg, ctlplfl.PUT_NISD)
 }
 
 func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
-	urla := "name=GetNisdCfg"
-	return ccf.get(ncfg, urla)
+	return ccf.get(ncfg, ctlplfl.GET_NISD)
 }

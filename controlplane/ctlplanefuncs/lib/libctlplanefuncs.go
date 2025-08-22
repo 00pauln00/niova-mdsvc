@@ -4,6 +4,14 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/xml"
+	"fmt"
+)
+
+const (
+	PUT_DEVICE = "PutDeviceCfg"
+	GET_DEVICE = "GetDeviceCfg"
+	PUT_NISD   = "PutNisdCfg"
+	GET_NISD   = "GetNisdCfg"
 )
 
 // Define Snapshot XML structure
@@ -49,6 +57,16 @@ type Nisd struct {
 	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
+}
+
+// we need validation methods to check the nisdID
+func (nisd *Nisd) GetKey() string {
+	return fmt.Sprintf("/n/%s/cfg", nisd.NisdID)
+}
+
+// we need validation methods to check the deviceID
+func (dev *DeviceInfo) GetKey() string {
+	return fmt.Sprintf("/d/%s/cfg", dev.DevID)
 }
 
 func GobDecode(payload []byte, s interface{}) error {
