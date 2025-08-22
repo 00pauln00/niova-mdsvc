@@ -17,6 +17,17 @@ import (
 
 var colmfamily string
 
+const (
+	NISD_ID        = "NisdID"
+	SERIAL_NUM     = "SerialNumber"
+	STATUS         = "Status"
+	HV_ID          = "HyperVisorID"
+	FAILURE_DOMAIN = "FailureDomain"
+	CLIENT_PORT    = "ClientPort"
+	PEER_PORT      = "PeerPort"
+	IP_ADDR        = "IPAddr"
+)
+
 func decode(payload []byte, s interface{}) error {
 	dec := gob.NewDecoder(bytes.NewBuffer(payload))
 	return dec.Decode(s)
@@ -191,28 +202,28 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := nisd.GetKey()
+	key := nisd.GetConfKey()
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
 
-	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
+	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
 		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			switch field {
-			case "ClientPort":
+			case CLIENT_PORT:
 				p, _ := strconv.Atoi(string(val))
 				nisd.ClientPort = uint16(p)
-			case "PeerPort":
+			case PEER_PORT:
 				p, _ := strconv.Atoi(string(val))
 				nisd.PeerPort = uint16(p)
-			case "HyperVisorID":
+			case HV_ID:
 				nisd.HyperVisorID = string(val)
-			case "FailureDomain":
+			case FAILURE_DOMAIN:
 				nisd.FailureDomain = string(val)
-			case "IPAddr":
+			case IP_ADDR:
 				nisd.IPAddr = string(val)
 			}
 		}
@@ -239,20 +250,20 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-	key := nisd.GetKey()
+	key := nisd.GetConfKey()
 	// Schema: /n/{nisdID}/cfg/{field} : {value}
-	for _, field := range []string{"ClientPort", "PeerPort", "HyperVisorID", "FailureDomain", "IPAddr"} {
+	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
 		var value string
 		switch field {
-		case "ClientPort":
+		case CLIENT_PORT:
 			value = strconv.Itoa(int(nisd.ClientPort))
-		case "PeerPort":
+		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
-		case "HyperVisorID":
+		case HV_ID:
 			value = nisd.HyperVisorID
-		case "FailureDomain":
+		case FAILURE_DOMAIN:
 			value = nisd.FailureDomain
-		case "IPAddr":
+		case IP_ADDR:
 			value = nisd.IPAddr
 		default:
 			continue
@@ -291,28 +302,28 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := dev.GetKey()
+	key := dev.GetConfKey()
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
 
-	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
+	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
 		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			log.Info("Value for key ", k, " : ", string(val))
 			switch field {
-			case "NisdID":
+			case NISD_ID:
 				dev.NisdID = string(val)
-			case "SerialNumber":
+			case SERIAL_NUM:
 				dev.SerialNumber = string(val)
-			case "Status":
+			case STATUS:
 				status, _ := strconv.Atoi(string(val))
 				dev.Status = uint16(status)
-			case "HyperVisorID":
+			case HV_ID:
 				dev.HyperVisorID = string(val)
-			case "FailureDomain":
+			case FAILURE_DOMAIN:
 				dev.FailureDomain = string(val)
 			}
 		}
@@ -336,21 +347,21 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := dev.GetKey()
+	k := dev.GetConfKey()
 	//Schema : /d/{devID}/cfg/{field} : {value}
 	commitChgs := make([]funclib.CommitChg, 0)
-	for _, field := range []string{"NisdID", "SerialNumber", "Status", "HyperVisorID", "FailureDomain"} {
+	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
 		var value string
 		switch field {
-		case "NisdID":
+		case NISD_ID:
 			value = dev.NisdID
-		case "SerialNumber":
+		case SERIAL_NUM:
 			value = dev.SerialNumber
-		case "Status":
+		case STATUS:
 			value = strconv.Itoa(int(dev.Status))
-		case "HyperVisorID":
+		case HV_ID:
 			value = dev.HyperVisorID
-		case "FailureDomain":
+		case FAILURE_DOMAIN:
 			value = dev.FailureDomain
 		default:
 			continue

@@ -61,12 +61,12 @@ type Nisd struct {
 }
 
 // we need validation methods to check the nisdID
-func (nisd *Nisd) GetKey() string {
+func (nisd *Nisd) GetConfKey() string {
 	return fmt.Sprintf("/n/%s/cfg", nisd.NisdID)
 }
 
 // we need validation methods to check the deviceID
-func (dev *DeviceInfo) GetKey() string {
+func (dev *DeviceInfo) GetConfKey() string {
 	return fmt.Sprintf("/d/%s/cfg", dev.DevID)
 }
 
