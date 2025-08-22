@@ -16,40 +16,8 @@ import (
 
 const GEN_CONF_FILE = "config-gen.yaml"
 
-type s3Config struct {
-	URL  string `yaml:"url"`
-	Opts string `yaml:"opts"`
-	Auth string `yaml:"auth"`
-}
-
-type NisdConfig struct {
-	DevID   string `yaml:"name"`
-	NisdID  string `yaml:"uuid"`
-	CPort   uint16 `yaml:"client_port"`
-	PPort   uint16 `yaml:"peer_port"`
-	InitDev bool   `yaml:"init"`
-}
-
-type Gossip struct {
-	IPAddr []string `yaml:"ipaddr"`
-	Ports  []uint16 `yaml:"ports"`
-}
-
-type NisdCntrConfig struct {
-	S3Config   s3Config      `yaml:"s3_config"`
-	Gossip     Gossip        `yaml:"gossip"`
-	NisdConfig []*NisdConfig `yaml:"nisd_config"`
-}
-
-func updateNisdConfig(nisdConf *NisdConfig, nisdCP cpLib.Nisd) {
-	nisdConf.DevID = nisdCP.DevID
-	nisdConf.NisdID = nisdCP.NisdID
-	nisdConf.CPort = nisdCP.ClientPort
-	nisdConf.PPort = nisdCP.PeerPort
-}
-
 // loadConfig loads config from file if present, otherwise creates a new one.
-func loadConfig(setupConfig string, cc *NisdCntrConfig) error {
+func loadConfig(setupConfig string, cc *cpLib.NisdCntrConfig) error {
 	if err := os.MkdirAll(filepath.Dir(setupConfig), os.ModePerm); err != nil {
 		return err
 	}
@@ -78,8 +46,8 @@ func main() {
 	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
-	var conf NisdCntrConfig
-	conf.NisdConfig = make([]*NisdConfig, 0)
+	var conf cpLib.NisdCntrConfig
+	conf.NisdConfig = make([]*cpLib.Nisd, 0)
 	err := loadConfig(*setupConfig, &conf)
 	if err != nil {
 		log.Error("failed to load or create config file: ", err)
@@ -96,16 +64,14 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Info("fetched device info from control plane: ", devInfo)
-		nisdCP := cpLib.Nisd{
-			DevID:  devInfo.DevID,
-			NisdID: devInfo.NisdID,
-		}
-		err = c.GetNisdCfg(&nisdCP)
+		nisd.NisdID = devInfo.NisdID
+		log.Info("fetched nisd info from control plane: ", nisd)
+		err = c.GetNisdCfg(nisd)
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
 			os.Exit(-1)
 		}
-		updateNisdConfig(nisd, nisdCP)
+		log.Info("fetched nisd info from control plane: ", nisd)
 	}
 
 	configY, err := yaml.Marshal(conf)

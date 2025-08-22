@@ -50,13 +50,14 @@ type DeviceInfo struct {
 }
 
 type Nisd struct {
-	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort"`
-	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort"`
-	NisdID        string `xml:"NisdID" json:"NisdID"`
-	DevID         string `xml:"DevID" json:"DevID"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
-	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
-	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
+	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
+	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
+	NisdID        string `xml:"NisdID" json:"NisdID" yaml:"uuid"`
+	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
+	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
+	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
+	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
+	InitDev       bool   `yaml:"init"`
 }
 
 // we need validation methods to check the nisdID
@@ -67,6 +68,23 @@ func (nisd *Nisd) GetKey() string {
 // we need validation methods to check the deviceID
 func (dev *DeviceInfo) GetKey() string {
 	return fmt.Sprintf("/d/%s/cfg", dev.DevID)
+}
+
+type s3Config struct {
+	URL  string `yaml:"url"`
+	Opts string `yaml:"opts"`
+	Auth string `yaml:"auth"`
+}
+
+type Gossip struct {
+	IPAddr []string `yaml:"ipaddr"`
+	Ports  []uint16 `yaml:"ports"`
+}
+
+type NisdCntrConfig struct {
+	S3Config   s3Config `yaml:"s3_config"`
+	Gossip     Gossip   `yaml:"gossip"`
+	NisdConfig []*Nisd  `yaml:"nisd_config"`
 }
 
 func GobDecode(payload []byte, s interface{}) error {

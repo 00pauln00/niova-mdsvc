@@ -134,7 +134,6 @@ func main() {
 	funcAPI.RegisterWritePrepFunc("PutDeviceCfg", srvctlplanefuncs.WPDeviceCfg)
 	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
 	funcAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
-	// funcAPI.RegisterReadFunc("ReadNisdConfig", srvctlplanefuncs.ReadNisdConfig)
 	funcAPI.RegisterReadFunc("GetNisdCfg", srvctlplanefuncs.RdNisdCfg)
 	funcAPI.RegisterReadFunc("GetDeviceCfg", srvctlplanefuncs.RdDeviceCfg)
 	funcAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
