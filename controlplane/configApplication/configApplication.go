@@ -15,23 +15,23 @@ import (
 	"time"
 
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
-	pmdbClient "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
-	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
-	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
-	serfClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfclient"
+	pmdbc "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
+	pmdbCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	cmpLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	serfc "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfclient"
 
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 )
 
 type configApplication struct {
-	pmdbClientObj         *pmdbClient.PmdbClientObj
+	pmdbClientObj         *pmdbc.PmdbClientObj
 	clientUUID            string
 	raftUUID              string
 	portRange             string
 	gossipNodesFile       string
 	read                  bool
-	PMDBServerConfigArray []PumiceDBCommon.PeerConfigData
+	PMDBServerConfigArray []pmdbCmn.PeerConfigData
 }
 
 func (handler *configApplication) getCmdLineArgs() {
@@ -125,7 +125,7 @@ func (handler *configApplication) dumpConfigToFile(outfilepath string) error {
 
 func (handler *configApplication) GetPMDBServerConfig() error {
 	//Init serf client
-	serfClientObj := serfClient.SerfClientHandler{}
+	serfClientObj := serfc.SerfClientHandler{}
 	serfClientObj.InitData(handler.gossipNodesFile, handler.raftUUID)
 
 	//Iterate till getting PMDB config data from serf gossip
@@ -156,10 +156,10 @@ func (handler *configApplication) GetPMDBServerConfig() error {
 
 	//Get PMDB config from the map
 	for key, value := range pmdbServerGossip {
-		_, err := compressionLib.DecompressUUID(key)
+		_, err := cmpLib.DecompressUUID(key)
 		if err == nil {
-			peerConfig := PumiceDBCommon.PeerConfigData{}
-			compressionLib.DecompressStructure(&peerConfig, key+value)
+			peerConfig := pmdbCmn.PeerConfigData{}
+			cmpLib.DecompressStructure(&peerConfig, key+value)
 			log.Info("Peer config : ", peerConfig)
 			handler.PMDBServerConfigArray = append(handler.PMDBServerConfigArray, peerConfig)
 		}
@@ -177,7 +177,7 @@ func (handler *configApplication) startPMDBClient() error {
 	fmt.Println("Raft uuid : ", handler.raftUUID)
 	//handler.raftUUID = "c077b532-44f2-11ed-822f-72e5126963a0"
 	//Get client object
-	handler.pmdbClientObj = pmdbClient.PmdbClientNew(handler.raftUUID, handler.clientUUID)
+	handler.pmdbClientObj = pmdbc.PmdbClientNew(handler.raftUUID, handler.clientUUID)
 	if handler.pmdbClientObj == nil {
 		return errors.New("PMDB client object is empty")
 	}
@@ -213,7 +213,7 @@ func (handler *configApplication) Write(key string, data []byte) error {
 
 	enc := gob.NewEncoder(&requestBytes)
 	enc.Encode(request)
-	reqArgs := &pmdbClient.PmdbReqArgs{
+	reqArgs := &pmdbc.PmdbReqArgs{
 		Rncui:       request.Rncui,
 		ReqByteArr:  requestBytes.Bytes(),
 		GetResponse: 0,
@@ -231,7 +231,7 @@ func (handler *configApplication) Read(key string, response *[]byte) error {
 	var requestBytes bytes.Buffer
 	enc := gob.NewEncoder(&requestBytes)
 	enc.Encode(request)
-	reqArgs := &pmdbClient.PmdbReqArgs{
+	reqArgs := &pmdbc.PmdbReqArgs{
 		Rncui:      "",
 		ReqByteArr: requestBytes.Bytes(),
 		Response:   response,
