@@ -18,19 +18,22 @@ const GEN_CONF_FILE = "config-gen.yaml"
 
 // loadConfig loads config from file if present, otherwise creates a new one.
 func loadConfig(setupConfig string, cc *cpLib.NisdCntrConfig) error {
+
 	if err := os.MkdirAll(filepath.Dir(setupConfig), os.ModePerm); err != nil {
 		return err
 	}
-
-	if _, err := os.Stat(setupConfig); err == nil {
-		data, err := os.ReadFile(setupConfig)
-		if err != nil {
-			return err
-		}
-		if err := yaml.Unmarshal(data, cc); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
+	_, err := os.Stat(setupConfig)
+	if err != nil {
+		log.Error("failed to stat config file: ", err)
+		return err
+	}
+	data, err := os.ReadFile(setupConfig)
+	if err != nil {
+		log.Error("failed to read config file: ", err)
+		return err
+	}
+	if err := yaml.Unmarshal(data, cc); err != nil {
+		log.Error("failed to unmarshal config file: ", err)
 		return err
 	}
 
@@ -50,7 +53,7 @@ func main() {
 	conf.NisdConfig = make([]*cpLib.Nisd, 0)
 	err := loadConfig(*setupConfig, &conf)
 	if err != nil {
-		log.Error("failed to load or create config file: ", err)
+		log.Error("failed to load config file: ", err)
 		os.Exit(-1)
 	}
 
@@ -63,15 +66,14 @@ func main() {
 			log.Error("failed to get device uuid", err)
 			os.Exit(-1)
 		}
-		log.Info("fetched device info from control plane: ", devInfo)
+		log.Debug("fetched device info from control plane: ", devInfo)
 		nisd.NisdID = devInfo.NisdID
-		log.Info("fetched nisd info from control plane: ", nisd)
 		err = c.GetNisdCfg(nisd)
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
 			os.Exit(-1)
 		}
-		log.Info("fetched nisd info from control plane: ", nisd)
+		log.Debug("fetched nisd info from control plane: ", nisd)
 	}
 
 	configY, err := yaml.Marshal(conf)
