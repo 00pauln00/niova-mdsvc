@@ -128,21 +128,21 @@ func main() {
 
 	//Wait till HTTP Server has started
 	srvctlplanefuncs.SetClmFamily(colmfamily)
-	funcAPI := PumiceDBFunc.NewFuncServer()
-	funcAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
-	funcAPI.RegisterWritePrepFunc("PutNisdCfg", srvctlplanefuncs.WPNisdCfg)
-	funcAPI.RegisterWritePrepFunc("PutDeviceCfg", srvctlplanefuncs.WPDeviceCfg)
-	funcAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
-	funcAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
-	funcAPI.RegisterReadFunc("GetNisdCfg", srvctlplanefuncs.RdNisdCfg)
-	funcAPI.RegisterReadFunc("GetDeviceCfg", srvctlplanefuncs.RdDeviceCfg)
-	funcAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
+	cpAPI := PumiceDBFunc.NewFuncServer()
+	cpAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
+	cpAPI.RegisterWritePrepFunc("PutNisdCfg", srvctlplanefuncs.WPNisdCfg)
+	cpAPI.RegisterWritePrepFunc("PutDeviceCfg", srvctlplanefuncs.WPDeviceCfg)
+	cpAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
+	cpAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
+	cpAPI.RegisterReadFunc("GetNisdCfg", srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc("GetDeviceCfg", srvctlplanefuncs.RdDeviceCfg)
+	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
 		PeerUuid:       nso.peerUuid.String(),
 		PmdbAPI:        nso,
-		FuncAPI:        funcAPI,
+		FuncAPI:        cpAPI,
 		SyncWrites:     false,
 		CoalescedWrite: true,
 		LeaseEnabled:   true,

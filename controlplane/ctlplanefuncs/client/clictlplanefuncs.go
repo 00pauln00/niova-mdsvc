@@ -41,7 +41,7 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
 
-	log.Info("Init CP functions successfull: ", appUUID)
+	log.Info("Successfully initialized controlplane client: ", appUUID)
 	return &ccf
 }
 
@@ -60,7 +60,7 @@ func (ccf *CliCFuncs) decode(bin []byte, st interface{}) error {
 	} else if ccf.encType == XML {
 		return ctlplfl.XMLDecode(bin, st)
 	}
-	return errors.New("unsupported encoding type")
+	return errors.New("unsupported decoding type")
 }
 
 func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, error) {
@@ -92,6 +92,7 @@ func (ccf *CliCFuncs) put(data interface{}, urla string) error {
 
 	rsb, err := ccf._put(url, rqb)
 	if err != nil {
+		log.Error("failed to send request(_put): ", err)
 		return err
 	}
 
