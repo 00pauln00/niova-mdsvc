@@ -12,7 +12,10 @@ jobs:
     continue-on-error: true
     steps:
     - uses: actions/checkout@v4
-
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
+    
     - name: apt update
       run: sudo apt update
 
@@ -22,9 +25,9 @@ jobs:
     # Install golang
     - name: Install golang 1.20.3
       run: sudo rm -rf /usr/bin/go &&
-           sudo wget https://golang.org/dl/go1.20.3.linux-amd64.tar.gz &&
+           sudo wget https://golang.org/dl/go1.23.0.linux-amd64.tar.gz &&
            sudo mkdir /home/runner/work/go &&
-           sudo tar -C /home/runner/work/go -xzf  go1.20.3.linux-amd64.tar.gz &&
+           sudo tar -C /home/runner/work/go -xzf  go1.23.0.linux-amd64.tar.gz &&
            export PATH=$PATH:/home/runner/work/go/go/bin &&
            go version
 
@@ -32,38 +35,55 @@ jobs:
     - name: Install Ansible
       run:  pip3 install ansible
 
-    - name: make
-      run: ./prepare.sh &&
-           ./configure --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-devel &&
-           make clean && make && make install
+    # Install python libraries
+    - name: Install python libraries
+      run:  pip3 install setuptools wheel func_timeout sockets psutil dpath jmespath
+
+    - name: build libbacktrace
+      run: cd modules/niova-pumicedb/modules/libbacktrace/ && 
+           ./configure && 
+           make && sudo make install
+
+    # Build niova-core for niova-raft
+    - name: Build niova-core
+      run: cd modules/niova-pumicedb/modules/niova-raft/modules/niova-core/ && 
+           ./prepare.sh && 
+           ./configure --enable-devel --prefix=/home/runner/work/niovad/niovad/build_dir/ && 
+           make -j 4 && 
+           make -j 4 check && 
+           make install
+
+    - name: Build niova-raft
+      run: cd modules/niova-pumicedb/modules/niova-raft/ &&
+           ./prepare.sh &&
+           ./configure --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-devel &&
+           make clean && 
+           make -j 4 && 
+           make install
+
+    - name: Build niova-pumicedb
+      run: cd modules/niova-pumicedb/ &&
+           ./prepare.sh &&
+           ./configure --enable-devel --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ &&
+           make clean && make -j 4 && make install
+    
+    - name: Build go applications using makefile
+      run: export PATH=$PATH:/home/runner/work/go/go/bin && make -e DIR=/home/runner/work/niovad/niovad/build_dir
+
       env:
         LD_LIBRARY_PATH: /home/runner/work/niovad/niovad/build_dir/lib
 
-    - name: Build go applications using makefile
-      run: export PATH=$PATH:/home/runner/work/go/go/bin &&
-           cd go/controlPlane
-           && cd ncpc/ && go mod tidy && cd ..
-           && cd pmdbServer && go mod tidy && cd ..
-           && cd proxy && go mod tidy && cd ..
-           && make install_only -e DIR=/home/runner/work/niovad/niovad/build_dir
-
     - name: Copy script to run recipes
       run: cp scripts/run-recipes.sh /home/runner/work/niovad/niovad/build_dir/ &&
-           cp scripts/control_plane_recipes.txt /home/runner/work/niovad/niovad/build_dir/
+           cp scripts/controlplane_recipes.txt /home/runner/work/niovad/niovad/build_dir/
 
     # Checkout holon repo
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
        repository: 00pauln00/holon
-       #ref:
-       token: ${{ secrets.HOLON_NIOVA_CI_21_12_2020 }} # 'GitHub_PAT' is a secret that contains your PAT
+       ref: control_plane_recipe_fix
        path: ./holon
-
-    #Build nisd monitor
-    - name: Build nisd lookout monitor
-      run:  export PATH=$PATH:/home/runner/work/go/go/bin &&
-            cd go/lookout/nisdMonitor && go build && cp nisdLookout /home/runner/work/niovad/niovad/build_dir/libexec/niova
 
     - name: Copy holon repo
       run: cp -r ./holon /home/runner/work/niovad/niovad/build_dir/
@@ -76,7 +96,8 @@ jobs:
            export GOCOVERDIR=/work/niovad/niovad/code_cov
 
     - name:  run recipes for controlplane application
-      run: cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
+      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
+            cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
            ../run-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon'
                              '/home/runner/work/niovad/niovad/build_dir'
                              '/home/runner/work/niovad/niovad/holon_log' 5
