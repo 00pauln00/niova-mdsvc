@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
 
@@ -47,7 +48,7 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 
 func (ccf *CliCFuncs) encode(data interface{}) ([]byte, error) {
 	if ccf.encType == GoBinary {
-		return ctlplfl.GobEncode(data)
+		return pmCmn.GobEncode(data)
 	} else if ccf.encType == XML {
 		return ctlplfl.XMLEncode(data)
 	}
@@ -56,7 +57,7 @@ func (ccf *CliCFuncs) encode(data interface{}) ([]byte, error) {
 
 func (ccf *CliCFuncs) decode(bin []byte, st interface{}) error {
 	if ccf.encType == GoBinary {
-		return ctlplfl.GobDecode(bin, st)
+		return pmCmn.GobDecode(bin, st)
 	} else if ccf.encType == XML {
 		return ctlplfl.XMLDecode(bin, st)
 	}

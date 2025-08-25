@@ -1,10 +1,10 @@
 package libctlplanefuncs
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/xml"
 	"fmt"
+
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 )
 
 const (
@@ -76,30 +76,10 @@ type s3Config struct {
 	Auth string `yaml:"auth"`
 }
 
-type Gossip struct {
-	IPAddr []string `yaml:"ipaddr"`
-	Ports  []uint16 `yaml:"ports"`
-}
-
 type NisdCntrConfig struct {
-	S3Config   s3Config `yaml:"s3_config"`
-	Gossip     Gossip   `yaml:"gossip"`
-	NisdConfig []*Nisd  `yaml:"nisd_config"`
-}
-
-func GobDecode(payload []byte, s interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(payload))
-	return dec.Decode(s)
-}
-
-func GobEncode(s interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	S3Config   s3Config         `yaml:"s3_config"`
+	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
+	NisdConfig []*Nisd          `yaml:"nisd_config"`
 }
 
 func XMLEncode(data interface{}) ([]byte, error) {
