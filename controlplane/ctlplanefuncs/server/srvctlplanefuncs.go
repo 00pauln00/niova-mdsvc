@@ -6,15 +6,27 @@ import (
 	"encoding/gob"
 	"encoding/xml"
 	"fmt"
+	"strconv"
+	"strings"
+
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	log "github.com/sirupsen/logrus"
-	"strconv"
-	"strings"
 )
 
 var colmfamily string
+
+const (
+	NISD_ID        = "n"
+	SERIAL_NUM     = "sn"
+	STATUS         = "s"
+	HV_ID          = "hv"
+	FAILURE_DOMAIN = "fd"
+	CLIENT_PORT    = "cp"
+	PEER_PORT      = "pp"
+	IP_ADDR        = "ip"
+)
 
 func decode(payload []byte, s interface{}) error {
 	dec := gob.NewDecoder(bytes.NewBuffer(payload))
@@ -177,4 +189,205 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	}
 	//Empty return for the interface as we are filling the reply buf in the function
 	return intrm.Response, nil
+}
+
+func RdNisdCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var nisd ctlplfl.Nisd
+	// Decode the input buffer into structure format
+	err := ctlplfl.XMLDecode(args[1].([]byte), &nisd)
+	if err != nil {
+		log.Errorf("failed xml decode:", err)
+		return nil, err
+	}
+
+	key := nisd.GetConfKey()
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+
+	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
+		k := fmt.Sprintf("%s/%s_", key, field)
+		if val, ok := readResult[k]; ok {
+			switch field {
+			case CLIENT_PORT:
+				p, _ := strconv.Atoi(string(val))
+				nisd.ClientPort = uint16(p)
+			case PEER_PORT:
+				p, _ := strconv.Atoi(string(val))
+				nisd.PeerPort = uint16(p)
+			case HV_ID:
+				nisd.HyperVisorID = string(val)
+			case FAILURE_DOMAIN:
+				nisd.FailureDomain = string(val)
+			case IP_ADDR:
+				nisd.IPAddr = string(val)
+			}
+		}
+	}
+
+	log.Debug("Read nisd config: ", nisd)
+	response, err := ctlplfl.XMLEncode(nisd)
+	if err != nil {
+		log.Error("failed to encode nisd config:", err)
+		return nil, fmt.Errorf("failed to encode nisd config: %v", err)
+	}
+
+	log.Debug("range read nisd config result: ", response)
+	return response, nil
+}
+
+func WPNisdCfg(args ...interface{}) (interface{}, error) {
+
+	var nisd ctlplfl.Nisd
+
+	err := ctlplfl.XMLDecode(args[0].([]byte), &nisd)
+	if err != nil {
+		return nil, err
+	}
+
+	commitChgs := make([]funclib.CommitChg, 0)
+	key := nisd.GetConfKey()
+	// Schema: /n/{nisdID}/cfg/{field} : {value}
+	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
+		var value string
+		switch field {
+		case CLIENT_PORT:
+			value = strconv.Itoa(int(nisd.ClientPort))
+		case PEER_PORT:
+			value = strconv.Itoa(int(nisd.PeerPort))
+		case HV_ID:
+			value = nisd.HyperVisorID
+		case FAILURE_DOMAIN:
+			value = nisd.FailureDomain
+		case IP_ADDR:
+			value = nisd.IPAddr
+		default:
+			continue
+		}
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s_", key, field)),
+			Value: []byte(value),
+		})
+	}
+	//Fill the response structure
+	nisdResponse := ctlplfl.ResponseXML{
+		Name:    nisd.DevID,
+		Success: true,
+	}
+
+	r, err := ctlplfl.XMLEncode(nisdResponse)
+	if err != nil {
+		log.Error("Failed to marshal nisd response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
+}
+
+func RdDeviceCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var dev ctlplfl.DeviceInfo
+	// Decode the input buffer into structure format
+	err := ctlplfl.XMLDecode(args[1].([]byte), &dev)
+	if err != nil {
+		return nil, err
+	}
+
+	key := dev.GetConfKey()
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+
+	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
+		k := fmt.Sprintf("%s/%s_", key, field)
+		if val, ok := readResult[k]; ok {
+			log.Info("Value for key ", k, " : ", string(val))
+			switch field {
+			case NISD_ID:
+				dev.NisdID = string(val)
+			case SERIAL_NUM:
+				dev.SerialNumber = string(val)
+			case STATUS:
+				status, _ := strconv.Atoi(string(val))
+				dev.Status = uint16(status)
+			case HV_ID:
+				dev.HyperVisorID = string(val)
+			case FAILURE_DOMAIN:
+				dev.FailureDomain = string(val)
+			}
+		}
+	}
+
+	response, err := ctlplfl.XMLEncode(dev)
+	if err != nil {
+		log.Error("failed to encode device config:", err)
+		return nil, fmt.Errorf("failed to encode device config: %v", err)
+	}
+
+	return response, nil
+}
+
+func WPDeviceCfg(args ...interface{}) (interface{}, error) {
+
+	var dev ctlplfl.DeviceInfo
+
+	err := ctlplfl.XMLDecode(args[0].([]byte), &dev)
+	if err != nil {
+		return nil, err
+	}
+
+	k := dev.GetConfKey()
+	//Schema : /d/{devID}/cfg/{field} : {value}
+	commitChgs := make([]funclib.CommitChg, 0)
+	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
+		var value string
+		switch field {
+		case NISD_ID:
+			value = dev.NisdID
+		case SERIAL_NUM:
+			value = dev.SerialNumber
+		case STATUS:
+			value = strconv.Itoa(int(dev.Status))
+		case HV_ID:
+			value = dev.HyperVisorID
+		case FAILURE_DOMAIN:
+			value = dev.FailureDomain
+		default:
+			continue
+		}
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s_", k, field)),
+			Value: []byte(value),
+		})
+	}
+
+	// TODO: use a common response struct for all the read functions
+	nisdResponse := ctlplfl.ResponseXML{
+		Name:    dev.DevID,
+		Success: true,
+	}
+
+	r, err := ctlplfl.XMLEncode(nisdResponse)
+	if err != nil {
+		log.Error("Failed to marshal nisd response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+
+	//Fill in FuncIntrm structure
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
 }
