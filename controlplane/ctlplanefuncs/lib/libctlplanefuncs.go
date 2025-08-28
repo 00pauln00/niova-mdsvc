@@ -60,19 +60,19 @@ type Nisd struct {
 	InitDev       bool   `yaml:"init"`
 }
 
-type NisdChunk {
-	Nisd 	*Nisd
-	Chunk 	[]int
+type NisdChunk struct {
+	Nisd  *Nisd
+	Chunk []int
 }
 
 type Vdev struct {
-	VdevID        	string
-	NisdToChkMap  	map[string]NisdChunk
-	Size          	uint64
-	NumChunks     	uint32
-	NumReplica    	uint8
-	NumDataBlk    	uint8
-	NumParityBlk  	uint8
+	VdevID       string
+	NisdToChkMap map[string]NisdChunk
+	Size         uint64
+	NumChunks    uint32
+	NumReplica   uint8
+	NumDataBlk   uint8
+	NumParityBlk uint8
 }
 
 // we need validation methods to check the nisdID
