@@ -1,4 +1,4 @@
-package main
+package pmdbServer
 
 import (
 	"bufio"
@@ -70,9 +70,9 @@ type pmdbServerHandler struct {
 	portRange         []uint16
 }
 
-func main() {
+func Run(args []string) {
 	serverHandler := pmdbServerHandler{}
-	nso, pErr := serverHandler.parseArgs()
+	nso, pErr := serverHandler.parseArgs(args)
 	if pErr != nil {
 		log.Println(pErr)
 		return
@@ -236,22 +236,23 @@ func (handler *pmdbServerHandler) checkHTTPLiveness() {
 	}
 }
 
-func (handler *pmdbServerHandler) parseArgs() (*NiovaKVServer, error) {
+func (handler *pmdbServerHandler) parseArgs(args []string) (*NiovaKVServer, error) {
 	var tempRaftUUID, tempPeerUUID string
 	var err error
 
-	flag.StringVar(&tempRaftUUID, "r", "NULL", "raft uuid")
-	flag.StringVar(&tempPeerUUID, "u", "NULL", "peer uuid")
+	fs := flag.NewFlagSet("PMDBServer", flag.ContinueOnError)
+	fs.StringVar(&tempRaftUUID, "r", "NULL", "raft uuid")
+	fs.StringVar(&tempPeerUUID, "u", "NULL", "peer uuid")
 
 	/* If log path is not provided, it will use Default log path.
 	   default log path: /tmp/<peer-uuid>.log
 	*/
 	defaultLog := "/" + "tmp" + "/" + handler.peerUUID.String() + ".log"
-	flag.StringVar(&handler.logDir, "l", defaultLog, "log dir")
-	flag.StringVar(&handler.logLevel, "ll", "Info", "Log level")
-	flag.StringVar(&handler.gossipClusterFile, "g", "NULL", "Serf agent port")
-	flag.BoolVar(&handler.prometheus, "p", false, "Enable prometheus")
-	flag.Parse()
+	fs.StringVar(&handler.logDir, "l", defaultLog, "log dir")
+	fs.StringVar(&handler.logLevel, "ll", "Info", "Log level")
+	fs.StringVar(&handler.gossipClusterFile, "g", "NULL", "Serf agent port")
+	fs.BoolVar(&handler.prometheus, "p", false, "Enable prometheus")
+	fs.Parse(args)
 
 	handler.raftUUID, _ = uuid.FromString(tempRaftUUID)
 	handler.peerUUID, _ = uuid.FromString(tempPeerUUID)
