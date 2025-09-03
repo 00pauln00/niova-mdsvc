@@ -209,6 +209,6 @@ func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
 	return ccf.get(ncfg, ctlplfl.GET_NISD)
 }
 
-func (ccf *CliCFuncs) CreateVdev() error {
-	return ccf.get(nil, ctlplfl.CREATE_VDEV)
+func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
+	return ccf.put(vdev, ctlplfl.CREATE_VDEV)
 }

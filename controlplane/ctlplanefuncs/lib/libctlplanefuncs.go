@@ -5,14 +5,17 @@ import (
 	"fmt"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
-	PUT_DEVICE  = "PutDeviceCfg"
-	GET_DEVICE  = "GetDeviceCfg"
-	PUT_NISD    = "PutNisdCfg"
-	GET_NISD    = "GetNisdCfg"
-	CREATE_VDEV = "CreateVdev"
+	PUT_DEVICE    = "PutDeviceCfg"
+	GET_DEVICE    = "GetDeviceCfg"
+	PUT_NISD      = "PutNisdCfg"
+	GET_NISD      = "GetNisdCfg"
+	GET_NISD_LIST = "GetAllNisd"
+	CREATE_VDEV   = "CreateVdev"
 )
 
 // Define Snapshot XML structure
@@ -69,8 +72,8 @@ type NisdChunk struct {
 }
 
 type Vdev struct {
-	VdevID       string
-	NisdToChkMap map[string]NisdChunk
+	VdevID string
+	// NisdToChkMap map[string]NisdChunk
 	Size         uint64
 	NumChunks    uint32
 	NumReplica   uint8
@@ -86,6 +89,29 @@ func (nisd *Nisd) GetConfKey() string {
 // we need validation methods to check the deviceID
 func (dev *DeviceInfo) GetConfKey() string {
 	return fmt.Sprintf("/d/%s/cfg", dev.DevID)
+}
+
+func (vdev *Vdev) GetConfKey() string {
+	return fmt.Sprintf("/v/cfg/%s/", vdev.VdevID)
+}
+
+func (vdev *Vdev) GetVdevChunkKey() string {
+	return fmt.Sprintf("/v/%s/c", vdev.VdevID)
+}
+
+func (vdev *Vdev) Init() error {
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		log.Error("failed to generate uuid:", err)
+		return err
+	}
+	vdev.VdevID = id.String()
+	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
+	vdev.NumReplica = 1
+	vdev.NumDataBlk = 0
+	vdev.NumParityBlk = 0
+	return nil
 }
 
 type s3Config struct {
@@ -106,4 +132,9 @@ func XMLEncode(data interface{}) ([]byte, error) {
 
 func XMLDecode(bin []byte, st interface{}) error {
 	return xml.Unmarshal(bin, &st)
+}
+
+func Count8GBChunks(size uint64) uint64 {
+	const chunkSize = 8 * 1024 * 1024 * 1024 // 8 GB in bytes
+	return size / chunkSize
 }
