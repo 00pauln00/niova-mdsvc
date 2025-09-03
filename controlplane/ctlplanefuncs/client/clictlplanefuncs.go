@@ -120,13 +120,11 @@ func (ccf *CliCFuncs) get(data interface{}, urla string) error {
 		log.Error("request failed: ", err)
 		return err
 	}
-
 	err = ccf.decode(rsb, data)
 	if err != nil {
 		log.Error("failed to decode response: ", err)
 		return err
 	}
-
 	return nil
 }
 
@@ -209,4 +207,8 @@ func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
 
 func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
 	return ccf.get(ncfg, ctlplfl.GET_NISD)
+}
+
+func (ccf *CliCFuncs) CreateVdev() error {
+	return ccf.get(nil, ctlplfl.CREATE_VDEV)
 }

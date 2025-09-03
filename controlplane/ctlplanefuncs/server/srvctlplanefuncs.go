@@ -18,6 +18,7 @@ import (
 var colmfamily string
 
 const (
+	DEVICE_NAME    = "d"
 	NISD_ID        = "n"
 	SERIAL_NUM     = "sn"
 	STATUS         = "s"
@@ -26,6 +27,12 @@ const (
 	CLIENT_PORT    = "cp"
 	PEER_PORT      = "pp"
 	IP_ADDR        = "ip"
+	TOTAL_SPACE    = "ts"
+	AVAIL_SPACE    = "as"
+
+	UUID_PREFIX     = 3
+	CONF_PREFIX     = 4
+	NISD_PREFIX_LEN = 5
 )
 
 func decode(payload []byte, s interface{}) error {
@@ -209,8 +216,8 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
-		k := fmt.Sprintf("%s/%s_", key, field)
+	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
+		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			switch field {
 			case CLIENT_PORT:
@@ -225,11 +232,17 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 				nisd.FailureDomain = string(val)
 			case IP_ADDR:
 				nisd.IPAddr = string(val)
+			case TOTAL_SPACE:
+				ts, _ := strconv.Atoi(string(val))
+				nisd.TotalSize = int64(ts)
+			case AVAIL_SPACE:
+				as, _ := strconv.Atoi(string(val))
+				nisd.TotalSize = int64(as)
+
 			}
 		}
 	}
 
-	log.Debug("Read nisd config: ", nisd)
 	response, err := ctlplfl.XMLEncode(nisd)
 	if err != nil {
 		log.Error("failed to encode nisd config:", err)
@@ -238,6 +251,67 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 
 	log.Debug("range read nisd config result: ", response)
 	return response, nil
+}
+
+func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
+	switch opt {
+
+	case DEVICE_NAME:
+		nisd.DevID = val
+	case CLIENT_PORT:
+		p, _ := strconv.Atoi(val)
+		nisd.ClientPort = uint16(p)
+	case PEER_PORT:
+		p, _ := strconv.Atoi(val)
+		nisd.PeerPort = uint16(p)
+	case HV_ID:
+		nisd.HyperVisorID = val
+	case FAILURE_DOMAIN:
+		nisd.FailureDomain = val
+	case IP_ADDR:
+		nisd.IPAddr = val
+	case TOTAL_SPACE:
+		ts, _ := strconv.Atoi(val)
+		nisd.TotalSize = int64(ts)
+	case AVAIL_SPACE:
+		as, _ := strconv.Atoi(val)
+		nisd.AvailableSize = int64(as)
+
+	}
+
+}
+
+func RdNisdCfgs(cbArgs *PumiceDBServer.PmdbCbArgs) ([]*ctlplfl.Nisd, error) {
+	key := "/n/cfg/"
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	nisdMap := make(map[string]*ctlplfl.Nisd)
+	nisdList := make([]*ctlplfl.Nisd, 0)
+	log.Info("read result: ", readResult)
+
+	for key, val := range readResult {
+		res := strings.Split(key, "/")
+		if len(res) < NISD_PREFIX_LEN {
+			continue
+		}
+		if nisd, ok := nisdMap[res[UUID_PREFIX]]; !ok {
+			nisd := &ctlplfl.Nisd{
+				NisdID: res[UUID_PREFIX],
+			}
+			populateNisd(nisd, res[CONF_PREFIX], string(val))
+			nisdList = append(nisdList, nisd)
+			nisdMap[res[UUID_PREFIX]] = nisd
+		} else {
+			if len(nisdList) > 0 {
+				populateNisd(nisd, res[CONF_PREFIX], string(val))
+			}
+		}
+
+	}
+	return nisdList, nil
 }
 
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
@@ -252,7 +326,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	key := nisd.GetConfKey()
 	// Schema: /n/{nisdID}/cfg/{field} : {value}
-	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR} {
+	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		var value string
 		switch field {
 		case CLIENT_PORT:
@@ -265,11 +339,17 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 			value = nisd.FailureDomain
 		case IP_ADDR:
 			value = nisd.IPAddr
+		case TOTAL_SPACE:
+			value = strconv.Itoa(int(nisd.TotalSize))
+		case AVAIL_SPACE:
+			value = strconv.Itoa(int(nisd.AvailableSize))
+		case DEVICE_NAME:
+			value = nisd.DevID
 		default:
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s_", key, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
 			Value: []byte(value),
 		})
 	}
@@ -310,7 +390,7 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
-		k := fmt.Sprintf("%s/%s_", key, field)
+		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			log.Info("Value for key ", k, " : ", string(val))
 			switch field {
@@ -367,7 +447,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s_", k, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
 			Value: []byte(value),
 		})
 	}
@@ -390,4 +470,18 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		Response: r,
 	}
 	return encode(funcIntrm)
+}
+
+func CreateVdev(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	nisdList, err := RdNisdCfgs(cbArgs)
+	if err != nil {
+		log.Error("failed to get nisd list:", err)
+		return nil, err
+	}
+	for _, v := range nisdList {
+		log.Infof("nisd info: %+v", *v)
+
+	}
+	return nil, nil
 }
