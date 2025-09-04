@@ -210,5 +210,23 @@ func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev, ctlplfl.CREATE_VDEV)
+	url := "name=" + ctlplfl.CREATE_VDEV
+	rqb, err := ccf.encode(vdev)
+	if err != nil {
+		log.Error("failed to encode data: ", err)
+		return err
+	}
+
+	rsb, err := ccf._put(url, rqb)
+	if err != nil {
+		log.Error("failed to send request(_put): ", err)
+		return err
+	}
+
+	err = ccf.decode(rsb, vdev)
+	if err != nil {
+		log.Error("failed to decode response: ", err)
+		return err
+	}
+	return nil
 }

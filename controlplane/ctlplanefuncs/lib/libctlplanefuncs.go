@@ -74,7 +74,7 @@ type NisdChunk struct {
 type Vdev struct {
 	VdevID       string
 	NisdToChkMap []NisdChunk
-	Size         uint64
+	Size         int64
 	NumChunks    uint32
 	NumReplica   uint8
 	NumDataBlk   uint8
@@ -92,7 +92,7 @@ func (dev *DeviceInfo) GetConfKey() string {
 }
 
 func (vdev *Vdev) GetConfKey() string {
-	return fmt.Sprintf("/v/cfg/%s/", vdev.VdevID)
+	return fmt.Sprintf("/v/cfg/%s", vdev.VdevID)
 }
 
 func (vdev *Vdev) GetVdevChunkKey() string {
@@ -134,7 +134,8 @@ func XMLDecode(bin []byte, st interface{}) error {
 	return xml.Unmarshal(bin, &st)
 }
 
-func Count8GBChunks(size uint64) uint64 {
+// TODO should round off to nearest zero
+func Count8GBChunks(size int64) int64 {
 	const chunkSize = 8 * 1024 * 1024 * 1024 // 8 GB in bytes
 	return size / chunkSize
 }

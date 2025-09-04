@@ -473,11 +473,21 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 
 func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl.Nisd {
 	allocateNisd := make([]*ctlplfl.Nisd, 0)
+	pendingAllocation := vdev.Size
+	vdev.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
 	for _, nisd := range nisds {
-		if nisd.AvailableSize > int64(vdev.Size) {
-			// is this fine if i do it here?
+		if (nisd.AvailableSize > int64(vdev.Size)) && pendingAllocation > 0 {
+			nisdChunk := ctlplfl.NisdChunk{
+				Nisd:  nisd,
+				Chunk: make([]int, vdev.NumChunks),
+			}
 			nisd.AvailableSize = nisd.AvailableSize - int64(vdev.Size)
+			pendingAllocation = pendingAllocation - vdev.Size
 			allocateNisd = append(allocateNisd, nisd)
+			for i := 0; i < int(vdev.NumChunks); i++ {
+				nisdChunk.Chunk[i] = i
+			}
+			vdev.NisdToChkMap = append(vdev.NisdToChkMap, nisdChunk)
 		}
 	}
 	return allocateNisd
@@ -535,30 +545,26 @@ func WPNisdChunk(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]fun
 func CreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
-	var nisdMap map[string]*ctlplfl.Nisd
 	// Decode the input buffer into structure format
 	err := ctlplfl.XMLDecode(args[0].([]byte), &vdev)
 	if err != nil {
 		return nil, err
 	}
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
+
 	vdev.Init()
-	// nisdMap, err := RdNisdCfgs(cbArgs)
-	// if err != nil {
-	// 	log.Error("failed to get nisd list:", err)
-	// 	return nil, err
-	// }
+	nisdMap, err := RdNisdCfgs(cbArgs)
+	if err != nil {
+		log.Error("failed to get nisd list:", err)
+		return nil, err
+	}
+	// allocate nisd chunks to vdev
 	nisdList := allocateNisd(&vdev, nisdMap)
 
 	WPVdev(&vdev, nisdList, &commitChgs)
 	WPNisdChunk(&vdev, nisdList, &commitChgs)
 
-	//Fill the response structure
-	res := ctlplfl.ResponseXML{
-		Name:    vdev.VdevID,
-		Success: true,
-	}
-
-	r, err := ctlplfl.XMLEncode(res)
+	r, err := ctlplfl.XMLEncode(vdev)
 	if err != nil {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
