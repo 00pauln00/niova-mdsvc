@@ -471,17 +471,19 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 	return encode(funcIntrm)
 }
 
-func allocateNisd(vdev ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl.Nisd {
+func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl.Nisd {
 	allocateNisd := make([]*ctlplfl.Nisd, 0)
-	for _, v := range nisds {
-		if v.AvailableSize > int64(vdev.Size) {
-			allocateNisd = append(allocateNisd, v)
+	for _, nisd := range nisds {
+		if nisd.AvailableSize > int64(vdev.Size) {
+			// is this fine if i do it here?
+			nisd.AvailableSize = nisd.AvailableSize - int64(vdev.Size)
+			allocateNisd = append(allocateNisd, nisd)
 		}
 	}
 	return allocateNisd
 }
 
-func WPVdev(vdev ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
+func WPVdev(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	key := vdev.GetConfKey()
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
@@ -512,7 +514,7 @@ func WPVdev(vdev ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.C
 	}
 }
 
-func WPNisdChunk(vdev ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
+func WPNisdChunk(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
 		key := fmt.Sprintf("/n/%s/%s", nisd.NisdID, vdev.VdevID)
 		for i := 0; i < int(vdev.NumChunks); i++ {
@@ -521,18 +523,20 @@ func WPNisdChunk(vdev ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]func
 				Value: []byte(fmt.Sprintf("R.0.%d", i)),
 			})
 		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", nisd.GetConfKey(), AVAIL_SPACE)),
+			Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
+		})
 
 	}
 
 }
 
-// TODO pending update the available space and
 func CreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	var nisdMap map[string]*ctlplfl.Nisd
 	// Decode the input buffer into structure format
-	log.Info("before initialized vdev:", vdev)
 	err := ctlplfl.XMLDecode(args[0].([]byte), &vdev)
 	if err != nil {
 		return nil, err
@@ -543,13 +547,10 @@ func CreateVdev(args ...interface{}) (interface{}, error) {
 	// 	log.Error("failed to get nisd list:", err)
 	// 	return nil, err
 	// }
-	nisdList := allocateNisd(vdev, nisdMap)
+	nisdList := allocateNisd(&vdev, nisdMap)
 
-	WPVdev(vdev, nisdList, &commitChgs)
-	WPNisdChunk(vdev, nisdList, &commitChgs)
-
-	WPVdev(vdev, nisdList, &commitChgs)
-	WPNisdChunk(vdev, nisdList, &commitChgs)
+	WPVdev(&vdev, nisdList, &commitChgs)
+	WPNisdChunk(&vdev, nisdList, &commitChgs)
 
 	//Fill the response structure
 	res := ctlplfl.ResponseXML{

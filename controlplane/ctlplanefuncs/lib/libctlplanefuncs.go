@@ -72,8 +72,8 @@ type NisdChunk struct {
 }
 
 type Vdev struct {
-	VdevID string
-	// NisdToChkMap map[string]NisdChunk
+	VdevID       string
+	NisdToChkMap []NisdChunk
 	Size         uint64
 	NumChunks    uint32
 	NumReplica   uint8
