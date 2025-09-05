@@ -137,7 +137,6 @@ func main() {
 	cpAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
 	cpAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
-	// cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, srvctlplanefuncs.RdNisdCfgs)
 	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceCfg)
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.CreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)

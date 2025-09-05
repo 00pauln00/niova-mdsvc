@@ -16,6 +16,7 @@ const (
 	GET_NISD      = "GetNisdCfg"
 	GET_NISD_LIST = "GetAllNisd"
 	CREATE_VDEV   = "CreateVdev"
+	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
 )
 
 // Define Snapshot XML structure
@@ -136,6 +137,6 @@ func XMLDecode(bin []byte, st interface{}) error {
 
 // TODO should round off to nearest zero
 func Count8GBChunks(size int64) int64 {
-	const chunkSize = 8 * 1024 * 1024 * 1024 // 8 GB in bytes
-	return size / chunkSize
+
+	return size / CHUNK_SIZE
 }

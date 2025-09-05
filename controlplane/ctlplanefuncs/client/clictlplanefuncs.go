@@ -83,7 +83,7 @@ func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 	return rsb, err
 }
 
-func (ccf *CliCFuncs) put(data interface{}, urla string) error {
+func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 	url := "name=" + urla
 	rqb, err := ccf.encode(data)
 	if err != nil {
@@ -97,8 +97,7 @@ func (ccf *CliCFuncs) put(data interface{}, urla string) error {
 		return err
 	}
 
-	var resp ctlplfl.ResponseXML
-	err = ccf.decode(rsb, &resp)
+	err = ccf.decode(rsb, resp)
 	if err != nil {
 		log.Error("failed to decode response: ", err)
 		return err
@@ -194,7 +193,8 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 }
 
 func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) error {
-	return ccf.put(device, ctlplfl.PUT_DEVICE)
+	var resp ctlplfl.ResponseXML
+	return ccf.put(device, &resp, ctlplfl.PUT_DEVICE)
 }
 
 func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
@@ -202,7 +202,8 @@ func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
 }
 
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
-	return ccf.put(ncfg, ctlplfl.PUT_NISD)
+	var resp ctlplfl.ResponseXML
+	return ccf.put(ncfg, &resp, ctlplfl.PUT_NISD)
 }
 
 func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
@@ -210,23 +211,5 @@ func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	url := "name=" + ctlplfl.CREATE_VDEV
-	rqb, err := ccf.encode(vdev)
-	if err != nil {
-		log.Error("failed to encode data: ", err)
-		return err
-	}
-
-	rsb, err := ccf._put(url, rqb)
-	if err != nil {
-		log.Error("failed to send request(_put): ", err)
-		return err
-	}
-
-	err = ccf.decode(rsb, vdev)
-	if err != nil {
-		log.Error("failed to decode response: ", err)
-		return err
-	}
-	return nil
+	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
 }

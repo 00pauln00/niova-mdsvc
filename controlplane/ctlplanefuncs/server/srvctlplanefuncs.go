@@ -286,7 +286,7 @@ func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
 }
 
 // TODO combine RdNisdCfg and RdNisdCfgs
-func RdNisdCfgs(cbArgs *PumiceDBServer.PmdbCbArgs) (map[string]*ctlplfl.Nisd, error) {
+func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) (map[string]*ctlplfl.Nisd, error) {
 	key := "/n/cfg/"
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
@@ -472,28 +472,28 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 }
 
 func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl.Nisd {
-	allocateNisd := make([]*ctlplfl.Nisd, 0)
-	pendingAllocation := vdev.Size
+	allocatedNisd := make([]*ctlplfl.Nisd, 0)
+	remainingVdevSize := vdev.Size
 	vdev.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
 	for _, nisd := range nisds {
-		if (nisd.AvailableSize > int64(vdev.Size)) && pendingAllocation > 0 {
+		if (nisd.AvailableSize > int64(vdev.Size)) && remainingVdevSize > 0 {
 			nisdChunk := ctlplfl.NisdChunk{
 				Nisd:  nisd,
 				Chunk: make([]int, vdev.NumChunks),
 			}
-			nisd.AvailableSize = nisd.AvailableSize - int64(vdev.Size)
-			pendingAllocation = pendingAllocation - vdev.Size
-			allocateNisd = append(allocateNisd, nisd)
+			allocatedNisd = append(allocatedNisd, nisd)
 			for i := 0; i < int(vdev.NumChunks); i++ {
 				nisdChunk.Chunk[i] = i
+				remainingVdevSize -= ctlplfl.CHUNK_SIZE
+				nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
 			}
 			vdev.NisdToChkMap = append(vdev.NisdToChkMap, nisdChunk)
 		}
 	}
-	return allocateNisd
+	return allocatedNisd
 }
 
-func WPVdev(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
+func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	key := vdev.GetConfKey()
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
@@ -524,7 +524,7 @@ func WPVdev(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.
 	}
 }
 
-func WPNisdChunk(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
+func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
 		key := fmt.Sprintf("/n/%s/%s", nisd.NisdID, vdev.VdevID)
 		for i := 0; i < int(vdev.NumChunks); i++ {
@@ -546,23 +546,27 @@ func CreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	err := ctlplfl.XMLDecode(args[0].([]byte), &vdev)
+	err := ctlplfl.XMLDecode(args[0].([]byte), &vdev.Size)
 	if err != nil {
 		return nil, err
 	}
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-
+	log.Info("allocating vdev with size: ", vdev.Size)
 	vdev.Init()
-	nisdMap, err := RdNisdCfgs(cbArgs)
+	nisdMap, err := getNisdList(cbArgs)
 	if err != nil {
 		log.Error("failed to get nisd list:", err)
 		return nil, err
 	}
 	// allocate nisd chunks to vdev
 	nisdList := allocateNisd(&vdev, nisdMap)
+	if len(nisdList) == 0 {
+		log.Error("failed to allocate nisd")
+		return nil, fmt.Errorf("failed to allocate nisd: not enough space avialable")
+	}
 
-	WPVdev(&vdev, nisdList, &commitChgs)
-	WPNisdChunk(&vdev, nisdList, &commitChgs)
+	genVdevKV(&vdev, nisdList, &commitChgs)
+	genNisdKV(&vdev, nisdList, &commitChgs)
 
 	r, err := ctlplfl.XMLEncode(vdev)
 	if err != nil {
