@@ -40,7 +40,12 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	}
 	stop := make(chan int)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
-	go ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
+	go func() {
+		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
+		if err != nil {
+			log.Fatal("Error while starting client API : ", err)
+		}
+	}()
 
 	log.Info("Successfully initialized controlplane client: ", appUUID)
 	return &ccf
