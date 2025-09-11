@@ -135,8 +135,11 @@ func XMLDecode(bin []byte, st interface{}) error {
 	return xml.Unmarshal(bin, &st)
 }
 
-// TODO should round off to nearest zero
 func Count8GBChunks(size int64) int64 {
-
-	return size / CHUNK_SIZE
+	rem := size % CHUNK_SIZE
+	count := size / CHUNK_SIZE
+	if rem == 0 {
+		return count
+	}
+	return count + 1
 }
