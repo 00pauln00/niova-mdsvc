@@ -46,8 +46,8 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 			log.Fatal("Error while starting client API : ", err)
 		}
 	}()
-
 	log.Info("Successfully initialized controlplane client: ", appUUID)
+
 	return &ccf
 }
 
@@ -197,18 +197,28 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) error {
-	var resp ctlplfl.ResponseXML
-	return ccf.put(device, &resp, ctlplfl.PUT_DEVICE)
+func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
+	var resp *ctlplfl.ResponseXML
+	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
+	if err != nil {	
+		log.Error("PutDeviceCfg failed: ", err)
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
 	return ccf.get(dev, ctlplfl.GET_DEVICE)
 }
 
-func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
-	var resp ctlplfl.ResponseXML
-	return ccf.put(ncfg, &resp, ctlplfl.PUT_NISD)
+func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
+	var resp *ctlplfl.ResponseXML
+	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
+	if err != nil {	
+		log.Error("PutNisdCfg failed: ", err)
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {

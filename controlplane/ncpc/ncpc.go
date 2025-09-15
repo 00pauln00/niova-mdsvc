@@ -851,25 +851,30 @@ func main() {
 		var nisd cpLib.Nisd
 		if err := json.Unmarshal([]byte(nisdDetails), &nisd); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
+			os.Exit(-1)
 		}
 		log.Info("writing nisd details to pmdb: ", nisd)
-		err := c.PutNisdCfg(&nisd)
+		resp, err := c.PutNisdCfg(&nisd)
 		if err != nil {
 			log.Error("failed to write nisd info:", err)
+			os.Exit(-1)
 		}
-
+		log.Info("WriteNisd response: ", resp)
 	case "WriteDevice":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		var dev cpLib.DeviceInfo
 		log.Info("nisd details: ", nisdDetails)
 		if err := json.Unmarshal([]byte(nisdDetails), &dev); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
+			os.Exit(-1)
 		}
 		log.Info("writing device info into pmdb", dev)
-		err := c.PutDeviceCfg(&dev)
+		resp, err := c.PutDeviceCfg(&dev)
 		if err != nil {
 			log.Error("failed to write device info", err)
+			os.Exit(-1)
 		}
+		log.Info("WriteDevice successful", resp)
 	}
 
 	if err != nil {
