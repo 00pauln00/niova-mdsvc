@@ -198,7 +198,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 }
 
 func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
-	var resp *ctlplfl.ResponseXML
+	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
 	if err != nil {	
 		log.Error("PutDeviceCfg failed: ", err)
@@ -212,7 +212,7 @@ func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
 }
 
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
-	var resp *ctlplfl.ResponseXML
+	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
 	if err != nil {	
 		log.Error("PutNisdCfg failed: ", err)
