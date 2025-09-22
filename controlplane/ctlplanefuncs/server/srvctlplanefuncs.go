@@ -223,27 +223,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
-			switch field {
-			case CLIENT_PORT:
-				p, _ := strconv.Atoi(string(val))
-				nisd.ClientPort = uint16(p)
-			case PEER_PORT:
-				p, _ := strconv.Atoi(string(val))
-				nisd.PeerPort = uint16(p)
-			case HV_ID:
-				nisd.HyperVisorID = string(val)
-			case FAILURE_DOMAIN:
-				nisd.FailureDomain = string(val)
-			case IP_ADDR:
-				nisd.IPAddr = string(val)
-			case TOTAL_SPACE:
-				ts, _ := strconv.Atoi(string(val))
-				nisd.TotalSize = int64(ts)
-			case AVAIL_SPACE:
-				as, _ := strconv.Atoi(string(val))
-				nisd.TotalSize = int64(as)
-
-			}
+			populateNisd(&nisd, field,  string(val))
 		}
 	}
 
@@ -470,6 +450,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 	return encode(funcIntrm)
 }
 
+// Allocates Nisd to the Requested VDEV
 func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl.Nisd {
 	allocatedNisd := make([]*ctlplfl.Nisd, 0)
 	remainingVdevSize := vdev.Size
@@ -492,6 +473,7 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl
 	return allocatedNisd
 }
 
+// Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	key := vdev.GetConfKey()
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
@@ -523,6 +505,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 	}
 }
 
+// Generates all the Keys and Values that needs to be inserted into NISD key space on vdev generation
 func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
 		key := fmt.Sprintf("/%s/%s/%s", ctlplfl.NISD_KEY, nisd.NisdID, vdev.VdevID)
@@ -541,6 +524,8 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 
 }
 
+
+// Creates a VDEV, allocates the NISD and updates the PMDB with new data
 func CreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
