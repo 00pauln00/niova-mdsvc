@@ -17,6 +17,13 @@ const (
 	GET_NISD_LIST = "GetAllNisd"
 	CREATE_VDEV   = "CreateVdev"
 	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
+
+	NISD_CFG_KEY  = "/n/cfg"
+	VDEV_CFG_KEY  = "/v/cfg"
+	DEVICE_CFG_KEY = "/d/cfg"
+	NISD_KEY = "n"
+	VDEV_KEY = "v"
+	CHUNK_KEY = "c"
 )
 
 // Define Snapshot XML structure
@@ -84,20 +91,20 @@ type Vdev struct {
 
 // we need validation methods to check the nisdID
 func (nisd *Nisd) GetConfKey() string {
-	return fmt.Sprintf("/n/cfg/%s", nisd.NisdID)
+	return fmt.Sprintf("%s/%s", NISD_CFG_KEY, nisd.NisdID)
 }
 
 // we need validation methods to check the deviceID
 func (dev *DeviceInfo) GetConfKey() string {
-	return fmt.Sprintf("/d/%s/cfg", dev.DevID)
+	return fmt.Sprintf("%s/%s/", DEVICE_CFG_KEY, dev.DevID)
 }
 
 func (vdev *Vdev) GetConfKey() string {
-	return fmt.Sprintf("/v/cfg/%s", vdev.VdevID)
+	return fmt.Sprintf("%s/%s", VDEV_CFG_KEY, vdev.VdevID)
 }
 
 func (vdev *Vdev) GetVdevChunkKey() string {
-	return fmt.Sprintf("/v/%s/c", vdev.VdevID)
+	return fmt.Sprintf("/%s/%s/%s", VDEV_KEY, vdev.VdevID, CHUNK_KEY)
 }
 
 func (vdev *Vdev) Init() error {

@@ -285,10 +285,8 @@ func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
 
 }
 
-// TODO combine RdNisdCfg and RdNisdCfgs
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) (map[string]*ctlplfl.Nisd, error) {
-	key := "/n/cfg/"
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, ctlplfl.NISD_CFG_KEY, int64(len(ctlplfl.NISD_CFG_KEY)), ctlplfl.NISD_CFG_KEY, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -324,7 +322,8 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 
 	commitChgs := make([]funclib.CommitChg, 0)
 	key := nisd.GetConfKey()
-	// Schema: /n/{nisdID}/cfg/{field} : {value}
+
+	// Schema: /n/cfg/{nisdID}/{field} : {value}
 	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		var value string
 		switch field {
@@ -526,7 +525,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 
 func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
-		key := fmt.Sprintf("/n/%s/%s", nisd.NisdID, vdev.VdevID)
+		key := fmt.Sprintf("/%s/%s/%s", ctlplfl.NISD_KEY, nisd.NisdID, vdev.VdevID)
 		for i := 0; i < int(vdev.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(key),
