@@ -16,7 +16,11 @@ const (
 	GET_NISD      = "GetNisdCfg"
 	GET_NISD_LIST = "GetAllNisd"
 	CREATE_VDEV   = "CreateVdev"
+	CREATE_SNAP   = "CreateSnap"
+	READ_SNAP_NAME = "ReadSnapByName"
+	READ_SNAP_VDEV = "ReadSnapForVdev"
 	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
+	NAME = "name"
 
 	NISD_CFG_KEY  = "/n/cfg"
 	VDEV_CFG_KEY  = "/v/cfg"
