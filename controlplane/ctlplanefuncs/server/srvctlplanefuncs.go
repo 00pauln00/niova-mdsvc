@@ -376,7 +376,7 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := getConfKey(dev.DevID, dev.DevID)
+	key := getConfKey(deviceCfgKey, dev.DevID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
