@@ -2,7 +2,6 @@ package libctlplanefuncs
 
 import (
 	"encoding/xml"
-	"fmt"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -22,12 +21,6 @@ const (
 	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
 	NAME = "name"
 
-	NISD_CFG_KEY  = "/n/cfg"
-	VDEV_CFG_KEY  = "/v/cfg"
-	DEVICE_CFG_KEY = "/d/cfg"
-	NISD_KEY = "n"
-	VDEV_KEY = "v"
-	CHUNK_KEY = "c"
 )
 
 // Define Snapshot XML structure
@@ -91,24 +84,6 @@ type Vdev struct {
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
-}
-
-// we need validation methods to check the nisdID
-func (nisd *Nisd) GetConfKey() string {
-	return fmt.Sprintf("%s/%s", NISD_CFG_KEY, nisd.NisdID)
-}
-
-// we need validation methods to check the deviceID
-func (dev *DeviceInfo) GetConfKey() string {
-	return fmt.Sprintf("%s/%s/", DEVICE_CFG_KEY, dev.DevID)
-}
-
-func (vdev *Vdev) GetConfKey() string {
-	return fmt.Sprintf("%s/%s", VDEV_CFG_KEY, vdev.VdevID)
-}
-
-func (vdev *Vdev) GetVdevChunkKey() string {
-	return fmt.Sprintf("/%s/%s/%s", VDEV_KEY, vdev.VdevID, CHUNK_KEY)
 }
 
 func (vdev *Vdev) Init() error {

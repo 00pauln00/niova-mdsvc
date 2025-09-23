@@ -37,6 +37,14 @@ const (
 	UUID_PREFIX     = 3
 	CONF_PREFIX     = 4
 	NISD_PREFIX_LEN = 5
+
+
+	nisdCfgKey  	= "/n/cfg"
+	vdevCfgKey  	= "/v/cfg"
+	deviceCfgKey 	= "/d/cfg"
+	nisdKey 	= "n"
+	vdevKey 	= "v"
+	chunkKey 	= "c"
 )
 
 func decode(payload []byte, s interface{}) error {
@@ -56,6 +64,14 @@ func encode(s interface{}) ([]byte, error) {
 
 func SetClmFamily(cf string) {
 	colmfamily = cf
+}
+
+func getConfKey(cfgType, id string) string {
+	return fmt.Sprintf("%s/%s", cfgType, id)
+}
+
+func getVdevChunkKey(vdevID string) string {
+	return fmt.Sprintf("/%s/%s/%s", vdevKey, vdevID, chunkKey)
 }
 
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
@@ -213,7 +229,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := nisd.GetConfKey()
+	key := getConfKey(nisdCfgKey, nisd.NisdID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -266,7 +282,7 @@ func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) (map[string]*ctlplfl.Nisd, error) {
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, ctlplfl.NISD_CFG_KEY, int64(len(ctlplfl.NISD_CFG_KEY)), ctlplfl.NISD_CFG_KEY, cbArgs.ReplySize, false, 0, colmfamily)
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -301,7 +317,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
-	key := nisd.GetConfKey()
+	key := getConfKey(nisdCfgKey, nisd.NisdID)
 
 	// Schema: /n/cfg/{nisdID}/{field} : {value}
 	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
@@ -360,7 +376,7 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	key := dev.GetConfKey()
+	key := getConfKey(dev.DevID, dev.DevID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -405,7 +421,7 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := dev.GetConfKey()
+	k := getConfKey(deviceCfgKey, dev.DevID)
 	//Schema : /d/{devID}/cfg/{field} : {value}
 	commitChgs := make([]funclib.CommitChg, 0)
 	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
@@ -475,7 +491,7 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	key := vdev.GetConfKey()
+	key := getConfKey(vdevCfgKey,vdev.VdevID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
@@ -493,7 +509,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 			Value: []byte(value),
 		})
 	}
-	vcKey := vdev.GetVdevChunkKey()
+	vcKey := getVdevChunkKey(vdev.VdevID)
 	for _, nisd := range nisdList {
 		for i := 0; i < int(vdev.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
@@ -508,7 +524,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 // Generates all the Keys and Values that needs to be inserted into NISD key space on vdev generation
 func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
-		key := fmt.Sprintf("/%s/%s/%s", ctlplfl.NISD_KEY, nisd.NisdID, vdev.VdevID)
+		key := fmt.Sprintf("/%s/%s/%s", nisdKey, nisd.NisdID, vdev.VdevID)
 		for i := 0; i < int(vdev.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(key),
@@ -516,7 +532,7 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 			})
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", nisd.GetConfKey(), AVAIL_SPACE)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey,nisd.NisdID), AVAIL_SPACE)),
 			Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
 		})
 
