@@ -2,16 +2,25 @@ package libctlplanefuncs
 
 import (
 	"encoding/xml"
-	"fmt"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
-	PUT_DEVICE = "PutDeviceCfg"
-	GET_DEVICE = "GetDeviceCfg"
-	PUT_NISD   = "PutNisdCfg"
-	GET_NISD   = "GetNisdCfg"
+	PUT_DEVICE    = "PutDeviceCfg"
+	GET_DEVICE    = "GetDeviceCfg"
+	PUT_NISD      = "PutNisdCfg"
+	GET_NISD      = "GetNisdCfg"
+	GET_NISD_LIST = "GetAllNisd"
+	CREATE_VDEV   = "CreateVdev"
+	CREATE_SNAP   = "CreateSnap"
+	READ_SNAP_NAME = "ReadSnapByName"
+	READ_SNAP_VDEV = "ReadSnapForVdev"
+	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
+	NAME = "name"
+
 )
 
 // Define Snapshot XML structure
@@ -58,16 +67,38 @@ type Nisd struct {
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
 	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
 	InitDev       bool   `yaml:"init"`
+	TotalSize     int64  `xml:"TotalSize"`
+	AvailableSize int64  `xml:"AvailableSize"`
 }
 
-// we need validation methods to check the nisdID
-func (nisd *Nisd) GetConfKey() string {
-	return fmt.Sprintf("/n/%s/cfg", nisd.NisdID)
+type NisdChunk struct {
+	Nisd  *Nisd
+	Chunk []int
 }
 
-// we need validation methods to check the deviceID
-func (dev *DeviceInfo) GetConfKey() string {
-	return fmt.Sprintf("/d/%s/cfg", dev.DevID)
+type Vdev struct {
+	VdevID       string
+	NisdToChkMap []NisdChunk
+	Size         int64
+	NumChunks    uint32
+	NumReplica   uint8
+	NumDataBlk   uint8
+	NumParityBlk uint8
+}
+
+func (vdev *Vdev) Init() error {
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		log.Error("failed to generate uuid:", err)
+		return err
+	}
+	vdev.VdevID = id.String()
+	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
+	vdev.NumReplica = 1
+	vdev.NumDataBlk = 0
+	vdev.NumParityBlk = 0
+	return nil
 }
 
 type s3Config struct {
@@ -88,4 +119,13 @@ func XMLEncode(data interface{}) ([]byte, error) {
 
 func XMLDecode(bin []byte, st interface{}) error {
 	return xml.Unmarshal(bin, &st)
+}
+
+func Count8GBChunks(size int64) int64 {
+	rem := size % CHUNK_SIZE
+	count := size / CHUNK_SIZE
+	if rem == 0 {
+		return count
+	}
+	return count + 1
 }

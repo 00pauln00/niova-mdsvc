@@ -40,9 +40,14 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	}
 	stop := make(chan int)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
-	go ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
-
+	go func() {
+		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
+		if err != nil {
+			log.Fatal("Error while starting client API : ", err)
+		}
+	}()
 	log.Info("Successfully initialized controlplane client: ", appUUID)
+
 	return &ccf
 }
 
@@ -83,7 +88,7 @@ func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 	return rsb, err
 }
 
-func (ccf *CliCFuncs) put(data interface{}, urla string) error {
+func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 	url := "name=" + urla
 	rqb, err := ccf.encode(data)
 	if err != nil {
@@ -97,8 +102,7 @@ func (ccf *CliCFuncs) put(data interface{}, urla string) error {
 		return err
 	}
 
-	var resp ctlplfl.ResponseXML
-	err = ccf.decode(rsb, &resp)
+	err = ccf.decode(rsb, resp)
 	if err != nil {
 		log.Error("failed to decode response: ", err)
 		return err
@@ -120,18 +124,16 @@ func (ccf *CliCFuncs) get(data interface{}, urla string) error {
 		log.Error("request failed: ", err)
 		return err
 	}
-
 	err = ccf.decode(rsb, data)
 	if err != nil {
 		log.Error("failed to decode response: ", err)
 		return err
 	}
-
 	return nil
 }
 
 func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string) error {
-	urla := "name=CreateSnap"
+	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.CREATE_SNAP)
 
 	chks := make([]ctlplfl.ChunkXML, 0)
 	for idx, seq := range chunkSeq {
@@ -170,7 +172,7 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 }
 
 func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
-	urla := "name=ReadSnapByName"
+	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.READ_SNAP_NAME)
 
 	var snap ctlplfl.SnapXML
 	snap.SnapName = name
@@ -183,7 +185,7 @@ func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
 }
 
 func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
-	urla := "name=ReadSnapForVdev"
+	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.READ_SNAP_VDEV)
 
 	var snap ctlplfl.SnapXML
 	snap.Vdev = vdev
@@ -195,18 +197,34 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) error {
-	return ccf.put(device, ctlplfl.PUT_DEVICE)
+func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
+	if err != nil {	
+		log.Error("PutDeviceCfg failed: ", err)
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
 	return ccf.get(dev, ctlplfl.GET_DEVICE)
 }
 
-func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) error {
-	return ccf.put(ncfg, ctlplfl.PUT_NISD)
+func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
+	if err != nil {	
+		log.Error("PutNisdCfg failed: ", err)
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
 	return ccf.get(ncfg, ctlplfl.GET_NISD)
+}
+
+func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
+	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
 }

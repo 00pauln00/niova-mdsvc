@@ -20,7 +20,9 @@ import (
 	"strings"
 	"time"
 
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
+
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
@@ -129,13 +131,14 @@ func main() {
 	//Wait till HTTP Server has started
 	srvctlplanefuncs.SetClmFamily(colmfamily)
 	cpAPI := PumiceDBFunc.NewFuncServer()
-	cpAPI.RegisterWritePrepFunc("CreateSnap", srvctlplanefuncs.WritePrepCreateSnap)
-	cpAPI.RegisterWritePrepFunc("PutNisdCfg", srvctlplanefuncs.WPNisdCfg)
-	cpAPI.RegisterWritePrepFunc("PutDeviceCfg", srvctlplanefuncs.WPDeviceCfg)
-	cpAPI.RegisterReadFunc("ReadSnapByName", srvctlplanefuncs.ReadSnapByName)
-	cpAPI.RegisterReadFunc("ReadSnapForVdev", srvctlplanefuncs.ReadSnapForVdev)
-	cpAPI.RegisterReadFunc("GetNisdCfg", srvctlplanefuncs.RdNisdCfg)
-	cpAPI.RegisterReadFunc("GetDeviceCfg", srvctlplanefuncs.RdDeviceCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceCfg)
+	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
+	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.CreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
