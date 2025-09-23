@@ -71,6 +71,21 @@ type Nisd struct {
 	AvailableSize int64  `xml:"AvailableSize"`
 }
 
+type PDU struct {
+	ID    string      // Unique identifier for the PDU
+}
+
+type Rack struct {
+	ID       string      // Unique rack identifier
+	PDUId    string      // Foreign key to PDU
+}
+
+type Hypervisor struct {
+	ID        string        // Unique hypervisor identifier
+	RackID    string        
+	IPAddress string        
+}
+
 type NisdChunk struct {
 	Nisd  *Nisd
 	Chunk []int

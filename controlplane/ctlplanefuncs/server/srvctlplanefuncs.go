@@ -38,13 +38,12 @@ const (
 	CONF_PREFIX     = 4
 	NISD_PREFIX_LEN = 5
 
-
-	nisdCfgKey  	= "/n/cfg"
-	vdevCfgKey  	= "/v/cfg"
-	deviceCfgKey 	= "/d/cfg"
-	nisdKey 	= "n"
-	vdevKey 	= "v"
-	chunkKey 	= "c"
+	nisdCfgKey   = "/n/cfg"
+	vdevCfgKey   = "/v/cfg"
+	deviceCfgKey = "/d/cfg"
+	nisdKey      = "n"
+	vdevKey      = "v"
+	chunkKey     = "c"
 )
 
 func decode(payload []byte, s interface{}) error {
@@ -239,7 +238,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
-			populateNisd(&nisd, field,  string(val))
+			populateNisd(&nisd, field, string(val))
 		}
 	}
 
@@ -491,7 +490,7 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds map[string]*ctlplfl.Nisd) []*ctlplfl
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	key := getConfKey(vdevCfgKey,vdev.VdevID)
+	key := getConfKey(vdevCfgKey, vdev.VdevID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
@@ -532,14 +531,13 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 			})
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey,nisd.NisdID), AVAIL_SPACE)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.NisdID), AVAIL_SPACE)),
 			Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
 		})
 
 	}
 
 }
-
 
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
 func CreateVdev(args ...interface{}) (interface{}, error) {
@@ -579,4 +577,28 @@ func CreateVdev(args ...interface{}) (interface{}, error) {
 		Response: r,
 	}
 	return encode(funcIntrm)
+}
+
+func WPPDUCfg(args ...interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("Not Implemented!")
+}
+
+func ReadPDUCfg(args ...interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("Not Implemented!")
+}
+
+func WPRackCfg(args ...interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("Not Implemented!")
+}
+
+func ReadRackCfg(args ...interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("Not Implemented!")
+}
+
+func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("Not Implemented!")
+}
+
+func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("Not Implemented!")
 }
