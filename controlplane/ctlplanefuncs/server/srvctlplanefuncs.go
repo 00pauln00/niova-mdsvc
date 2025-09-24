@@ -47,6 +47,7 @@ const (
 	nisdKey      = "n"
 	vdevKey      = "v"
 	chunkKey     = "c"
+	hvKey        = "hv"
 
 	PDU_UUID_PREFIX = 1
 )
@@ -690,7 +691,6 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 
 	for k := range readResult {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		// Example: ["r", "<rackId>"] or ["r", "<rackId>", "pi", "p", "<pduId>"]
 		if len(parts) < 2 || parts[0] != "r" {
 			continue
 		}
@@ -701,7 +701,6 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 			rackMap[rackId] = rack
 		}
 
-		// Check if path has PDU info
 		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
 			rack.PDUId = parts[4]
 		}
@@ -712,6 +711,34 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 		rackList = append(rackList, *r)
 	}
 	return rackList
+}
+
+// TODO: Merge with parseRackList
+func parseHyperVisorList(readResult map[string][]byte) []ctlplfl.Hypervisor {
+	hvMap := make(map[string]*ctlplfl.Hypervisor)
+
+	for k := range readResult {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		if len(parts) < 2 || parts[0] != "r" {
+			continue
+		}
+		hvID := parts[PDU_UUID_PREFIX]
+		hv, ok := hvMap[hvID]
+		if !ok {
+			hv = &ctlplfl.Hypervisor{ID: hvID}
+			hvMap[hvID] = hv
+		}
+
+		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
+			hv.RackID = parts[4]
+		}
+	}
+
+	hvList := make([]ctlplfl.Hypervisor, 0, len(hvMap))
+	for _, hv := range hvMap {
+		hvList = append(hvList, *hv)
+	}
+	return hvList
 }
 
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
@@ -741,17 +768,75 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 
 	response, err := ctlplfl.XMLEncode(rackList)
 	if err != nil {
-		log.Error("failed to encode device config:", err)
-		return nil, fmt.Errorf("failed to encode device config: %v", err)
+		log.Error("failed to encode rack info:", err)
+		return nil, fmt.Errorf("failed to encode rack info: %v", err)
 	}
 
 	return response, nil
 }
 
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("Not Implemented!")
+	var hv ctlplfl.Hypervisor
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[0].([]byte), &hv)
+	if err != nil {
+		return nil, err
+	}
+	resp := &ctlplfl.ResponseXML{
+		Name:    hv.ID,
+		Success: true,
+	}
+	r, err := ctlplfl.XMLEncode(resp)
+	if err != nil {
+		log.Error("Failed to marshal vdev response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+	commitChgs := make([]funclib.CommitChg, 0)
+
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key: []byte(getConfKey(hvKey, hv.ID)),
+	},
+		funclib.CommitChg{
+			Key: []byte(fmt.Sprint("%s/%s/%s", getConfKey(hvKey, hv.ID), parentInfo, rackKey)),
+		})
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+
+	return encode(funcIntrm)
+
 }
 
 func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("Not Implemented!")
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var req ctlplfl.GetReq
+	// Decode the input buffer into structure format
+	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
+	if err != nil {
+		return nil, err
+	}
+
+	var key string
+	if !req.GetAll {
+		key = getConfKey(hvKey, req.ID)
+	} else {
+		key = "/" + hvKey + "/"
+	}
+
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	hvList := parseHyperVisorList(readResult)
+
+	response, err := ctlplfl.XMLEncode(hvList)
+	if err != nil {
+		log.Error("failed to encode hypervisor info:", err)
+		return nil, fmt.Errorf("failed to encode hypervisor info: %v", err)
+	}
+
+	return response, nil
 }
