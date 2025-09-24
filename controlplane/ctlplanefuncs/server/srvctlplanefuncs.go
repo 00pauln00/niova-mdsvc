@@ -41,7 +41,9 @@ const (
 	nisdCfgKey   = "/n/cfg"
 	vdevCfgKey   = "/v/cfg"
 	deviceCfgKey = "/d/cfg"
+	parentInfo   = "pi"
 	pduKey       = "p"
+	rackKey      = "r"
 	nisdKey      = "n"
 	vdevKey      = "v"
 	chunkKey     = "c"
@@ -652,11 +654,98 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("Not Implemented!")
+	var rack ctlplfl.Rack
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[0].([]byte), &rack)
+	if err != nil {
+		return nil, err
+	}
+	resp := &ctlplfl.ResponseXML{
+		Name:    rack.ID,
+		Success: true,
+	}
+	r, err := ctlplfl.XMLEncode(resp)
+	if err != nil {
+		log.Error("Failed to marshal vdev response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+	commitChgs := make([]funclib.CommitChg, 0)
+
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key: []byte(getConfKey(rackKey, rack.ID)),
+	},
+		funclib.CommitChg{
+			Key: []byte(fmt.Sprint("%s/%s/%s", getConfKey(rackKey, rack.ID), parentInfo, pduKey)),
+		})
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+
+	return encode(funcIntrm)
+}
+
+func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
+	rackMap := make(map[string]*ctlplfl.Rack)
+
+	for k := range readResult {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		// Example: ["r", "<rackId>"] or ["r", "<rackId>", "pi", "p", "<pduId>"]
+		if len(parts) < 2 || parts[0] != "r" {
+			continue
+		}
+		rackId := parts[PDU_UUID_PREFIX]
+		rack, ok := rackMap[rackId]
+		if !ok {
+			rack = &ctlplfl.Rack{ID: rackId}
+			rackMap[rackId] = rack
+		}
+
+		// Check if path has PDU info
+		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
+			rack.PDUId = parts[4]
+		}
+	}
+
+	rackList := make([]ctlplfl.Rack, 0, len(rackMap))
+	for _, r := range rackMap {
+		rackList = append(rackList, *r)
+	}
+	return rackList
 }
 
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("Not Implemented!")
+
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var req ctlplfl.GetReq
+	// Decode the input buffer into structure format
+	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
+	if err != nil {
+		return nil, err
+	}
+
+	var key string
+	if !req.GetAll {
+		key = getConfKey(rackKey, req.ID)
+	} else {
+		key = "/" + rackKey + "/"
+	}
+
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	rackList := parseRackList(readResult)
+
+	response, err := ctlplfl.XMLEncode(rackList)
+	if err != nil {
+		log.Error("failed to encode device config:", err)
+		return nil, fmt.Errorf("failed to encode device config: %v", err)
+	}
+
+	return response, nil
 }
 
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
