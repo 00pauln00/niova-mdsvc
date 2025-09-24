@@ -132,6 +132,28 @@ func (ccf *CliCFuncs) get(data interface{}, urla string) error {
 	return nil
 }
 
+func (ccf *CliCFuncs) getAll(data, resp interface{}, urla string) error {
+	url := "name=" + urla
+	rqb, err := ccf.encode(data)
+	if err != nil {
+		log.Error("failed to encode data: ", err)
+		return err
+	}
+
+	rsb, err := ccf.request(rqb, url, false)
+	if err != nil {
+		log.Error("request failed: ", err)
+		return err
+	}
+
+	err = ctlplfl.XMLDecodeAll(rsb, resp)
+	if err != nil {
+		log.Error("failed to decode response: ", err)
+		return err
+	}
+	return nil
+}
+
 func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string) error {
 	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.CREATE_SNAP)
 
@@ -200,7 +222,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
-	if err != nil {	
+	if err != nil {
 		log.Error("PutDeviceCfg failed: ", err)
 		return nil, err
 	}
@@ -214,7 +236,7 @@ func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
-	if err != nil {	
+	if err != nil {
 		log.Error("PutNisdCfg failed: ", err)
 		return nil, err
 	}
@@ -227,4 +249,55 @@ func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
 	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
+}
+
+func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_PDU)
+	if err != nil {
+		log.Error("PutPDUs failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
+	pdus := make([]ctlplfl.PDU, 0)
+	err := ccf.getAll(req, &pdus, ctlplfl.GET_PDU)
+	if err != nil {
+		log.Error("GetPDUs failed: ", err)
+		return nil, err
+	}
+	return pdus, nil
+}
+
+func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_RACK)
+	if err != nil {
+		log.Error("PutRack failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
+	racks := make([]ctlplfl.Rack, 0)
+	err := ccf.getAll(req, &racks, ctlplfl.GET_RACK)
+	if err != nil {
+		log.Error("GetRacks failed: ", err)
+		return nil, err
+	}
+	return racks, nil
+}
+
+func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_HYPERVISOR)
+	if err != nil {
+		log.Error("PutHypervisor failed: ", err)
+		return nil, err
+	}
+
+	return resp, nil
 }

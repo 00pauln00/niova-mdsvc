@@ -624,11 +624,9 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	var key string
+	key := pduKey
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
-	} else {
-		key = "/" + pduKey + "/"
 	}
 
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
@@ -676,7 +674,7 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		Key: []byte(getConfKey(rackKey, rack.ID)),
 	},
 		funclib.CommitChg{
-			Key: []byte(fmt.Sprint("%s/%s/%s", getConfKey(rackKey, rack.ID), parentInfo, pduKey)),
+			Key: []byte(fmt.Sprintf("%s/%s/%s/%s", getConfKey(rackKey, rack.ID), parentInfo, pduKey, rack.PDUId)),
 		})
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
@@ -752,13 +750,10 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	var key string
+	key := rackKey
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
-	} else {
-		key = "/" + rackKey + "/"
 	}
-
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -797,8 +792,11 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		Key: []byte(getConfKey(hvKey, hv.ID)),
 	},
 		funclib.CommitChg{
-			Key: []byte(fmt.Sprint("%s/%s/%s", getConfKey(hvKey, hv.ID), parentInfo, rackKey)),
-		})
+			Key: []byte(fmt.Sprintf("%s/%s/%s/%s", getConfKey(hvKey, hv.ID), parentInfo, rackKey, hv.RackID)),
+		}, funclib.CommitChg{
+			Key: []byte(fmt.Sprintf("%s/%s/%s", getConfKey(hvKey, hv.ID), IP_ADDR, hv.IPAddress)),
+		},
+	)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -818,11 +816,9 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	var key string
+	key := hvKey
 	if !req.GetAll {
 		key = getConfKey(hvKey, req.ID)
-	} else {
-		key = "/" + hvKey + "/"
 	}
 
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)

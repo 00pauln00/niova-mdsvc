@@ -1,7 +1,11 @@
 package libctlplanefuncs
 
 import (
+	"bytes"
 	"encoding/xml"
+	"errors"
+	"io"
+	"reflect"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -18,6 +22,12 @@ const (
 	CREATE_SNAP    = "CreateSnap"
 	READ_SNAP_NAME = "ReadSnapByName"
 	READ_SNAP_VDEV = "ReadSnapForVdev"
+	PUT_PDU        = "PutPDU"
+	GET_PDU        = "GetPDU"
+	GET_RACK       = "GetRack"
+	PUT_RACK       = "PutRack"
+	GET_HYPERVISOR = "GetHypervisor"
+	PUT_HYPERVISOR = "PutHypervisor"
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	NAME           = "name"
 )
@@ -138,6 +148,29 @@ func XMLEncode(data interface{}) ([]byte, error) {
 
 func XMLDecode(bin []byte, st interface{}) error {
 	return xml.Unmarshal(bin, &st)
+}
+
+func XMLDecodeAll(bin []byte, slice interface{}) error {
+	dec := xml.NewDecoder(bytes.NewReader(bin))
+	sliceVal := reflect.ValueOf(slice)
+	if sliceVal.Kind() != reflect.Ptr || sliceVal.Elem().Kind() != reflect.Slice {
+		return errors.New("slice must be a pointer to a slice")
+	}
+	elemType := sliceVal.Elem().Type().Elem()
+	sliceVal = sliceVal.Elem()
+
+	for {
+		elemPtr := reflect.New(elemType)
+		err := dec.Decode(elemPtr.Interface())
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		sliceVal.Set(reflect.Append(sliceVal, elemPtr.Elem()))
+	}
+	return nil
 }
 
 func Count8GBChunks(size int64) int64 {

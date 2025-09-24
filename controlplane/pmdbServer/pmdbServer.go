@@ -138,6 +138,12 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, srvctlplanefuncs.WPRackCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.CreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
