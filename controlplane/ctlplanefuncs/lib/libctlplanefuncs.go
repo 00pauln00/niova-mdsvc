@@ -9,18 +9,17 @@ import (
 )
 
 const (
-	PUT_DEVICE    = "PutDeviceCfg"
-	GET_DEVICE    = "GetDeviceCfg"
-	PUT_NISD      = "PutNisdCfg"
-	GET_NISD      = "GetNisdCfg"
-	GET_NISD_LIST = "GetAllNisd"
-	CREATE_VDEV   = "CreateVdev"
-	CREATE_SNAP   = "CreateSnap"
+	PUT_DEVICE     = "PutDeviceCfg"
+	GET_DEVICE     = "GetDeviceCfg"
+	PUT_NISD       = "PutNisdCfg"
+	GET_NISD       = "GetNisdCfg"
+	GET_NISD_LIST  = "GetAllNisd"
+	CREATE_VDEV    = "CreateVdev"
+	CREATE_SNAP    = "CreateSnap"
 	READ_SNAP_NAME = "ReadSnapByName"
 	READ_SNAP_VDEV = "ReadSnapForVdev"
-	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
-	NAME = "name"
-
+	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
+	NAME           = "name"
 )
 
 // Define Snapshot XML structure
@@ -72,18 +71,18 @@ type Nisd struct {
 }
 
 type PDU struct {
-	ID    string      // Unique identifier for the PDU
+	ID string // Unique identifier for the PDU
 }
 
 type Rack struct {
-	ID       string      // Unique rack identifier
-	PDUId    string      // Foreign key to PDU
+	ID    string // Unique rack identifier
+	PDUId string // Foreign key to PDU
 }
 
 type Hypervisor struct {
-	ID        string        // Unique hypervisor identifier
-	RackID    string        
-	IPAddress string        
+	ID        string // Unique hypervisor identifier
+	RackID    string
+	IPAddress string
 }
 
 type NisdChunk struct {
@@ -99,6 +98,11 @@ type Vdev struct {
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+}
+
+type GetReq struct {
+	ID     string
+	GetAll bool
 }
 
 func (vdev *Vdev) Init() error {

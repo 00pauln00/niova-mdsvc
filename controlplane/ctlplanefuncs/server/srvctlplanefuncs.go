@@ -41,9 +41,12 @@ const (
 	nisdCfgKey   = "/n/cfg"
 	vdevCfgKey   = "/v/cfg"
 	deviceCfgKey = "/d/cfg"
+	pduKey       = "p"
 	nisdKey      = "n"
 	vdevKey      = "v"
 	chunkKey     = "c"
+
+	PDU_UUID_PREFIX = 1
 )
 
 func decode(payload []byte, s interface{}) error {
@@ -580,11 +583,72 @@ func CreateVdev(args ...interface{}) (interface{}, error) {
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("Not Implemented!")
+	var pdu ctlplfl.PDU
+	// Decode the input buffer into structure format
+	err := xml.Unmarshal(args[0].([]byte), &pdu)
+	if err != nil {
+		return nil, err
+	}
+	resp := &ctlplfl.ResponseXML{
+		Name:    pdu.ID,
+		Success: true,
+	}
+	r, err := ctlplfl.XMLEncode(resp)
+	if err != nil {
+		log.Error("Failed to marshal vdev response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+	commitChgs := make([]funclib.CommitChg, 0)
+
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key: []byte(getConfKey(pduKey, pdu.ID)),
+	})
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+
+	return encode(funcIntrm)
 }
 
 func ReadPDUCfg(args ...interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("Not Implemented!")
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+
+	var req ctlplfl.GetReq
+	// Decode the input buffer into structure format
+	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
+	if err != nil {
+		return nil, err
+	}
+
+	var key string
+	if !req.GetAll {
+		key = getConfKey(pduKey, req.ID)
+	} else {
+		key = "/" + pduKey + "/"
+	}
+
+	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	pduList := make([]ctlplfl.PDU, 0)
+	for k, _ := range readResult {
+		pduKey := strings.Split(k, "/")
+		pduList = append(pduList, ctlplfl.PDU{
+			ID: pduKey[PDU_UUID_PREFIX],
+		})
+	}
+
+	response, err := ctlplfl.XMLEncode(pduList)
+	if err != nil {
+		log.Error("failed to encode device config:", err)
+		return nil, fmt.Errorf("failed to encode device config: %v", err)
+	}
+
+	return response, nil
+
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
