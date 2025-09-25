@@ -59,14 +59,14 @@ type ResponseXML struct {
 }
 
 type DeviceInfo struct {
-	DevID         string `xml:"DevID" json:"DevID"`
-	SerialNumber  string `xml:"SerialNumber" json:"SerialNumber"`
-	Status        uint16 `xml:"Status" json:"Status"`
+	DevID        string `xml:"DevID" json:"DevID"`
+	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
+	Status       uint16 `xml:"Status" json:"Status"`
 	//Parent info
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	//Child info
-	NisdID        string `xml:"NisdID" json:"NisdID"`
+	NisdID string `xml:"NisdID" json:"NisdID"`
 }
 
 type Nisd struct {
@@ -88,7 +88,7 @@ type PDU struct {
 
 type Rack struct {
 	ID    string // Unique rack identifier
-	PDUId string // Foreign key to PDU
+	PDUID string // Foreign key to PDU
 }
 
 type Hypervisor struct {

@@ -700,7 +700,7 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		Key: []byte(getConfKey(rackKey, rack.ID)),
 	},
 		funclib.CommitChg{
-			Key: []byte(fmt.Sprintf("%s/%s/%s/%s", getConfKey(rackKey, rack.ID), parentInfo, pduKey, rack.PDUId)),
+			Key: []byte(fmt.Sprintf("%s/%s/%s/%s", getConfKey(rackKey, rack.ID), parentInfo, pduKey, rack.PDUID)),
 		})
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
@@ -726,7 +726,7 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 		}
 
 		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
-			rack.PDUId = parts[4]
+			rack.PDUID = parts[4]
 		}
 	}
 
