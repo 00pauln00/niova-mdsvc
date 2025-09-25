@@ -208,8 +208,14 @@ func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.DeviceInfo) (*ctlplfl.Respon
 }
 
 // TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetDeviceInfo(dev *ctlplfl.DeviceInfo) error {
-	return ccf.get(dev, dev, ctlplfl.GET_DEVICE)
+func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) (*ctlplfl.DeviceInfo, error) {
+	dev := &ctlplfl.DeviceInfo{}
+	err := ccf.get(req, dev, ctlplfl.GET_DEVICE)
+	if err != nil {
+		log.Error("failed to fet device info: ", err)
+		return nil, err
+	}
+	return dev, nil
 }
 
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
@@ -222,9 +228,14 @@ func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, erro
 	return resp, nil
 }
 
-// TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
-	return ccf.get(ncfg, ncfg, ctlplfl.GET_NISD)
+func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
+	ncfg := &ctlplfl.Nisd{}
+	err := ccf.get(req, ncfg, ctlplfl.GET_NISD)
+	if err != nil {
+		log.Error("failed to fet nisd info: ", err)
+		return nil, err
+	}
+	return ncfg, nil
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {

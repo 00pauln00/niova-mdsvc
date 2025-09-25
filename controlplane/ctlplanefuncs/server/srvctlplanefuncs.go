@@ -40,7 +40,7 @@ const (
 	nisdCfgKey   = "/n/cfg"
 	vdevCfgKey   = "/v/cfg"
 	deviceCfgKey = "/d/cfg"
-	sdeviceKey 	 = "sd"
+	sdeviceKey   = "sd"
 	parentInfo   = "pi"
 	pduKey       = "p"
 	rackKey      = "r"
@@ -226,15 +226,15 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
+	var req ctlplfl.GetReq
 	var nisd ctlplfl.Nisd
-	// Decode the input buffer into structure format
-	err := ctlplfl.XMLDecode(args[1].([]byte), &nisd)
+
+	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
 	if err != nil {
-		log.Errorf("failed xml decode:", err)
 		return nil, err
 	}
 
-	key := getConfKey(nisdCfgKey, nisd.NisdID)
+	key := getConfKey(nisdCfgKey, req.ID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -421,7 +421,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 }
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-	// Limited to update only 
+	// Limited to update only
 	// DevID, SerialNumber, Status
 	// HypervisorID, FailureDomain (Parent Info)
 	var dev ctlplfl.DeviceInfo
@@ -434,7 +434,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	k := getConfKey(deviceCfgKey, dev.DevID)
 	commitChgs := make([]funclib.CommitChg, 0)
 	commitChgs = append(commitChgs, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s", k)),
+		Key: []byte(fmt.Sprintf("%s", k)),
 	})
 	//Schema : /d/{devID}/{field} : {value}
 	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, hvKey, FAILURE_DOMAIN} {
@@ -455,25 +455,25 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		if value == "" {
 			continue
 		}
-		
+
 		commitChgs = append(commitChgs, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
-				Value: []byte(value),
+			Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
+			Value: []byte(value),
 		})
 	}
 
 	// Add parent to child relationship
 	if dev.HypervisorID != "" {
 		commitChgs = append(commitChgs, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s/%s", hvKey, dev.HypervisorID, deviceCfgKey)),
-				Value: []byte(dev.DevID),
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", hvKey, dev.HypervisorID, deviceCfgKey)),
+			Value: []byte(dev.DevID),
 		})
-	} 
+	}
 
 	if dev.FailureDomain != "" {
 		commitChgs = append(commitChgs, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, deviceCfgKey)),
-				Value: []byte(dev.DevID),
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, deviceCfgKey)),
+			Value: []byte(dev.DevID),
 		})
 	}
 

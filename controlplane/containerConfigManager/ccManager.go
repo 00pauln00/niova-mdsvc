@@ -58,17 +58,17 @@ func main() {
 	}
 
 	for _, nisd := range conf.NisdConfig {
-		devInfo := cpLib.DeviceInfo{
-			DevID: nisd.DevID,
+		req := cpLib.GetReq{
+			ID: nisd.DevID,
 		}
-		err := c.GetDeviceInfo(&devInfo)
+		devInfo, err := c.GetDeviceInfo(req)
 		if err != nil {
 			log.Error("failed to get device uuid", err)
 			os.Exit(-1)
 		}
 		log.Debug("fetched device info from control plane: ", devInfo)
-		nisd.NisdID = devInfo.NisdID
-		err = c.GetNisdCfg(nisd)
+		req.ID = devInfo.NisdID
+		nisd, err := c.GetNisdCfg(req)
 		if err != nil {
 			log.Error("failed to get nisd details:", err)
 			os.Exit(-1)
