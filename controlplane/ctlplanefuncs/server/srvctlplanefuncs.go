@@ -689,7 +689,7 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 
 	for k := range readResult {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 2 || parts[0] != "r" {
+		if len(parts) < 2 || parts[0] != rackKey {
 			continue
 		}
 		rackId := parts[PDU_UUID_PREFIX]
@@ -717,7 +717,7 @@ func parseHyperVisorList(readResult map[string][]byte) []ctlplfl.Hypervisor {
 
 	for k := range readResult {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 2 || parts[0] != "r" {
+		if len(parts) < 2 || parts[0] != hvKey {
 			continue
 		}
 		hvID := parts[PDU_UUID_PREFIX]
@@ -729,6 +729,8 @@ func parseHyperVisorList(readResult map[string][]byte) []ctlplfl.Hypervisor {
 
 		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
 			hv.RackID = parts[4]
+		} else if len(parts) == 4 && parts[2] == IP_ADDR {
+			hv.IPAddress = parts[3]
 		}
 	}
 

@@ -301,3 +301,14 @@ func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseX
 
 	return resp, nil
 }
+
+func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, error) {
+	hypervisors := make([]ctlplfl.Hypervisor, 0)
+	err := ccf.getAll(req, &hypervisors, ctlplfl.GET_HYPERVISOR)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return nil, err
+	}
+
+	return hypervisors, nil
+}
