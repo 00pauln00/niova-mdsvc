@@ -61,7 +61,7 @@ func main() {
 		devInfo := cpLib.DeviceInfo{
 			DevID: nisd.DevID,
 		}
-		err := c.GetDeviceCfg(&devInfo)
+		err := c.GetDeviceInfo(&devInfo)
 		if err != nil {
 			log.Error("failed to get device uuid", err)
 			os.Exit(-1)

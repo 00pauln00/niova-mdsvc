@@ -148,30 +148,37 @@ func XMLEncode(data interface{}) ([]byte, error) {
 	return xml.MarshalIndent(data, "", " ")
 }
 
-func XMLDecode(bin []byte, st interface{}) error {
-	return xml.Unmarshal(bin, &st)
-}
-
-func XMLDecodeAll(bin []byte, slice interface{}) error {
+func XMLDecode(bin []byte, out interface{}) error {
 	dec := xml.NewDecoder(bytes.NewReader(bin))
-	sliceVal := reflect.ValueOf(slice)
-	if sliceVal.Kind() != reflect.Ptr || sliceVal.Elem().Kind() != reflect.Slice {
-		return errors.New("slice must be a pointer to a slice")
+	val := reflect.ValueOf(out)
+	if val.Kind() != reflect.Ptr {
+		return errors.New("out must be a pointer")
 	}
-	elemType := sliceVal.Elem().Type().Elem()
-	sliceVal = sliceVal.Elem()
 
-	for {
-		elemPtr := reflect.New(elemType)
-		err := dec.Decode(elemPtr.Interface())
-		if err == io.EOF {
-			break
+	elem := val.Elem()
+	switch elem.Kind() {
+	case reflect.Slice:
+		elemType := elem.Type().Elem()
+		for {
+			newElem := reflect.New(elemType)
+			err := dec.Decode(newElem.Interface())
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			elem.Set(reflect.Append(elem, newElem.Elem()))
 		}
+	case reflect.Struct:
+		err := dec.Decode(out)
 		if err != nil {
 			return err
 		}
-		sliceVal.Set(reflect.Append(sliceVal, elemPtr.Elem()))
+	default:
+		return errors.New("out must be a pointer to struct or slice")
 	}
+
 	return nil
 }
 
