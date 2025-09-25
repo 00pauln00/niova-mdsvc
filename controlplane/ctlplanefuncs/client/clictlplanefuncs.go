@@ -219,17 +219,17 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
 	if err != nil {
-		log.Error("PutDeviceCfg failed: ", err)
+		log.Error("PutDeviceInfo failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
+func (ccf *CliCFuncs) GetDeviceInfo(dev *ctlplfl.DeviceInfo) error {
 	return ccf.get(dev, ctlplfl.GET_DEVICE)
 }
 

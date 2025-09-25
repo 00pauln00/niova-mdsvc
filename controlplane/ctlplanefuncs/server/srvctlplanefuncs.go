@@ -22,7 +22,6 @@ const (
 	NISD_ID        = "n"
 	SERIAL_NUM     = "sn"
 	STATUS         = "s"
-	HV_ID          = "hv"
 	FAILURE_DOMAIN = "fd"
 	CLIENT_PORT    = "cp"
 	PEER_PORT      = "pp"
@@ -41,6 +40,7 @@ const (
 	nisdCfgKey   = "/n/cfg"
 	vdevCfgKey   = "/v/cfg"
 	deviceCfgKey = "/d/cfg"
+	sdeviceKey 	 = "sd"
 	parentInfo   = "pi"
 	pduKey       = "p"
 	rackKey      = "r"
@@ -241,7 +241,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	for _, field := range []string{CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
+	for _, field := range []string{CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			populateNisd(&nisd, field, string(val))
@@ -269,7 +269,7 @@ func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
 	case PEER_PORT:
 		p, _ := strconv.Atoi(val)
 		nisd.PeerPort = uint16(p)
-	case HV_ID:
+	case hvKey:
 		nisd.HyperVisorID = val
 	case FAILURE_DOMAIN:
 		nisd.FailureDomain = val
@@ -325,14 +325,14 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	key := getConfKey(nisdCfgKey, nisd.NisdID)
 
 	// Schema: /n/cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, HV_ID, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
+	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		var value string
 		switch field {
 		case CLIENT_PORT:
 			value = strconv.Itoa(int(nisd.ClientPort))
 		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
-		case HV_ID:
+		case hvKey:
 			value = nisd.HyperVisorID
 		case FAILURE_DOMAIN:
 			value = nisd.FailureDomain
@@ -371,16 +371,19 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	return encode(funcIntrm)
 }
 
-func RdDeviceCfg(args ...interface{}) (interface{}, error) {
+func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	var dev ctlplfl.DeviceInfo
+	var req ctlplfl.GetReq
 	// Decode the input buffer into structure format
-	err := ctlplfl.XMLDecode(args[1].([]byte), &dev)
+	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
 	if err != nil {
 		return nil, err
 	}
 
+	dev := ctlplfl.DeviceInfo{
+		DevID: req.ID,
+	}
 	key := getConfKey(deviceCfgKey, dev.DevID)
 	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
@@ -388,7 +391,7 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
+	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, hvKey, FAILURE_DOMAIN} {
 		k := fmt.Sprintf("%s/%s", key, field)
 		if val, ok := readResult[k]; ok {
 			log.Info("Value for key ", k, " : ", string(val))
@@ -400,8 +403,8 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 			case STATUS:
 				status, _ := strconv.Atoi(string(val))
 				dev.Status = uint16(status)
-			case HV_ID:
-				dev.HyperVisorID = string(val)
+			case hvKey:
+				dev.HypervisorID = string(val)
 			case FAILURE_DOMAIN:
 				dev.FailureDomain = string(val)
 			}
@@ -417,8 +420,10 @@ func RdDeviceCfg(args ...interface{}) (interface{}, error) {
 	return response, nil
 }
 
-func WPDeviceCfg(args ...interface{}) (interface{}, error) {
-
+func WPDeviceInfo(args ...interface{}) (interface{}, error) {
+	// Limited to update only 
+	// DevID, SerialNumber, Status
+	// HypervisorID, FailureDomain (Parent Info)
 	var dev ctlplfl.DeviceInfo
 
 	err := ctlplfl.XMLDecode(args[0].([]byte), &dev)
@@ -427,27 +432,48 @@ func WPDeviceCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	k := getConfKey(deviceCfgKey, dev.DevID)
-	//Schema : /d/{devID}/cfg/{field} : {value}
 	commitChgs := make([]funclib.CommitChg, 0)
-	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, HV_ID, FAILURE_DOMAIN} {
+	commitChgs = append(commitChgs, funclib.CommitChg{
+				Key:   []byte(fmt.Sprintf("%s", k)),
+	})
+	//Schema : /d/{devID}/{field} : {value}
+	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, hvKey, FAILURE_DOMAIN} {
 		var value string
 		switch field {
-		case NISD_ID:
-			value = dev.NisdID
 		case SERIAL_NUM:
 			value = dev.SerialNumber
 		case STATUS:
 			value = strconv.Itoa(int(dev.Status))
-		case HV_ID:
-			value = dev.HyperVisorID
+		case hvKey:
+			value = dev.HypervisorID
 		case FAILURE_DOMAIN:
 			value = dev.FailureDomain
 		default:
 			continue
 		}
+
+		if value == "" {
+			continue
+		}
+		
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
-			Value: []byte(value),
+				Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
+				Value: []byte(value),
+		})
+	}
+
+	// Add parent to child relationship
+	if dev.HypervisorID != "" {
+		commitChgs = append(commitChgs, funclib.CommitChg{
+				Key:   []byte(fmt.Sprintf("%s/%s/%s", hvKey, dev.HypervisorID, deviceCfgKey)),
+				Value: []byte(dev.DevID),
+		})
+	} 
+
+	if dev.FailureDomain != "" {
+		commitChgs = append(commitChgs, funclib.CommitChg{
+				Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, deviceCfgKey)),
+				Value: []byte(dev.DevID),
 		})
 	}
 

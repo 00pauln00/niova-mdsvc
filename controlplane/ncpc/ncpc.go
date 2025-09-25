@@ -869,7 +869,7 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Debug("writing device info into pmdb", dev)
-		resp, err := c.PutDeviceCfg(&dev)
+		resp, err := c.PutDeviceInfo(&dev)
 		if err != nil {
 			log.Error("failed to write device info", err)
 			os.Exit(-1)

@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	PUT_DEVICE     = "PutDeviceCfg"
-	GET_DEVICE     = "GetDeviceCfg"
+	PUT_DEVICE     = "PutDeviceInfo"
+	GET_DEVICE     = "GetDeviceInfo"
 	PUT_NISD       = "PutNisdCfg"
 	GET_NISD       = "GetNisdCfg"
 	GET_NISD_LIST  = "GetAllNisd"
@@ -60,11 +60,13 @@ type ResponseXML struct {
 
 type DeviceInfo struct {
 	DevID         string `xml:"DevID" json:"DevID"`
-	NisdID        string `xml:"NisdID" json:"NisdID"`
 	SerialNumber  string `xml:"SerialNumber" json:"SerialNumber"`
 	Status        uint16 `xml:"Status" json:"Status"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
+	//Parent info
+	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
+	//Child info
+	NisdID        string `xml:"NisdID" json:"NisdID"`
 }
 
 type Nisd struct {
