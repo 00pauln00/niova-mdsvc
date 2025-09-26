@@ -862,7 +862,7 @@ func main() {
 		log.Debug("WriteNisd response: ", resp)
 	case "WriteDevice":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		var dev cpLib.DeviceInfo
+		var dev cpLib.Device
 		log.Debug("nisd details: ", nisdDetails)
 		if err := json.Unmarshal([]byte(nisdDetails), &dev); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
