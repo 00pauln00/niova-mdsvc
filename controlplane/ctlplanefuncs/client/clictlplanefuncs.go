@@ -197,7 +197,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
 	if err != nil {
@@ -208,8 +208,8 @@ func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.DeviceInfo) (*ctlplfl.Respon
 }
 
 // TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) (*ctlplfl.DeviceInfo, error) {
-	dev := &ctlplfl.DeviceInfo{}
+func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) (*ctlplfl.Device, error) {
+	dev := &ctlplfl.Device{}
 	err := ccf.get(req, dev, ctlplfl.GET_DEVICE)
 	if err != nil {
 		log.Error("failed to fet device info: ", err)

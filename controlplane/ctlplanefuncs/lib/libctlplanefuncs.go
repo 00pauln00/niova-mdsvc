@@ -58,15 +58,17 @@ type ResponseXML struct {
 	Success bool
 }
 
-type DeviceInfo struct {
+type Device struct {
 	DevID        string `xml:"DevID" json:"DevID"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
 	Status       uint16 `xml:"Status" json:"Status"`
+	Size         int64  `xml:"Size" json:"Size"`
 	//Parent info
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	//Child info
 	NisdID string `xml:"NisdID" json:"NisdID"`
+	Vdev   []Vdev
 }
 
 type Nisd struct {
@@ -83,18 +85,29 @@ type Nisd struct {
 }
 
 type PDU struct {
-	ID string // Unique identifier for the PDU
+	ID            string // Unique identifier for the PDU
+	Name          string
+	Location      string
+	PowerCapacity int
+	Specification string
+	Racks         []Rack
 }
 
 type Rack struct {
-	ID    string // Unique rack identifier
-	PDUID string // Foreign key to PDU
+	ID            string // Unique rack identifier
+	PDUID         string // Foreign key to PDU
+	Location      string
+	Specification string
+	Hypervisors   []Hypervisor
 }
 
 type Hypervisor struct {
 	ID        string // Unique hypervisor identifier
 	RackID    string
 	IPAddress string
+	RacID     string
+	PortRange string
+	Dev       []Device
 }
 
 type NisdChunk struct {

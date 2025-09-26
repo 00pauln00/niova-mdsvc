@@ -381,7 +381,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	dev := ctlplfl.DeviceInfo{
+	dev := ctlplfl.Device{
 		DevID: req.ID,
 	}
 	key := getConfKey(deviceCfgKey, dev.DevID)
@@ -424,7 +424,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	// Limited to update only
 	// DevID, SerialNumber, Status
 	// HypervisorID, FailureDomain (Parent Info)
-	var dev ctlplfl.DeviceInfo
+	var dev ctlplfl.Device
 
 	err := ctlplfl.XMLDecode(args[0].([]byte), &dev)
 	if err != nil {

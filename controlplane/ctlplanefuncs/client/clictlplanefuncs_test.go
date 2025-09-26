@@ -89,7 +89,7 @@ func TestPutAndGetNisd(t *testing.T) {
 func TestPutAndGetDevice(t *testing.T) {
 	c := newClient(t)
 
-	mockDevices := []cpLib.DeviceInfo{
+	mockDevices := []cpLib.Device{
 		{
 			DevID:         "dev-001",
 			SerialNumber:  "SN123456789",
