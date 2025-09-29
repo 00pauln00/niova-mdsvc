@@ -2,8 +2,6 @@ package srvctlplanefuncs
 
 import (
 	"C"
-	"bytes"
-	"encoding/gob"
 	"encoding/xml"
 	"fmt"
 	"strconv"
@@ -37,9 +35,9 @@ const (
 	CONF_PREFIX     = 4
 	NISD_PREFIX_LEN = 5
 
-	nisdCfgKey   = "/n/cfg"
-	vdevCfgKey   = "/v/cfg"
-	deviceCfgKey = "/d/cfg"
+	nisdCfgKey   = "n_cfg"
+	vdevCfgKey   = "v_cfg"
+	deviceCfgKey = "d_cfg"
 	sdeviceKey   = "sd"
 	parentInfo   = "pi"
 	pduKey       = "p"
@@ -51,21 +49,6 @@ const (
 
 	PDU_UUID_PREFIX = 1
 )
-
-func decode(payload []byte, s interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(payload))
-	return dec.Decode(s)
-}
-
-func encode(s interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
 
 func SetClmFamily(cf string) {
 	colmfamily = cf
@@ -227,8 +210,6 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
 	var req ctlplfl.GetReq
-	var nisd ctlplfl.Nisd
-
 	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
 	if err != nil {
 		return nil, err
@@ -241,14 +222,9 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	for _, field := range []string{CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
-		k := fmt.Sprintf("%s/%s", key, field)
-		if val, ok := readResult[k]; ok {
-			populateNisd(&nisd, field, string(val))
-		}
-	}
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult, nisdParser{})
 
-	response, err := ctlplfl.XMLEncode(nisd)
+	response, err := ctlplfl.XMLEncode(nisdList)
 	if err != nil {
 		log.Error("failed to encode nisd config:", err)
 		return nil, fmt.Errorf("failed to encode nisd config: %v", err)
@@ -256,34 +232,6 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 
 	log.Debug("range read nisd config result: ", response)
 	return response, nil
-}
-
-func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
-	switch opt {
-
-	case DEVICE_NAME:
-		nisd.DevID = val
-	case CLIENT_PORT:
-		p, _ := strconv.Atoi(val)
-		nisd.ClientPort = uint16(p)
-	case PEER_PORT:
-		p, _ := strconv.Atoi(val)
-		nisd.PeerPort = uint16(p)
-	case hvKey:
-		nisd.HyperVisorID = val
-	case FAILURE_DOMAIN:
-		nisd.FailureDomain = val
-	case IP_ADDR:
-		nisd.IPAddr = val
-	case TOTAL_SPACE:
-		ts, _ := strconv.Atoi(val)
-		nisd.TotalSize = int64(ts)
-	case AVAIL_SPACE:
-		as, _ := strconv.Atoi(val)
-		nisd.AvailableSize = int64(as)
-
-	}
-
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) (map[string]*ctlplfl.Nisd, error) {
@@ -324,7 +272,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	key := getConfKey(nisdCfgKey, nisd.NisdID)
 
-	// Schema: /n/cfg/{nisdID}/{field} : {value}
+	// Schema: n_cfg/{nisdID}/{field} : {value}
 	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		var value string
 		switch field {
@@ -391,27 +339,8 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, hvKey, FAILURE_DOMAIN} {
-		k := fmt.Sprintf("%s/%s", key, field)
-		if val, ok := readResult[k]; ok {
-			log.Info("Value for key ", k, " : ", string(val))
-			switch field {
-			case NISD_ID:
-				dev.NisdID = string(val)
-			case SERIAL_NUM:
-				dev.SerialNumber = string(val)
-			case STATUS:
-				status, _ := strconv.Atoi(string(val))
-				dev.Status = uint16(status)
-			case hvKey:
-				dev.HypervisorID = string(val)
-			case FAILURE_DOMAIN:
-				dev.FailureDomain = string(val)
-			}
-		}
-	}
-
-	response, err := ctlplfl.XMLEncode(dev)
+	devices := ParseEntities[ctlplfl.Device](readResult, deviceParser{})
+	response, err := ctlplfl.XMLEncode(devices)
 	if err != nil {
 		log.Error("failed to encode device config:", err)
 		return nil, fmt.Errorf("failed to encode device config: %v", err)
@@ -711,63 +640,6 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 	return encode(funcIntrm)
 }
 
-func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
-	rackMap := make(map[string]*ctlplfl.Rack)
-
-	for k, v := range readResult {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 2 || parts[0] != rackKey {
-			continue
-		}
-		rackId := parts[PDU_UUID_PREFIX]
-		rack, ok := rackMap[rackId]
-		if !ok {
-			rack = &ctlplfl.Rack{ID: rackId}
-			rackMap[rackId] = rack
-		}
-
-		if len(parts) == 3 && parts[2] == pduKey {
-			rack.PDUID = string(v)
-		}
-	}
-
-	rackList := make([]ctlplfl.Rack, 0, len(rackMap))
-	for _, r := range rackMap {
-		rackList = append(rackList, *r)
-	}
-	return rackList
-}
-
-// TODO: Merge with parseRackList
-func parseHyperVisorList(readResult map[string][]byte) []ctlplfl.Hypervisor {
-	hvMap := make(map[string]*ctlplfl.Hypervisor)
-
-	for k, v := range readResult {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 2 || parts[0] != hvKey {
-			continue
-		}
-		hvID := parts[PDU_UUID_PREFIX]
-		hv, ok := hvMap[hvID]
-		if !ok {
-			hv = &ctlplfl.Hypervisor{ID: hvID}
-			hvMap[hvID] = hv
-		}
-
-		if len(parts) == 3 && parts[2] == rackKey {
-			hv.RackID = string(v)
-		} else if len(parts) == 3 && parts[2] == IP_ADDR {
-			hv.IPAddress = string(v)
-		}
-	}
-
-	hvList := make([]ctlplfl.Hypervisor, 0, len(hvMap))
-	for _, hv := range hvMap {
-		hvList = append(hvList, *hv)
-	}
-	return hvList
-}
-
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
 
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
@@ -788,8 +660,8 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	rackList := parseRackList(readResult)
 
+	rackList := ParseEntities[ctlplfl.Rack](readResult, rackParser{})
 	response, err := ctlplfl.XMLEncode(rackList)
 	if err != nil {
 		log.Error("failed to encode rack info:", err)
@@ -857,8 +729,8 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	hvList := parseHyperVisorList(readResult)
 
+	hvList := ParseEntities[ctlplfl.Hypervisor](readResult, hvParser{})
 	response, err := ctlplfl.XMLEncode(hvList)
 	if err != nil {
 		log.Error("failed to encode hypervisor info:", err)
