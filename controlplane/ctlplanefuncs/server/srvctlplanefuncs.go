@@ -700,7 +700,8 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		Key: []byte(getConfKey(rackKey, rack.ID)),
 	},
 		funclib.CommitChg{
-			Key: []byte(fmt.Sprintf("%s/%s/%s/%s", getConfKey(rackKey, rack.ID), parentInfo, pduKey, rack.PDUID)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(rackKey, rack.ID), pduKey)),
+			Value: []byte(rack.PDUID),
 		})
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
@@ -713,7 +714,7 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 	rackMap := make(map[string]*ctlplfl.Rack)
 
-	for k := range readResult {
+	for k, v := range readResult {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		if len(parts) < 2 || parts[0] != rackKey {
 			continue
@@ -725,8 +726,8 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 			rackMap[rackId] = rack
 		}
 
-		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
-			rack.PDUID = parts[4]
+		if len(parts) == 3 && parts[2] == pduKey {
+			rack.PDUID = string(v)
 		}
 	}
 
@@ -741,7 +742,7 @@ func parseRackList(readResult map[string][]byte) []ctlplfl.Rack {
 func parseHyperVisorList(readResult map[string][]byte) []ctlplfl.Hypervisor {
 	hvMap := make(map[string]*ctlplfl.Hypervisor)
 
-	for k := range readResult {
+	for k, v := range readResult {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		if len(parts) < 2 || parts[0] != hvKey {
 			continue
@@ -753,10 +754,10 @@ func parseHyperVisorList(readResult map[string][]byte) []ctlplfl.Hypervisor {
 			hvMap[hvID] = hv
 		}
 
-		if len(parts) == 5 && parts[2] == parentInfo && parts[3] == pduKey {
-			hv.RackID = parts[4]
-		} else if len(parts) == 4 && parts[2] == IP_ADDR {
-			hv.IPAddress = parts[3]
+		if len(parts) == 3 && parts[2] == rackKey {
+			hv.RackID = string(v)
+		} else if len(parts) == 3 && parts[2] == IP_ADDR {
+			hv.IPAddress = string(v)
 		}
 	}
 
@@ -820,9 +821,11 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		Key: []byte(getConfKey(hvKey, hv.ID)),
 	},
 		funclib.CommitChg{
-			Key: []byte(fmt.Sprintf("%s/%s/%s/%s", getConfKey(hvKey, hv.ID), parentInfo, rackKey, hv.RackID)),
+			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(hvKey, hv.ID), rackKey)),
+			Value: []byte(hv.RackID),
 		}, funclib.CommitChg{
-			Key: []byte(fmt.Sprintf("%s/%s/%s", getConfKey(hvKey, hv.ID), IP_ADDR, hv.IPAddress)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(hvKey, hv.ID), IP_ADDR)),
+			Value: []byte(hv.IPAddress),
 		},
 	)
 	funcIntrm := funclib.FuncIntrm{
