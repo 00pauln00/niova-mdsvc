@@ -29,34 +29,6 @@ func encode(s interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func populateNisd(nisd *ctlplfl.Nisd, opt, val string) {
-	switch opt {
-
-	case DEVICE_NAME:
-		nisd.DevID = val
-	case CLIENT_PORT:
-		p, _ := strconv.Atoi(val)
-		nisd.ClientPort = uint16(p)
-	case PEER_PORT:
-		p, _ := strconv.Atoi(val)
-		nisd.PeerPort = uint16(p)
-	case hvKey:
-		nisd.HyperVisorID = val
-	case FAILURE_DOMAIN:
-		nisd.FailureDomain = val
-	case IP_ADDR:
-		nisd.IPAddr = val
-	case TOTAL_SPACE:
-		ts, _ := strconv.Atoi(val)
-		nisd.TotalSize = int64(ts)
-	case AVAIL_SPACE:
-		as, _ := strconv.Atoi(val)
-		nisd.AvailableSize = int64(as)
-
-	}
-
-}
-
 type Entity interface{}
 
 type ParseStrategy interface {
