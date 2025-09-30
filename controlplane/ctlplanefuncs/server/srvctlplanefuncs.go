@@ -277,9 +277,9 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	dev := ctlplfl.Device{
-		DevID: req.ID,
+		ID: req.ID,
 	}
-	key := getConfKey(deviceCfgKey, dev.DevID)
+	key := getConfKey(deviceCfgKey, dev.ID)
 	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if readResult.Error != nil {
 		log.Error("Range read failure ", readResult.Error)
@@ -309,7 +309,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 
 	// TODO: use a common response struct for all the read functions
 	nisdResponse := ctlplfl.ResponseXML{
-		Name:    dev.DevID,
+		Name:    dev.ID,
 		Success: true,
 	}
 
@@ -376,7 +376,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 		for i := 0; i < int(vdev.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(fmt.Sprintf("%s/%d", vcKey, i)),
-				Value: []byte(nisd.NisdID),
+				Value: []byte(nisd.ID),
 			})
 		}
 
@@ -386,7 +386,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 // Generates all the Keys and Values that needs to be inserted into NISD key space on vdev generation
 func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
-		key := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.NisdID, vdev.VdevID)
+		key := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, vdev.VdevID)
 		for i := 0; i < int(vdev.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(key),
@@ -394,7 +394,7 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 			})
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.NisdID), AVAIL_SPACE)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
 			Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
 		})
 

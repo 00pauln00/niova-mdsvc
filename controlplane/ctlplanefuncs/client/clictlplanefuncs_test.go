@@ -39,7 +39,7 @@ func TestPutAndGetNisd(t *testing.T) {
 		{
 			ClientPort:    7001,
 			PeerPort:      8001,
-			NisdID:        "nisd-001",
+			ID:            "nisd-001",
 			DevID:         "dev-001",
 			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-01",
@@ -51,7 +51,7 @@ func TestPutAndGetNisd(t *testing.T) {
 		{
 			ClientPort:    7002,
 			PeerPort:      8002,
-			NisdID:        "nisd-002",
+			ID:            "nisd-002",
 			DevID:         "dev-002",
 			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-02",
@@ -63,7 +63,7 @@ func TestPutAndGetNisd(t *testing.T) {
 		{
 			ClientPort:    7003,
 			PeerPort:      8003,
-			NisdID:        "nisd-003",
+			ID:            "nisd-003",
 			DevID:         "dev-003",
 			HyperVisorID:  "hv-02",
 			FailureDomain: "fd-01",
@@ -91,7 +91,7 @@ func TestPutAndGetDevice(t *testing.T) {
 
 	mockDevices := []cpLib.Device{
 		{
-			DevID:         "dev-001",
+			ID:            "dev-001",
 			SerialNumber:  "SN123456789",
 			Status:        1,
 			HypervisorID:  "hv-01",
@@ -99,7 +99,7 @@ func TestPutAndGetDevice(t *testing.T) {
 			NisdID:        "nisd-001",
 		},
 		{
-			DevID:         "dev-002",
+			ID:            "dev-002",
 			SerialNumber:  "SN987654321",
 			Status:        0,
 			HypervisorID:  "hv-02",
@@ -107,7 +107,7 @@ func TestPutAndGetDevice(t *testing.T) {
 			NisdID:        "nisd-002",
 		},
 		{
-			DevID:         "dev-003",
+			ID:            "dev-003",
 			SerialNumber:  "SN112233445",
 			Status:        2,
 			HypervisorID:  "hv-01",
@@ -192,4 +192,29 @@ func TestCreateVdev(t *testing.T) {
 	err := c.CreateVdev(vdev)
 	log.Info("CreateVdev Result: ", vdev)
 	assert.NoError(t, err)
+}
+
+func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
+	racks := []cpLib.Rack{
+		{ID: "rack-1", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
+		{ID: "rack-2", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
+	}
+
+	for _, r := range racks {
+		resp, err := c.PutRack(&r)
+		assert.NoError(b, err)
+		assert.True(b, resp.Success)
+	}
+
+	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
+	assert.NoError(b, err)
+	_ = resp
+}
+
+func BenchmarkPutAndGetRack(b *testing.B) {
+	c := newClient(nil) // adjust if your newClient requires *testing.T
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		runPutAndGetRack(b, c)
+	}
 }

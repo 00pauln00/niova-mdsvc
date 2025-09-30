@@ -109,7 +109,7 @@ type deviceParser struct{}
 
 func (deviceParser) GetRootKey() string { return deviceCfgKey }
 func (deviceParser) NewEntity(id string) Entity {
-	return &ctlplfl.Device{DevID: id}
+	return &ctlplfl.Device{ID: id}
 }
 func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 	dev := entity.(*ctlplfl.Device)
@@ -137,7 +137,7 @@ type nisdParser struct{}
 func (nisdParser) GetRootKey() string { return nisdCfgKey }
 
 func (nisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{NisdID: id}
+	return &ctlplfl.Nisd{ID: id}
 }
 
 func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {

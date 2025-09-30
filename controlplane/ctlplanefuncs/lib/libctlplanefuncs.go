@@ -59,7 +59,7 @@ type ResponseXML struct {
 }
 
 type Device struct {
-	DevID        string `xml:"DevID" json:"DevID"`
+	ID           string `xml:"ID" json:"ID"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
 	Status       uint16 `xml:"Status" json:"Status"`
 	Size         int64  `xml:"Size" json:"Size"`
@@ -74,7 +74,7 @@ type Device struct {
 type Nisd struct {
 	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
 	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	NisdID        string `xml:"NisdID" json:"NisdID" yaml:"uuid"`
+	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
 	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
 	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`

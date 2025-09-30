@@ -38,7 +38,7 @@ type nisdPopulator struct{}
 
 func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	nisd := entity.(*cpLib.Nisd)
-	key := getConfKey(nisdCfgKey, nisd.NisdID)
+	key := getConfKey(nisdCfgKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
 	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
@@ -75,7 +75,7 @@ type devicePopulator struct{}
 func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	dev := entity.(*cpLib.Device)
 
-	k := getConfKey(deviceCfgKey, dev.DevID)
+	k := getConfKey(deviceCfgKey, dev.ID)
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key: []byte(fmt.Sprintf("%s", k)),
 	})
@@ -109,14 +109,14 @@ func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) 
 	if dev.HypervisorID != "" {
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s/%s", hvKey, dev.HypervisorID, deviceCfgKey)),
-			Value: []byte(dev.DevID),
+			Value: []byte(dev.ID),
 		})
 	}
 
 	if dev.FailureDomain != "" {
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, deviceCfgKey)),
-			Value: []byte(dev.DevID),
+			Value: []byte(dev.ID),
 		})
 	}
 }
