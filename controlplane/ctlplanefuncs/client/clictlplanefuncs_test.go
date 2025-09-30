@@ -184,3 +184,12 @@ func TestPutAndGetHypervisor(t *testing.T) {
 	log.Info("GetHypervisor: ", resp)
 	assert.NoError(t, err)
 }
+
+func TestCreateVdev(t *testing.T) {
+	c := newClient(t)
+	vdev := &cpLib.Vdev{
+		Size: 20 * 1024 * 1024 * 1024}
+	err := c.CreateVdev(vdev)
+	log.Info("CreateVdev Result: ", vdev)
+	assert.NoError(t, err)
+}

@@ -31,10 +31,6 @@ const (
 	NUM_REPLICAS   = "nr"
 	ERASURE_CODE   = "e"
 
-	UUID_PREFIX     = 3
-	CONF_PREFIX     = 4
-	NISD_PREFIX_LEN = 5
-
 	nisdCfgKey   = "n_cfg"
 	vdevCfgKey   = "v_cfg"
 	deviceCfgKey = "d_cfg"
@@ -46,8 +42,6 @@ const (
 	vdevKey      = "v"
 	chunkKey     = "c"
 	hvKey        = "hv"
-
-	PDU_UUID_PREFIX = 1
 )
 
 func SetClmFamily(cf string) {
@@ -59,7 +53,7 @@ func getConfKey(cfgType, id string) string {
 }
 
 func getVdevChunkKey(vdevID string) string {
-	return fmt.Sprintf("/%s/%s/%s", vdevKey, vdevID, chunkKey)
+	return fmt.Sprintf("%s/%s/%s", vdevKey, vdevID, chunkKey)
 }
 
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
@@ -241,6 +235,7 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 		return nil, err
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult, nisdParser{})
+	log.Info("fetching nisd list: ", nisdList)
 	return nisdList, nil
 }
 
@@ -391,7 +386,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 // Generates all the Keys and Values that needs to be inserted into NISD key space on vdev generation
 func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
-		key := fmt.Sprintf("/%s/%s/%s", nisdKey, nisd.NisdID, vdev.VdevID)
+		key := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.NisdID, vdev.VdevID)
 		for i := 0; i < int(vdev.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(key),
@@ -412,8 +407,9 @@ func CreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	err := ctlplfl.XMLDecode(args[0].([]byte), &vdev.Size)
+	err := xml.Unmarshal(args[0].([]byte), &vdev.Size)
 	if err != nil {
+		log.Error("failed to decode vdev size: ", err)
 		return nil, err
 	}
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
