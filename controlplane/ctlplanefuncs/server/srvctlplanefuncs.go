@@ -89,14 +89,14 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
 
 	log.Info("Read result by Vdev", readResult)
-	for key, _ := range readResult {
+	for key, _ := range readResult.ResultMap {
 		c := strings.Split(key, "/")
 
 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
@@ -210,13 +210,13 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	key := getConfKey(nisdCfgKey, req.ID)
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
 
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
 
 	response, err := ctlplfl.XMLEncode(nisdList)
 	if err != nil {
@@ -229,12 +229,12 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
 	log.Info("fetching nisd list: ", nisdList)
 	return nisdList, nil
 }
@@ -280,13 +280,13 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		DevID: req.ID,
 	}
 	key := getConfKey(deviceCfgKey, dev.DevID)
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
 
-	devices := ParseEntities[ctlplfl.Device](readResult, deviceParser{})
+	devices := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceParser{})
 	response, err := ctlplfl.XMLEncode(devices)
 	if err != nil {
 		log.Error("failed to encode device config:", err)
@@ -483,12 +483,12 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		key = getConfKey(pduKey, req.ID)
 	}
 
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
-	pduList := ParseEntities[ctlplfl.PDU](readResult, pduParser{})
+	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
 
 	response, err := ctlplfl.XMLEncode(pduList)
 	if err != nil {
@@ -541,13 +541,13 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
 
-	rackList := ParseEntities[ctlplfl.Rack](readResult, rackParser{})
+	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
 	response, err := ctlplfl.XMLEncode(rackList)
 	if err != nil {
 		log.Error("failed to encode rack info:", err)
@@ -598,13 +598,13 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		key = getConfKey(hvKey, req.ID)
 	}
 
-	readResult, _, _, _, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
+	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if readResult.Error != nil {
+		log.Error("Range read failure ", readResult.Error)
+		return nil, readResult.Error
 	}
 
-	hvList := ParseEntities[ctlplfl.Hypervisor](readResult, hvParser{})
+	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
 	response, err := ctlplfl.XMLEncode(hvList)
 	if err != nil {
 		log.Error("failed to encode hypervisor info:", err)
