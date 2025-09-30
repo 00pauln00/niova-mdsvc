@@ -168,3 +168,18 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 func (nisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
+
+type pduParser struct{}
+
+func (pduParser) GetRootKey() string { return pduKey }
+func (pduParser) NewEntity(id string) Entity {
+	return &ctlplfl.PDU{ID: id}
+}
+func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
+	pdu := entity.(*ctlplfl.PDU)
+	if len(parts) < KEY_LEN {
+		return
+	}
+	pdu.ID = parts[BASE_UUID_PREFIX]
+}
+func (pduParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.PDU) }

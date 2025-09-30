@@ -492,13 +492,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	pduList := make([]ctlplfl.PDU, 0)
-	for k, _ := range readResult {
-		pduKey := strings.Split(k, "/")
-		pduList = append(pduList, ctlplfl.PDU{
-			ID: pduKey[PDU_UUID_PREFIX],
-		})
-	}
+	pduList := ParseEntities[ctlplfl.PDU](readResult, pduParser{})
 
 	response, err := ctlplfl.XMLEncode(pduList)
 	if err != nil {
