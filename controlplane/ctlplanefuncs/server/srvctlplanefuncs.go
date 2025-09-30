@@ -252,39 +252,8 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{})
 
-	commitChgs := make([]funclib.CommitChg, 0)
-	key := getConfKey(nisdCfgKey, nisd.NisdID)
-
-	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
-		var value string
-		switch field {
-		case CLIENT_PORT:
-			value = strconv.Itoa(int(nisd.ClientPort))
-		case PEER_PORT:
-			value = strconv.Itoa(int(nisd.PeerPort))
-		case hvKey:
-			value = nisd.HyperVisorID
-		case FAILURE_DOMAIN:
-			value = nisd.FailureDomain
-		case IP_ADDR:
-			value = nisd.IPAddr
-		case TOTAL_SPACE:
-			value = strconv.Itoa(int(nisd.TotalSize))
-		case AVAIL_SPACE:
-			value = strconv.Itoa(int(nisd.AvailableSize))
-		case DEVICE_NAME:
-			value = nisd.DevID
-		default:
-			continue
-		}
-		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
-			Value: []byte(value),
-		})
-	}
-	//Fill the response structure
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    nisd.DevID,
 		Success: true,
@@ -295,7 +264,6 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal nisd response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -344,52 +312,6 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	k := getConfKey(deviceCfgKey, dev.DevID)
-	commitChgs := make([]funclib.CommitChg, 0)
-	commitChgs = append(commitChgs, funclib.CommitChg{
-		Key: []byte(fmt.Sprintf("%s", k)),
-	})
-	//Schema : /d/{devID}/{field} : {value}
-	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, hvKey, FAILURE_DOMAIN} {
-		var value string
-		switch field {
-		case SERIAL_NUM:
-			value = dev.SerialNumber
-		case STATUS:
-			value = strconv.Itoa(int(dev.Status))
-		case hvKey:
-			value = dev.HypervisorID
-		case FAILURE_DOMAIN:
-			value = dev.FailureDomain
-		default:
-			continue
-		}
-
-		if value == "" {
-			continue
-		}
-
-		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", k, field)),
-			Value: []byte(value),
-		})
-	}
-
-	// Add parent to child relationship
-	if dev.HypervisorID != "" {
-		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", hvKey, dev.HypervisorID, deviceCfgKey)),
-			Value: []byte(dev.DevID),
-		})
-	}
-
-	if dev.FailureDomain != "" {
-		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, deviceCfgKey)),
-			Value: []byte(dev.DevID),
-		})
-	}
-
 	// TODO: use a common response struct for all the read functions
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    dev.DevID,
@@ -401,6 +323,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal nisd response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
+	commitChgs := PopulateEntities(&dev, devicePopulator{})
 
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
@@ -540,11 +463,7 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-	commitChgs := make([]funclib.CommitChg, 0)
-
-	commitChgs = append(commitChgs, funclib.CommitChg{
-		Key: []byte(getConfKey(pduKey, pdu.ID)),
-	})
+	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{})
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -607,15 +526,8 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-	commitChgs := make([]funclib.CommitChg, 0)
 
-	commitChgs = append(commitChgs, funclib.CommitChg{
-		Key: []byte(getConfKey(rackKey, rack.ID)),
-	},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(rackKey, rack.ID), pduKey)),
-			Value: []byte(rack.PDUID),
-		})
+	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{})
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -671,19 +583,7 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-	commitChgs := make([]funclib.CommitChg, 0)
-
-	commitChgs = append(commitChgs, funclib.CommitChg{
-		Key: []byte(getConfKey(hvKey, hv.ID)),
-	},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(hvKey, hv.ID), rackKey)),
-			Value: []byte(hv.RackID),
-		}, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(hvKey, hv.ID), IP_ADDR)),
-			Value: []byte(hv.IPAddress),
-		},
-	)
+	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{})
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,

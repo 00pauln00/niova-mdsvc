@@ -12,6 +12,8 @@ import (
 const ( // Key Prefixes
 	BASE_KEY         = 0
 	BASE_UUID_PREFIX = 1
+	ELEMENT_KEY      = 2
+	KEY_LEN          = 3
 )
 
 func decode(payload []byte, s interface{}) error {
@@ -31,66 +33,67 @@ func encode(s interface{}) ([]byte, error) {
 
 type Entity interface{}
 
-type ParseStrategy interface {
-	RootKey() string
+type ParseEntity interface {
+	GetRootKey() string
 	NewEntity(id string) Entity
-	ApplyField(entity Entity, parts []string, value []byte)
-	Finalize(entity Entity) Entity
+	ParseField(entity Entity, parts []string, value []byte)
+	GetEntity(entity Entity) Entity
 }
 
-func ParseEntities[T any](readResult map[string][]byte, strategy ParseStrategy) []T {
+func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
 	for k, v := range readResult {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 2 || parts[BASE_KEY] != strategy.RootKey() {
+		if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
 			continue
 		}
 
 		id := parts[BASE_UUID_PREFIX]
 		entity, exists := entityMap[id]
 		if !exists {
-			entity = strategy.NewEntity(id)
+			entity = pe.NewEntity(id)
 			entityMap[id] = entity
 		}
 
-		strategy.ApplyField(entity, parts, v)
+		pe.ParseField(entity, parts, v)
 	}
 
 	result := make([]T, 0, len(entityMap))
 	for _, e := range entityMap {
-		final := strategy.Finalize(e)
+		final := pe.GetEntity(e)
 		result = append(result, final.(T))
 	}
 	return result
 }
 
-// Rack Strategy
+// Rack parser
 type rackParser struct{}
 
-func (rackParser) RootKey() string { return rackKey }
+func (rackParser) GetRootKey() string { return rackKey }
 func (rackParser) NewEntity(id string) Entity {
 	return &ctlplfl.Rack{ID: id}
 }
-func (rackParser) ApplyField(entity Entity, parts []string, value []byte) {
+func (rackParser) ParseField(entity Entity, parts []string, value []byte) {
 	r := entity.(*ctlplfl.Rack)
-	if len(parts) == 3 && parts[2] == pduKey {
+	if len(parts) == KEY_LEN && parts[ELEMENT_KEY] == pduKey {
 		r.PDUID = string(value)
 	}
 }
-func (rackParser) Finalize(entity Entity) Entity { return *entity.(*ctlplfl.Rack) }
 
-// Hypervisor Strategy
+func (rackParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Rack) }
+
+// Hypervisor parser
 type hvParser struct{}
 
-func (hvParser) RootKey() string { return hvKey }
+func (hvParser) GetRootKey() string { return hvKey }
 func (hvParser) NewEntity(id string) Entity {
 	return &ctlplfl.Hypervisor{ID: id}
 }
-func (hvParser) ApplyField(entity Entity, parts []string, value []byte) {
+func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 	hv := entity.(*ctlplfl.Hypervisor)
-	if len(parts) == 3 {
-		switch parts[2] {
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
 		case rackKey:
 			hv.RackID = string(value)
 		case IP_ADDR:
@@ -98,19 +101,20 @@ func (hvParser) ApplyField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
-func (hvParser) Finalize(entity Entity) Entity { return *entity.(*ctlplfl.Hypervisor) }
 
-// Device Strategy
+func (hvParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Hypervisor) }
+
+// Device parser
 type deviceParser struct{}
 
-func (deviceParser) RootKey() string { return deviceCfgKey }
+func (deviceParser) GetRootKey() string { return deviceCfgKey }
 func (deviceParser) NewEntity(id string) Entity {
 	return &ctlplfl.Device{DevID: id}
 }
-func (deviceParser) ApplyField(entity Entity, parts []string, value []byte) {
+func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 	dev := entity.(*ctlplfl.Device)
-	if len(parts) == 3 {
-		switch parts[2] {
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
 		case hvKey:
 			dev.HypervisorID = string(value)
 		case NISD_ID:
@@ -125,21 +129,21 @@ func (deviceParser) ApplyField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
-func (deviceParser) Finalize(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
+func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
 
-// Device Strategy
+// nisd parser
 type nisdParser struct{}
 
-func (nisdParser) RootKey() string { return nisdCfgKey }
+func (nisdParser) GetRootKey() string { return nisdCfgKey }
 
 func (nisdParser) NewEntity(id string) Entity {
 	return &ctlplfl.Nisd{NisdID: id}
 }
 
-func (nisdParser) ApplyField(entity Entity, parts []string, value []byte) {
+func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	nisd := entity.(*ctlplfl.Nisd)
-	if len(parts) == 3 {
-		switch parts[2] {
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
 		case DEVICE_NAME:
 			nisd.DevID = string(value)
 		case CLIENT_PORT:
@@ -163,5 +167,4 @@ func (nisdParser) ApplyField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
-
-func (nisdParser) Finalize(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
+func (nisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }

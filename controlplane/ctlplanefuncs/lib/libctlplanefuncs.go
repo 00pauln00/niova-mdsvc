@@ -158,7 +158,7 @@ type NisdCntrConfig struct {
 }
 
 func XMLEncode(data interface{}) ([]byte, error) {
-	return xml.MarshalIndent(data, "", " ")
+	return xml.Marshal(data)
 }
 
 func XMLDecode(bin []byte, out interface{}) error {
