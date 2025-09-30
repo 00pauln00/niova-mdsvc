@@ -243,6 +243,7 @@ func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
 }
 
 func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
+	log.Info("Adding PDU to pumiceDB")
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(req, resp, ctlplfl.PUT_PDU)
 	if err != nil {

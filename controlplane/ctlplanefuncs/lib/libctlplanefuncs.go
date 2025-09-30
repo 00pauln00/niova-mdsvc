@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"fmt"
 	"reflect"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -60,16 +61,30 @@ type ResponseXML struct {
 
 type Device struct {
 	ID           string `xml:"ID" json:"ID"`
+	Name         string `xml:"Name" json:"Name"`           // For display purposes
+	DevicePath   string `xml:"device_path,omitempty" json: "DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
 	Status       uint16 `xml:"Status" json:"Status"`
 	Size         int64  `xml:"Size" json:"Size"`
+	Initialized  bool   `xml:"Initialized" json:"initialized"`
 	//Parent info
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	//Child info
 	NisdID string `xml:"NisdID" json:"NisdID"`
 	Vdev   []Vdev
+	// Additional fields for niova-ctl compatibility
+	Partitions     []DevicePartition `json:"partitions,omitempty"`
 }
+
+type DevicePartition struct {
+	PartitionUUID string `json:"partition_uuid"`
+	NISDInstance  string `json:"nisd_instance"`
+	StartOffset   int64  `json:"start_offset,omitempty"`
+	Size          int64  `json:"size,omitempty"`
+	ClientPort    int    `json:"client_port,omitempty"`
+	ServerPort    int    `json:"server_port,omitempty"`
+ }
 
 type Nisd struct {
 	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
@@ -88,13 +103,14 @@ type PDU struct {
 	ID            string // Unique identifier for the PDU
 	Name          string
 	Location      string
-	PowerCapacity int
+	PowerCapacity string
 	Specification string
 	Racks         []Rack
 }
 
 type Rack struct {
 	ID            string // Unique rack identifier
+	Name          string
 	PDUID         string // Foreign key to PDU
 	Location      string
 	Specification string
@@ -104,9 +120,11 @@ type Rack struct {
 type Hypervisor struct {
 	ID        string // Unique hypervisor identifier
 	RackID    string
+	Name      string
 	IPAddress string
 	RacID     string
 	PortRange string
+	SSHPort   string // SSH port for connection
 	Dev       []Device
 }
 
@@ -155,6 +173,35 @@ type NisdCntrConfig struct {
 	S3Config   s3Config         `yaml:"s3_config"`
 	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
 	NisdConfig []*Nisd          `yaml:"nisd_config"`
+}
+
+// String returns a string representation of the Device
+func (d Device) String() string {
+	status := ""
+	if d.Initialized {
+		status = " [INIT]"
+		if len(d.Partitions) > 0 {
+			status += fmt.Sprintf(" [%d partitions]", len(d.Partitions))
+		}
+	}
+	if d.Size > 0 {
+		return fmt.Sprintf("%s (%s)%s", d.ID, formatBytes(d.Size), status)
+	}
+	return fmt.Sprintf("%s%s", d.ID, status)
+}
+
+// formatBytes formats a byte count in human readable form
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func XMLEncode(data interface{}) ([]byte, error) {
