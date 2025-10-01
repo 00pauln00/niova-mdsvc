@@ -100,12 +100,12 @@ type Nisd struct {
 }
 
 type PDU struct {
-	ID            string // Unique identifier for the PDU
-	Name          string
-	Location      string
-	PowerCapacity string
-	Specification string
-	Racks         []Rack
+	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
+	Name          string `xml:"Name" json:"Name" yaml:"name"`
+	Location      string `xml:"Location" json:"Location" yaml:"location"`
+	PowerCapacity string `xml:"PowerCap" json:"PowerCap" yaml:"powercap"`
+	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
+	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
 }
 
 type Rack struct {
@@ -122,7 +122,6 @@ type Hypervisor struct {
 	RackID    string
 	Name      string
 	IPAddress string
-	RacID     string
 	PortRange string
 	SSHPort   string // SSH port for connection
 	Dev       []Device

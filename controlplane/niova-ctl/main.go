@@ -316,6 +316,12 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		writeDeviceInputs[i] = t
 	}
 
+	isConnected := false
+	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
+	if cpClient != nil {
+		isConnected = true
+	}
+
 	return model{
 		state:           stateMenu,
 		config:          config,
@@ -347,41 +353,33 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		cpEnabled:             cpEnabled,
 		cpRaftUUID:            cpRaftUUID,
 		cpGossipPath:          cpGossipPath,
-		cpConnected:           false,
+		cpClient:			   cpClient,
+		cpConnected:           isConnected,
 	}
 }
 
 // initControlPlane initializes the control plane client if enabled
-func (m *model) initControlPlane() {
-	if !m.cpEnabled {
-		return
-	}
+func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 
 	log.Info("initControlPlane")
-	if m.cpRaftUUID == "" || m.cpGossipPath == "" {
+	if raftUUID == "" || gossipPath == "" {
 		log.Warn("Control plane enabled but missing raft UUID or gossip path")
-		m.message = "Control plane configuration incomplete - missing raft UUID or gossip path"
-		return
+		return nil
 	}
 
-	log.Info("Initializing control plane client...")
+	log.Info("Initializing control plane client, raft uuid: ", raftUUID)
 	appUUID := uuid.New().String()
 
 	// Initialize control plane client
-	m.cpClient = ctlplcl.InitCliCFuncs(appUUID, m.cpRaftUUID, m.cpGossipPath)
+	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath)
 
 	// Set connected status - InitCliCFuncs starts async connection
-	m.cpConnected = true
-	m.message = "Control plane client initialized successfully"
 	log.Info("Control plane client initialized with UUID: ", appUUID)
+	return cpClient
 }
 
 func (m model) Init() tea.Cmd {
 	// Initialize control plane if enabled
-	if m.cpEnabled {
-		modelPtr := &m
-		modelPtr.initControlPlane()
-	}
 	return textinput.Blink
 }
 
@@ -628,7 +626,7 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 			name := strings.TrimSpace(m.inputs[0].Value())
 			ip := strings.TrimSpace(m.inputs[1].Value())
 			sshPort := strings.TrimSpace(m.inputs[2].Value())
-			//portRange := strings.TrimSpace(m.inputs[3].Value())
+			portRange := strings.TrimSpace(m.inputs[3].Value())
 
 			if name == "" || ip == "" {
 				m.message = "Name and IP Address are required"
@@ -640,20 +638,29 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 				sshPort = "22"
 			}
 
-/*
-			m.currentHv = ctlplcl.Hypervisor{
-				UUID:      m.editingUUID, // Will be generated if empty in AddHypervisor
+			rack := m.config.PDUs[m.selectedRackIdx]
+			hypervisor := Hypervisor{
+				ID:      m.editingUUID, // Will be generated if empty in AddHypervisor
 				Name:      name,
+				RackID:		rack.ID,
 				IPAddress: ip,
 				SSHPort:   sshPort,
 				PortRange: portRange,
 			}
-*/
 			
-			m.currentHv = ctlplfl.Hypervisor{
-				ID:      m.editingUUID, // Will be generated if empty in AddHypervisor
+			err := m.config.AddHypervisor(rack.ID, &hypervisor)
+			if err != nil {
+				m.message = fmt.Sprintf("Failed to add hypervisor: %v", err)
+				return m, nil
+			}
+			log.Info("Adding Hypervisor: ", hypervisor)
+			_, err = m.cpClient.PutHypervisor(&hypervisor)
+			if err != nil {
+				m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
+				return m, nil
 			}
 
+			m.currentHv = hypervisor
 			m.state = stateDeviceDiscovery
 			m.loading = true
 			m.message = ""
@@ -744,18 +751,17 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			if m.selectedRackIdx >= 0 && m.selectedRackIdx < len(allRacks) {
 				// Add hypervisor to selected rack
 				selectedRack := allRacks[m.selectedRackIdx]
-				hv, err := m.config.AddHypervisor(selectedRack.Rack.ID, m.currentHv)
+				err := m.config.AddHypervisor(selectedRack.Rack.ID, &m.currentHv)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to add hypervisor to rack: %v", err)
 					return m, nil
 				}
 				//TODO add the hypervisor to pumiceDB
-				_, err = m.cpClient.PutHypervisor(&hv)
+				_, err = m.cpClient.PutHypervisor(&m.currentHv)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
 					return m, nil
 				}
-				m.currentHv = hv
 			}
 			// Auto-save configuration after adding hypervisor
 			if err := m.config.SaveToFile(m.configPath); err != nil {
@@ -3435,30 +3441,24 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
-			m.currentPDU = PDU{
+			pdu := PDU{
 				ID:          m.editingUUID, // Will be generated if empty in AddPDU
 				Name:          name,
 				Location:      location,
 				PowerCapacity: powerCapacity,
 				Specification:   description,
+				Racks:         []Rack{},
 			}
 
-			m.config.AddPDU(&m.currentPDU)
+			m.config.AddPDU(&pdu)
 
-			// Find the added PDU in config to get the complete information (including generated UUID)
-			for _, pdu := range m.config.PDUs {
-				if pdu.Name == m.currentPDU.Name {
-					m.currentPDU = pdu // Update with complete PDU info including UUID
-					break
-				}
-			}
-
-			// TODO write PDU into PumiceDB
-			_, err := m.cpClient.PutPDU(&m.currentPDU)
+			log.Info("Adding PDU: ", pdu)
+			_, err := m.cpClient.PutPDU(&pdu)
 			if err != nil {
 				m.message = fmt.Sprintf("Added PDU %s but failed to save: %v",
 					m.currentPDU.ID, err)
 			} else {
+				m.currentPDU = pdu
 
 				// Auto-save configuration after adding PDU
 				if err := m.config.SaveToFile(m.configPath); err != nil {
@@ -3703,12 +3703,13 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 				Specification: description,
 			}
 
-			err := m.config.AddRack(rack)
+			err := m.config.AddRack(&rack)
 			if err != nil {
 				m.message = fmt.Sprintf("Failed to add rack: %v", err)
 				return m, nil
 			}
 
+			log.Info("Adding Rack: ", rack)
 			_, err = m.cpClient.PutRack(&rack)
 			if err != nil {
 				m.message = fmt.Sprintf("Failed to add rack to pumiceDB: %v", err)
@@ -4497,6 +4498,7 @@ func (m model) viewShowAddedRack() string {
 	s.WriteString(title + "\n\n")
 
 	rack := m.currentRack
+
 	if rack.ID != "" {
 		s.WriteString(lipgloss.NewStyle().Bold(true).Render("Rack Details:") + "\n\n")
 		s.WriteString(fmt.Sprintf("Name: %s\n", rack.ID))
@@ -4951,10 +4953,21 @@ func main() {
 		cpEnabled    = flag.Bool("cp", false, "Enable control plane integration")
 		cpRaftUUID   = flag.String("raft-uuid", "", "Control plane raft UUID")
 		cpGossipPath = flag.String("gossip-path", "", "Control plane gossip configuration path")
+		logFile      = flag.String("log-file", "", "Path to log file (if not specified, logs to stderr)")
 		showHelp     = flag.Bool("help", false, "Show help information")
 	)
 
 	flag.Parse()
+
+	// Configure logging
+	if *logFile != "" {
+		file, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("Failed to open log file %s: %v", *logFile, err)
+		}
+		log.SetOutput(file)
+		log.Info("Logging configured to file: ", *logFile)
+	}
 
 	if *showHelp {
 		fmt.Println("Niova Backend Configuration Tool")
@@ -4969,6 +4982,7 @@ func main() {
 		fmt.Println("  -cp                  Enable control plane integration")
 		fmt.Println("  -raft-uuid string    Control plane raft UUID")
 		fmt.Println("  -gossip-path string  Control plane gossip configuration path")
+		fmt.Println("  -log-file string     Path to log file (if not specified, logs to stderr)")
 		fmt.Println("  -help               Show this help information")
 		return
 	}

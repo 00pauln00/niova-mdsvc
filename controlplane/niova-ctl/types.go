@@ -84,7 +84,7 @@ func (c *Config) GetPDU(uuid string) (*PDU, bool) {
 }
 
 // Rack Management
-func (c *Config) AddRack(rack ctlplfl.Rack) error {
+func (c *Config) AddRack(rack *ctlplfl.Rack) error {
 	// Generate ID if not present
 	if rack.ID == "" {
 		rack.ID = uuid.New().String()
@@ -100,11 +100,11 @@ func (c *Config) AddRack(rack ctlplfl.Rack) error {
 					if len(rack.Hypervisors) == 0 {
 						rack.Hypervisors = existing.Hypervisors
 					}
-					c.PDUs[i].Racks[j] = rack
+					c.PDUs[i].Racks[j] = *rack
 					return nil
 				}
 			}
-			c.PDUs[i].Racks = append(c.PDUs[i].Racks, rack)
+			c.PDUs[i].Racks = append(c.PDUs[i].Racks, *rack)
 			return nil
 		}
 	}
@@ -153,7 +153,7 @@ func (c *Config) GetRack(rackUUID string) (*Rack, bool) {
 }
 
 // Hypervisor Management (updated for hierarchy)
-func (c *Config) AddHypervisor(rackUUID string, hv ctlplfl.Hypervisor) (ctlplfl.Hypervisor, error) {
+func (c *Config) AddHypervisor(rackUUID string, hv *ctlplfl.Hypervisor) error {
 	// Generate UUID if not present
 	if hv.ID == "" {
 		hv.ID = uuid.New().String()
@@ -171,16 +171,16 @@ func (c *Config) AddHypervisor(rackUUID string, hv ctlplfl.Hypervisor) (ctlplfl.
 						if len(hv.Dev) == 0 {
 							hv.Dev = existing.Dev
 						}
-						c.PDUs[i].Racks[j].Hypervisors[k] = hv
-						return hv, nil
+						c.PDUs[i].Racks[j].Hypervisors[k] = *hv
+						return nil
 					}
 				}
-				c.PDUs[i].Racks[j].Hypervisors = append(c.PDUs[i].Racks[j].Hypervisors, hv)
-				return hv, nil
+				c.PDUs[i].Racks[j].Hypervisors = append(c.PDUs[i].Racks[j].Hypervisors, *hv)
+				return nil
 			}
 		}
 	}
-	return ctlplfl.Hypervisor{}, fmt.Errorf("rack with UUID %s not found", rackUUID)
+	return fmt.Errorf("rack with UUID %s not found", rackUUID)
 }
 
 // Legacy method for backward compatibility
