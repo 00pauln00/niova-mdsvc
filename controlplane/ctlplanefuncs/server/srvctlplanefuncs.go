@@ -89,10 +89,10 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 
 	log.Info("Read result by Vdev", readResult)
@@ -210,10 +210,10 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	key := getConfKey(nisdCfgKey, req.ID)
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
@@ -229,10 +229,10 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
 	log.Info("fetching nisd list: ", nisdList)
@@ -280,10 +280,10 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		ID: req.ID,
 	}
 	key := getConfKey(deviceCfgKey, dev.ID)
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 
 	devices := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceParser{})
@@ -483,10 +483,10 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		key = getConfKey(pduKey, req.ID)
 	}
 
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
 
@@ -541,10 +541,10 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 
 	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
@@ -598,10 +598,10 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		key = getConfKey(hvKey, req.ID)
 	}
 
-	readResult := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-	if readResult.Error != nil {
-		log.Error("Range read failure ", readResult.Error)
-		return nil, readResult.Error
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
 	}
 
 	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})

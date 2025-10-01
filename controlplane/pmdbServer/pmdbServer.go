@@ -556,7 +556,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult := nso.pso.RangeReadKV(readArgs.UserID,
+		readResult, err := nso.pso.RangeReadKV(readArgs.UserID,
 			reqStruct.Key,
 			int64(keyLen), reqStruct.Prefix,
 			(readArgs.ReplySize - int64(encodingOverhead)),
@@ -573,9 +573,9 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 			ContinueRead: cRead,
 			Key:          readResult.LastKey,
 			SeqNum:       readResult.SeqNum,
-			SnapMiss:     readResult.SnapshotMiss,
+			SnapMiss:     readResult.SnapMiss,
 		}
-		readErr = readResult.Error
+		readErr = err
 	} else {
 		log.Error("Invalid operation: ", reqStruct.Operation)
 		return -1
