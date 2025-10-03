@@ -47,6 +47,7 @@ const (
 	stateHypervisorRackSelection
 	stateDeviceDiscovery
 	stateDeviceSelection
+	stateViewHypervisor
 	stateEditHypervisor
 	stateDeleteHypervisor
 	stateShowAddedHypervisor
@@ -58,9 +59,6 @@ const (
 	stateDeviceDelete
 	stateDeviceInitialization
 	stateDevicePartitioning
-	// Control Plane States
-	stateWriteDevice
-	stateWriteDeviceForm
 	// Partition Management States
 	statePartitionManagement
 	statePartitionCreate
@@ -87,13 +85,6 @@ const (
 	// Device partition specific
 	inputNISDInstance
 	inputPartitionSize
-	// WriteDevice specific
-	inputDevID
-	inputNisdID
-	inputSerialNumber
-	inputStatus
-	inputHyperVisorID
-	inputFailureDomain
 )
 
 type model struct {
@@ -165,10 +156,6 @@ type model struct {
 	selectedDeviceForPartition Device
 	selectedHvForPartition     ctlplfl.Hypervisor
 
-	// WriteDevice Control Plane
-	writeDeviceCursor  int
-	currentDeviceInfo  ctlplfl.Device
-	writeDeviceInputs  []textinput.Model
 
 	// Control Plane
 	cpClient        *ctlplcl.CliCFuncs
@@ -280,7 +267,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		{"Manage Racks", "Add, edit, or delete server racks"},
 		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
 		{"Manage Devices", "Initialize and partition devices on hypervisors"},
-		{"Write Device to Control Plane", "Send device configuration to niova-mdsvc"},
 		{"View Configuration", "Display current hierarchical configuration"},
 		{"Save & Exit", "Save configuration and exit"},
 		{"Exit", "Exit without saving"},
@@ -302,19 +288,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	deviceFailureDomainInput.Placeholder = "Enter failure domain for device"
 	deviceFailureDomainInput.CharLimit = 500
 
-	// Initialize WriteDevice inputs
-	writeDeviceInputs := make([]textinput.Model, 6)
-	writeDevicePlaceholders := []string{"Enter device ID", "Enter NISD ID", "Enter serial number", "Enter status (0-65535)", "Enter hypervisor ID", "Enter failure domain"}
-	
-	for i := 0; i < 6; i++ {
-		t := textinput.New()
-		t.Placeholder = writeDevicePlaceholders[i]
-		t.CharLimit = 200
-		if i == 0 {
-			t.Focus()
-		}
-		writeDeviceInputs[i] = t
-	}
 
 	isConnected := false
 	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
@@ -348,7 +321,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		selectedHypervisorIdx: -1,
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
-		writeDeviceInputs:     writeDeviceInputs,
 		// Control plane configuration
 		cpEnabled:             cpEnabled,
 		cpRaftUUID:            cpRaftUUID,
@@ -464,6 +436,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Loading state, no updates needed
 	case stateDeviceSelection:
 		m, cmd = m.updateDeviceSelection(msg)
+	case stateViewHypervisor:
+		m, cmd = m.updateViewHypervisor(msg)
 	case stateEditHypervisor:
 		m, cmd = m.updateEditHypervisor(msg)
 	case stateDeleteHypervisor:
@@ -497,14 +471,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateShowAddedPartition:
 		m, cmd = m.updateShowAddedPartition(msg)
 	// Control Plane
-	case stateWriteDevice:
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			m, cmd = m.updateWriteDevice(keyMsg)
-		}
-	case stateWriteDeviceForm:
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			m, cmd = m.updateWriteDeviceForm(keyMsg)
-		}
 	// Configuration View
 	case stateViewConfig:
 		m, cmd = m.updateViewConfig(msg)
@@ -553,12 +519,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedDeviceIdx = -1
 				m.message = ""
 				return m, nil
-			case 4: // Write Device to Control Plane
-				m.state = stateWriteDevice
-				m.writeDeviceCursor = 0
-				m.message = ""
-				return m, nil
-			case 5: // View Configuration
+			case 4: // View Configuration
 				m.state = stateViewConfig
 				// Reset config cursor and expand states
 				m.configCursor = 0
@@ -574,7 +535,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				}
 				m.updateConfigView()
 				return m, nil
-			case 6: // Save & Exit
+			case 5: // Save & Exit
 				if err := m.config.SaveToFile(m.configPath); err != nil {
 					m.message = fmt.Sprintf("Error saving config: %v", err)
 					return m, nil
@@ -582,7 +543,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = fmt.Sprintf("Configuration saved to %s", m.configPath)
 				m.quitting = true
 				return m, tea.Quit
-			case 7: // Exit
+			case 6: // Exit
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -638,28 +599,25 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 				sshPort = "22"
 			}
 
-			rack := m.config.PDUs[m.selectedRackIdx]
+			// Get the selected rack from getAllRacks() using selectedRackIdx
+			allRacks := m.getAllRacks()
+			if m.selectedRackIdx < 0 || m.selectedRackIdx >= len(allRacks) {
+				m.message = "⚠️  Invalid rack selection. Please select a rack first."
+				return m, nil
+			}
+
+			selectedRackInfo := allRacks[m.selectedRackIdx]
 			hypervisor := Hypervisor{
 				ID:      m.editingUUID, // Will be generated if empty in AddHypervisor
 				Name:      name,
-				RackID:		rack.ID,
+				RackID:		selectedRackInfo.Rack.ID, // Use the correct Rack UUID
 				IPAddress: ip,
 				SSHPort:   sshPort,
 				PortRange: portRange,
 			}
-			
-			err := m.config.AddHypervisor(rack.ID, &hypervisor)
-			if err != nil {
-				m.message = fmt.Sprintf("Failed to add hypervisor: %v", err)
-				return m, nil
-			}
-			log.Info("Adding Hypervisor: ", hypervisor)
-			_, err = m.cpClient.PutHypervisor(&hypervisor)
-			if err != nil {
-				m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
-				return m, nil
-			}
 
+			// Store hypervisor data but don't add to config/PumiceDB yet
+			// Device discovery and selection will happen first
 			m.currentHv = hypervisor
 			m.state = stateDeviceDiscovery
 			m.loading = true
@@ -736,17 +694,20 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			// Select none (all pages)
 			m.selectedDevices = make(map[int]bool)
 		case "enter":
-			// Confirm selection
-			selectedDevices := make([]ctlplfl.Device, 0)
+			// Confirm selection - devices will be included in hypervisor
+			selectedDevices := make([]Device, 0)
 			for i, selected := range m.selectedDevices {
 				if selected && i < len(m.discoveredDevs) {
+					selDev := m.discoveredDevs[i]
+					selDev.HypervisorID = m.currentHv.ID
+					selDev.Initialized = false
 					selectedDevices = append(selectedDevices, m.discoveredDevs[i])
 				}
 			}
-			//TODO assign this once the structure parameters are added
+			// Assign selected devices to hypervisor before adding to config/PumiceDB
 			m.currentHv.Dev = selectedDevices
 
-			// Check if a rack is selected for hierarchical addition
+			// Now add hypervisor with devices to config and PumiceDB
 			allRacks := m.getAllRacks()
 			if m.selectedRackIdx >= 0 && m.selectedRackIdx < len(allRacks) {
 				// Add hypervisor to selected rack
@@ -756,7 +717,8 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					m.message = fmt.Sprintf("Failed to add hypervisor to rack: %v", err)
 					return m, nil
 				}
-				//TODO add the hypervisor to pumiceDB
+				log.Info("Adding Hypervisor with devices: ", m.currentHv)
+				// Add the hypervisor with devices to pumiceDB
 				_, err = m.cpClient.PutHypervisor(&m.currentHv)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
@@ -788,8 +750,9 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.hvManagementCursor--
 			}
 		case "down", "j":
-			maxItems := 3 // Add, Edit, Delete
-			if len(m.config.Hypervisors) == 0 {
+			allHypervisors := m.getAllHypervisors()
+			maxItems := 4 // Add, View, Edit, Delete
+			if len(allHypervisors) == 0 {
 				maxItems = 1 // Only Add available
 			}
 			if m.hvManagementCursor < maxItems-1 {
@@ -798,25 +761,61 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			switch m.hvManagementCursor {
 			case 0: // Add Hypervisor
+				// Check if racks are available
+				allRacks := m.getAllRacks()
+				if len(allRacks) == 0 {
+					m.message = "⚠️  No racks available. Please create racks first before adding hypervisors."
+					return m, nil
+				}
+
+				// Check if a rack is selected
+				if m.selectedRackIdx < 0 || m.selectedRackIdx >= len(allRacks) {
+					m.message = "⚠️  Please select a rack first. Use 'R' to select a rack for the hypervisor."
+					return m, nil
+				}
+
 				m.state = stateHypervisorForm
 				m.editingUUID = "" // Clear editing UUID for new hypervisor
 				m.resetInputs()
 				m.message = ""
 				return m, textinput.Blink
-			case 1: // Edit Hypervisor
-				if len(m.config.Hypervisors) > 0 {
+			case 1: // View Hypervisor
+				allHypervisors := m.getAllHypervisors()
+				if len(allHypervisors) > 0 {
+					m.state = stateViewHypervisor
+					m.hvListCursor = 0
+					m.message = ""
+					return m, nil
+				}
+			case 2: // Edit Hypervisor
+				allHypervisors := m.getAllHypervisors()
+				if len(allHypervisors) > 0 {
 					m.state = stateEditHypervisor
 					m.hvListCursor = 0
 					m.message = ""
 					return m, nil
 				}
-			case 2: // Delete Hypervisor
-				if len(m.config.Hypervisors) > 0 {
+			case 3: // Delete Hypervisor
+				allHypervisors := m.getAllHypervisors()
+				if len(allHypervisors) > 0 {
 					m.state = stateDeleteHypervisor
 					m.hvListCursor = 0
 					m.message = ""
 					return m, nil
 				}
+			}
+		case "r", "R": // Open Rack selection menu
+			allRacks := m.getAllRacks()
+			if len(allRacks) > 0 {
+				m.rackSelectionCursor = m.selectedRackIdx // Start at currently selected rack
+				if m.rackSelectionCursor < 0 {
+					m.rackSelectionCursor = 0
+				}
+				m.state = stateHypervisorRackSelection
+				return m, nil
+			} else {
+				m.message = "⚠️  No racks available. Please create racks first."
+				return m, nil
 			}
 		}
 	}
@@ -824,6 +823,8 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 }
 
 func (m model) updateEditHypervisor(msg tea.Msg) (model, tea.Cmd) {
+	allHypervisors := m.getAllHypervisors()
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -832,23 +833,28 @@ func (m model) updateEditHypervisor(msg tea.Msg) (model, tea.Cmd) {
 				m.hvListCursor--
 			}
 		case "down", "j":
-			if m.hvListCursor < len(m.config.Hypervisors)-1 {
+			if m.hvListCursor < len(allHypervisors)-1 {
 				m.hvListCursor++
 			}
 		case "enter", " ":
 			// Load selected hypervisor for editing
-			hv := m.config.Hypervisors[m.hvListCursor]
-			m.editingUUID = hv.ID
-			m.currentHv = hv
-			m.loadHypervisorIntoForm(hv)
-			m.state = stateHypervisorForm
-			return m, textinput.Blink
+			if m.hvListCursor < len(allHypervisors) {
+				hvInfo := allHypervisors[m.hvListCursor]
+				hv := hvInfo.Hypervisor
+				m.editingUUID = hv.ID
+				m.currentHv = hv
+				m.loadHypervisorIntoForm(hv)
+				m.state = stateHypervisorForm
+				return m, textinput.Blink
+			}
 		}
 	}
 	return m, nil
 }
 
 func (m model) updateDeleteHypervisor(msg tea.Msg) (model, tea.Cmd) {
+	allHypervisors := m.getAllHypervisors()
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -857,20 +863,23 @@ func (m model) updateDeleteHypervisor(msg tea.Msg) (model, tea.Cmd) {
 				m.hvListCursor--
 			}
 		case "down", "j":
-			if m.hvListCursor < len(m.config.Hypervisors)-1 {
+			if m.hvListCursor < len(allHypervisors)-1 {
 				m.hvListCursor++
 			}
 		case "enter", " ", "y":
 			// Delete selected hypervisor
-			hv := m.config.Hypervisors[m.hvListCursor]
-			if m.config.DeleteHypervisor(hv.ID) {
-				if err := m.config.SaveToFile(m.configPath); err != nil {
-					m.message = fmt.Sprintf("Failed to save after deletion: %v", err)
+			if m.hvListCursor < len(allHypervisors) {
+				hvInfo := allHypervisors[m.hvListCursor]
+				hv := hvInfo.Hypervisor
+				if m.config.DeleteHypervisor(hv.ID) {
+					if err := m.config.SaveToFile(m.configPath); err != nil {
+						m.message = fmt.Sprintf("Failed to save after deletion: %v", err)
+					} else {
+						m.message = fmt.Sprintf("Deleted hypervisor '%s'", hv.ID)
+					}
 				} else {
-					m.message = fmt.Sprintf("Deleted hypervisor '%s'", hv.ID)
+					m.message = "Failed to delete hypervisor"
 				}
-			} else {
-				m.message = "Failed to delete hypervisor"
 			}
 			m.state = stateHypervisorManagement
 			return m, nil
@@ -1661,6 +1670,8 @@ func (m model) View() string {
 		return m.viewDeviceDiscovery()
 	case stateDeviceSelection:
 		return m.viewDeviceSelection()
+	case stateViewHypervisor:
+		return m.viewViewHypervisor()
 	case stateEditHypervisor:
 		return m.viewEditHypervisor()
 	case stateDeleteHypervisor:
@@ -1694,10 +1705,6 @@ func (m model) View() string {
 	case stateShowAddedPartition:
 		return m.viewShowAddedPartition()
 	// Control Plane Views
-	case stateWriteDevice:
-		return m.viewWriteDevice()
-	case stateWriteDeviceForm:
-		return m.viewWriteDeviceForm()
 	// Configuration View
 	case stateViewConfig:
 		return m.viewConfig()
@@ -2283,8 +2290,10 @@ func (m model) viewHypervisorManagement() string {
 		"Add Hypervisor - Create new hypervisor configuration",
 	}
 
-	if len(m.config.Hypervisors) > 0 {
+	allHypervisors := m.getAllHypervisors()
+	if len(allHypervisors) > 0 {
 		managementItems = append(managementItems,
+			"View Hypervisor - Display hypervisor details",
 			"Edit Hypervisor - Modify existing hypervisor",
 			"Delete Hypervisor - Remove hypervisor from configuration")
 	}
@@ -2300,9 +2309,141 @@ func (m model) viewHypervisorManagement() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString(fmt.Sprintf("\nCurrent hypervisors: %d\n\n", len(m.config.Hypervisors)))
-	s.WriteString("Controls: ↑/↓ navigate, enter select, esc back to main menu")
+	// Show rack selection status
+	s.WriteString("\n")
+	allRacks := m.getAllRacks()
+	if len(allRacks) == 0 {
+		s.WriteString(errorStyle.Render("⚠️  No racks available - Create racks first") + "\n")
+	} else {
+		if m.selectedRackIdx >= 0 && m.selectedRackIdx < len(allRacks) {
+			rack := allRacks[m.selectedRackIdx]
+			s.WriteString(fmt.Sprintf("🏠 Selected Rack: %s", selectedItemStyle.Render(rack.Rack.ID)))
+			if rack.Rack.Location != "" {
+				s.WriteString(fmt.Sprintf(" (%s)", rack.Rack.Location))
+			}
+			s.WriteString("\n")
+		} else {
+			s.WriteString(errorStyle.Render("⚠️  No rack selected") + " - Press 'R' to select a rack\n")
+		}
+	}
 
+	s.WriteString(fmt.Sprintf("\nCurrent hypervisors: %d\n\n", len(m.config.Hypervisors)))
+	s.WriteString("Controls: ↑/↓ navigate, enter select, R rack selection, esc back to main menu")
+
+	return s.String()
+}
+
+func (m model) updateViewHypervisor(msg tea.Msg) (model, tea.Cmd) {
+	allHypervisors := m.getAllHypervisors()
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.hvListCursor > 0 {
+				m.hvListCursor--
+			}
+		case "down", "j":
+			if m.hvListCursor < len(allHypervisors)-1 {
+				m.hvListCursor++
+			}
+		case "enter", " ":
+			// Just stay on the current hypervisor for viewing
+			return m, nil
+		case "esc":
+			m.state = stateHypervisorManagement
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewViewHypervisor() string {
+	title := titleStyle.Render("View Hypervisor Details")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		s.WriteString(errorStyle.Render(m.message) + "\n\n")
+	}
+
+	allHypervisors := m.getAllHypervisors()
+	if len(allHypervisors) == 0 {
+		s.WriteString(errorStyle.Render("No hypervisors found") + "\n\n")
+		s.WriteString("Controls: esc back")
+		return s.String()
+	}
+
+	// Show hypervisor list
+	s.WriteString("Select a hypervisor to view details:\n\n")
+	for i, hvInfo := range allHypervisors {
+		cursor := "  "
+		if i == m.hvListCursor {
+			cursor = "▶ "
+		}
+
+		hvName := hvInfo.Hypervisor.Name
+		if hvName == "" {
+			hvName = "Unnamed"
+		}
+
+		line := fmt.Sprintf("%s%s (%s)", cursor, hvName, hvInfo.Hypervisor.IPAddress)
+		if i == m.hvListCursor {
+			s.WriteString(selectedItemStyle.Render(line))
+		} else {
+			s.WriteString(line)
+		}
+		s.WriteString(fmt.Sprintf(" - %s\n", hvInfo.Location))
+	}
+
+	// Show detailed info for selected hypervisor
+	if m.hvListCursor < len(allHypervisors) {
+		selectedHv := allHypervisors[m.hvListCursor]
+		hv := selectedHv.Hypervisor
+
+		s.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("═══════════════════") + "\n")
+		s.WriteString(fmt.Sprintf("📋 Hypervisor Details:\n\n"))
+		s.WriteString(fmt.Sprintf("Name: %s\n", hv.Name))
+		s.WriteString(fmt.Sprintf("UUID: %s\n", hv.ID))
+		s.WriteString(fmt.Sprintf("IP Address: %s\n", hv.IPAddress))
+		s.WriteString(fmt.Sprintf("SSH Port: %s\n", hv.SSHPort))
+		s.WriteString(fmt.Sprintf("Port Range: %s\n", hv.PortRange))
+		if hv.RackID != "" {
+			s.WriteString(fmt.Sprintf("Rack ID: %s\n", hv.RackID))
+		}
+		s.WriteString(fmt.Sprintf("Location: %s\n", selectedHv.Location))
+
+		if selectedHv.RackInfo != nil {
+			s.WriteString(fmt.Sprintf("PDU: %s\n", selectedHv.RackInfo.PDUName))
+		}
+
+		s.WriteString(fmt.Sprintf("\nDevices (%d):\n", len(hv.Dev)))
+		if len(hv.Dev) == 0 {
+			s.WriteString("  No devices configured\n")
+		} else {
+			for i, device := range hv.Dev {
+				s.WriteString(fmt.Sprintf("  %d. %s", i+1, device.Name))
+				if device.DevicePath != "" {
+					s.WriteString(fmt.Sprintf(" (%s)", device.DevicePath))
+				}
+				if device.Initialized {
+					s.WriteString(" [Initialized]")
+				}
+				s.WriteString("\n")
+
+				if len(device.Partitions) > 0 {
+					s.WriteString(fmt.Sprintf("     Partitions (%d):\n", len(device.Partitions)))
+					for j, partition := range device.Partitions {
+						s.WriteString(fmt.Sprintf("       %d. %s (Size: %s)\n",
+							j+1, partition.NISDInstance, partition.Size))
+					}
+				}
+			}
+		}
+	}
+
+	s.WriteString("\n\nControls: ↑/↓ navigate hypervisors, esc back to menu")
 	return s.String()
 }
 
@@ -2316,7 +2457,8 @@ func (m model) viewEditHypervisor() string {
 		s.WriteString(errorStyle.Render(m.message) + "\n\n")
 	}
 
-	if len(m.config.Hypervisors) == 0 {
+	allHypervisors := m.getAllHypervisors()
+	if len(allHypervisors) == 0 {
 		s.WriteString("No hypervisors available to edit.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
@@ -2324,13 +2466,18 @@ func (m model) viewEditHypervisor() string {
 
 	s.WriteString("Select hypervisor to edit:\n\n")
 
-	for i, hv := range m.config.Hypervisors {
+	for i, hvInfo := range allHypervisors {
 		cursor := "  "
 		if i == m.hvListCursor {
 			cursor = "▶ "
 		}
 
-		line := fmt.Sprintf("%s%d. %s (%s)", cursor, i+1, hv.ID, hv.IPAddress)
+		hvName := hvInfo.Hypervisor.Name
+		if hvName == "" {
+			hvName = "Unnamed"
+		}
+
+		line := fmt.Sprintf("%s%d. %s (%s) - %s", cursor, i+1, hvName, hvInfo.Hypervisor.IPAddress, hvInfo.Location)
 		if i == m.hvListCursor {
 			line = selectedItemStyle.Render(line)
 		}
@@ -2338,6 +2485,7 @@ func (m model) viewEditHypervisor() string {
 
 		// Show additional details for selected item
 		if i == m.hvListCursor {
+			hv := hvInfo.Hypervisor
 			details := fmt.Sprintf("    UUID: %s", hv.ID)
 			failureDomain := m.config.GetHypervisorFailureDomain(hv.ID)
 			if failureDomain != "" {
@@ -2366,7 +2514,8 @@ func (m model) viewDeleteHypervisor() string {
 		s.WriteString(errorStyle.Render(m.message) + "\n\n")
 	}
 
-	if len(m.config.Hypervisors) == 0 {
+	allHypervisors := m.getAllHypervisors()
+	if len(allHypervisors) == 0 {
 		s.WriteString("No hypervisors available to delete.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
@@ -2375,13 +2524,13 @@ func (m model) viewDeleteHypervisor() string {
 	s.WriteString("⚠️  WARNING: This will permanently delete the hypervisor!\n\n")
 	s.WriteString("Select hypervisor to delete:\n\n")
 
-	for i, hv := range m.config.Hypervisors {
+	for i, hvInfo := range allHypervisors {
 		cursor := "  "
 		if i == m.hvListCursor {
 			cursor = "▶ "
 		}
 
-		line := fmt.Sprintf("%s%d. %s (%s)", cursor, i+1, hv.ID, hv.IPAddress)
+		line := fmt.Sprintf("%s%d. %s (%s)", cursor, i+1, hvInfo.Hypervisor.ID, hvInfo.Hypervisor.IPAddress)
 		if i == m.hvListCursor {
 			line = errorStyle.Render(line) // Show selected item in red for deletion
 		}
@@ -2389,14 +2538,10 @@ func (m model) viewDeleteHypervisor() string {
 
 		// Show additional details for selected item
 		if i == m.hvListCursor {
-			details := fmt.Sprintf("    UUID: %s", hv.ID)
-			failureDomain := m.config.GetHypervisorFailureDomain(hv.ID)
-			if failureDomain != "" {
-				details += fmt.Sprintf(" | Domain: %s", failureDomain)
-			} else if hv.RackID != "" {
-				details += fmt.Sprintf(" | Rack: %s", hv.RackID)
-			}
-			details += fmt.Sprintf(" | %d devices will be removed", len(hv.Dev))
+			details := fmt.Sprintf("    UUID: %s", hvInfo.Hypervisor.ID)
+			details += fmt.Sprintf(" | Location: %s", hvInfo.Location)
+			details += fmt.Sprintf(" | Source: %s", hvInfo.Source)
+			details += fmt.Sprintf(" | %d devices will be removed", len(hvInfo.Hypervisor.Dev))
 			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(details) + "\n")
 		}
 		s.WriteString("\n")
@@ -4653,6 +4798,50 @@ func (m model) getAllRacks() []RackInfo {
 	return racks
 }
 
+// HypervisorInfo contains hypervisor information with location context
+type HypervisorInfo struct {
+	Hypervisor ctlplfl.Hypervisor
+	Location   string // "Rack: <RackID>" or "Legacy"
+	Source     string // "rack" or "legacy"
+	RackInfo   *RackInfo // nil for legacy hypervisors
+}
+
+// Helper function to get all hypervisors from both hierarchical and legacy sources
+func (m model) getAllHypervisors() []HypervisorInfo {
+	var hypervisors []HypervisorInfo
+
+	// Get hypervisors from hierarchical structure (in racks)
+	for pduIndex, pdu := range m.config.PDUs {
+		for _, rack := range pdu.Racks {
+			for _, hv := range rack.Hypervisors {
+				rackInfo := &RackInfo{
+					Rack:     rack,
+					PDUIndex: pduIndex,
+					PDUName:  pdu.Name,
+				}
+				hypervisors = append(hypervisors, HypervisorInfo{
+					Hypervisor: hv,
+					Location:   fmt.Sprintf("Rack: %s", rack.ID),
+					Source:     "rack",
+					RackInfo:   rackInfo,
+				})
+			}
+		}
+	}
+
+	// Get legacy hypervisors
+	for _, hv := range m.config.Hypervisors {
+		hypervisors = append(hypervisors, HypervisorInfo{
+			Hypervisor: hv,
+			Location:   "Legacy",
+			Source:     "legacy",
+			RackInfo:   nil,
+		})
+	}
+
+	return hypervisors
+}
+
 // PDU Selection for Rack Form
 func (m model) updateRackPDUSelection(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -4797,6 +4986,7 @@ func (m model) viewHypervisorRackSelection() string {
 	return s.String()
 }
 
+/*
 // WriteDevice update functions
 func (m model) updateWriteDevice(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
@@ -4946,6 +5136,7 @@ func (m model) viewWriteDeviceForm() string {
 	
 	return s.String()
 }
+*/
 
 func main() {
 	// Define command line flags

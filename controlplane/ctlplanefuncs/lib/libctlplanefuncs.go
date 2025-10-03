@@ -72,8 +72,6 @@ type Device struct {
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	//Child info
 	NisdID string `xml:"NisdID" json:"NisdID"`
-	Vdev   []Vdev
-	// Additional fields for niova-ctl compatibility
 	Partitions     []DevicePartition `json:"partitions,omitempty"`
 }
 

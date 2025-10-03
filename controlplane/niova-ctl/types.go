@@ -21,6 +21,7 @@ type Hypervisor = ctlplfl.Hypervisor
 
 type Config struct {
 	PDUs []ctlplfl.PDU `json:"pdus"`
+	Racks []ctlplfl.Rack `json:"racks"`
 	// Legacy field for backward compatibility
 	Hypervisors []ctlplfl.Hypervisor `json:"hypervisors,omitempty"`
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
@@ -83,7 +84,7 @@ func (s *SSHClient) GetDevices() ([]ctlplfl.Device, error) {
 		devices = append(devices, parseByIdDevices(byIdOutput)...)
 	}
 
-	lsblkOutput, err := s.RunCommand("lsblk -d -n -o NAME,SIZE,TYPE | grep 'disk'")
+	lsblkOutput, err := s.RunCommand("lsblk -d -n -o NAME,SIZE,SERIAL,TYPE | grep 'disk'")
 	if err != nil {
 		return devices, fmt.Errorf("failed to get device list: %v", err)
 	}
@@ -152,12 +153,14 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 			_ = matches[2] // sizeStr - TODO: Parse size strings like "1T", "500G" etc. properly
 
 			// Convert size string to bytes (simplified - just use 0 for now)
+			serialNum := matches[3]
 			var sizeBytes int64 = 0
 
 			devices = append(devices, Device{
-				ID: name,
+				ID: uuid.New().String(),
 				Name:  name,
 				Size:  sizeBytes,
+				SerialNumber: serialNum,
 			})
 		}
 	}
