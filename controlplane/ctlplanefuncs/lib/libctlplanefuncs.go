@@ -1,7 +1,12 @@
 package libctlplanefuncs
 
 import (
+	"bytes"
 	"encoding/xml"
+	"errors"
+	"io"
+	"fmt"
+	"reflect"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -9,18 +14,23 @@ import (
 )
 
 const (
-	PUT_DEVICE    = "PutDeviceCfg"
-	GET_DEVICE    = "GetDeviceCfg"
-	PUT_NISD      = "PutNisdCfg"
-	GET_NISD      = "GetNisdCfg"
-	GET_NISD_LIST = "GetAllNisd"
-	CREATE_VDEV   = "CreateVdev"
-	CREATE_SNAP   = "CreateSnap"
+	PUT_DEVICE     = "PutDeviceInfo"
+	GET_DEVICE     = "GetDeviceInfo"
+	PUT_NISD       = "PutNisdCfg"
+	GET_NISD       = "GetNisdCfg"
+	GET_NISD_LIST  = "GetAllNisd"
+	CREATE_VDEV    = "CreateVdev"
+	CREATE_SNAP    = "CreateSnap"
 	READ_SNAP_NAME = "ReadSnapByName"
 	READ_SNAP_VDEV = "ReadSnapForVdev"
-	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
-	NAME = "name"
-
+	PUT_PDU        = "PutPDU"
+	GET_PDU        = "GetPDU"
+	GET_RACK       = "GetRack"
+	PUT_RACK       = "PutRack"
+	GET_HYPERVISOR = "GetHypervisor"
+	PUT_HYPERVISOR = "PutHypervisor"
+	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
+	NAME           = "name"
 )
 
 // Define Snapshot XML structure
@@ -49,19 +59,35 @@ type ResponseXML struct {
 	Success bool
 }
 
-type DeviceInfo struct {
-	DevID         string `xml:"DevID" json:"DevID"`
-	NisdID        string `xml:"NisdID" json:"NisdID"`
-	SerialNumber  string `xml:"SerialNumber" json:"SerialNumber"`
-	Status        uint16 `xml:"Status" json:"Status"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
+type Device struct {
+	ID           string `xml:"ID" json:"ID"`
+	Name         string `xml:"Name" json:"Name"`           // For display purposes
+	DevicePath   string `xml:"device_path,omitempty" json: "DevicePath"`
+	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
+	Status       uint16 `xml:"Status" json:"Status"`
+	Size         int64  `xml:"Size" json:"Size"`
+	Initialized  bool   `xml:"Initialized" json:"initialized"`
+	//Parent info
+	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
+	//Child info
+	NisdID string `xml:"NisdID" json:"NisdID"`
+	Partitions     []DevicePartition `json:"partitions,omitempty"`
 }
+
+type DevicePartition struct {
+	PartitionUUID string `json:"partition_uuid"`
+	NISDInstance  string `json:"nisd_instance"`
+	StartOffset   int64  `json:"start_offset,omitempty"`
+	Size          int64  `json:"size,omitempty"`
+	ClientPort    int    `json:"client_port,omitempty"`
+	ServerPort    int    `json:"server_port,omitempty"`
+ }
 
 type Nisd struct {
 	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
 	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	NisdID        string `xml:"NisdID" json:"NisdID" yaml:"uuid"`
+	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
 	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
 	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
@@ -69,6 +95,34 @@ type Nisd struct {
 	InitDev       bool   `yaml:"init"`
 	TotalSize     int64  `xml:"TotalSize"`
 	AvailableSize int64  `xml:"AvailableSize"`
+}
+
+type PDU struct {
+	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
+	Name          string `xml:"Name" json:"Name" yaml:"name"`
+	Location      string `xml:"Location" json:"Location" yaml:"location"`
+	PowerCapacity string `xml:"PowerCap" json:"PowerCap" yaml:"powercap"`
+	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
+	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
+}
+
+type Rack struct {
+	ID            string // Unique rack identifier
+	Name          string
+	PDUID         string // Foreign key to PDU
+	Location      string
+	Specification string
+	Hypervisors   []Hypervisor
+}
+
+type Hypervisor struct {
+	ID        string // Unique hypervisor identifier
+	RackID    string
+	Name      string
+	IPAddress string
+	PortRange string
+	SSHPort   string // SSH port for connection
+	Dev       []Device
 }
 
 type NisdChunk struct {
@@ -84,6 +138,11 @@ type Vdev struct {
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+}
+
+type GetReq struct {
+	ID     string
+	GetAll bool
 }
 
 func (vdev *Vdev) Init() error {
@@ -113,12 +172,71 @@ type NisdCntrConfig struct {
 	NisdConfig []*Nisd          `yaml:"nisd_config"`
 }
 
-func XMLEncode(data interface{}) ([]byte, error) {
-	return xml.MarshalIndent(data, "", " ")
+// String returns a string representation of the Device
+func (d Device) String() string {
+	status := ""
+	if d.Initialized {
+		status = " [INIT]"
+		if len(d.Partitions) > 0 {
+			status += fmt.Sprintf(" [%d partitions]", len(d.Partitions))
+		}
+	}
+	if d.Size > 0 {
+		return fmt.Sprintf("%s (%s)%s", d.ID, formatBytes(d.Size), status)
+	}
+	return fmt.Sprintf("%s%s", d.ID, status)
 }
 
-func XMLDecode(bin []byte, st interface{}) error {
-	return xml.Unmarshal(bin, &st)
+// formatBytes formats a byte count in human readable form
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func XMLEncode(data interface{}) ([]byte, error) {
+	return xml.Marshal(data)
+}
+
+func XMLDecode(bin []byte, out interface{}) error {
+	dec := xml.NewDecoder(bytes.NewReader(bin))
+	val := reflect.ValueOf(out)
+	if val.Kind() != reflect.Ptr {
+		return errors.New("out must be a pointer")
+	}
+
+	elem := val.Elem()
+	switch elem.Kind() {
+	case reflect.Slice:
+		elemType := elem.Type().Elem()
+		for {
+			newElem := reflect.New(elemType)
+			err := dec.Decode(newElem.Interface())
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			elem.Set(reflect.Append(elem, newElem.Elem()))
+		}
+	case reflect.Struct:
+		err := dec.Decode(out)
+		if err != nil {
+			return err
+		}
+	default:
+		return errors.New("out must be a pointer to struct or slice")
+	}
+
+	return nil
 }
 
 func Count8GBChunks(size int64) int64 {
