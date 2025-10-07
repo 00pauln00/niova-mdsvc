@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
@@ -491,11 +492,160 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 	return fmt.Errorf("hypervisor with UUID %s not found", hypervisorUUID)
 }
 
+// CreatePhysicalPartition creates an actual partition on the physical device
+func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) error {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Get the full device path
+	devicePath := fmt.Sprintf("/dev/%s", deviceName)
+
+	// Check if device exists and get current partition info
+	checkCmd := fmt.Sprintf("test -b %s && echo 'exists' || echo 'not found'", devicePath)
+	result, err := sshClient.RunCommand(checkCmd)
+	if err != nil {
+		return fmt.Errorf("failed to check device %s: %v", devicePath, err)
+	}
+	if strings.TrimSpace(result) != "exists" {
+		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+	}
+
+	// Get current partition table info
+	partInfoCmd := fmt.Sprintf("sudo parted -s %s print 2>/dev/null || echo 'no partitions'", devicePath)
+	partInfo, err := sshClient.RunCommand(partInfoCmd)
+	if err != nil {
+		return fmt.Errorf("failed to get partition info for %s: %v", devicePath, err)
+	}
+
+	// Calculate partition number and start position
+	partitionNumber := 1
+	startOffsetMB := int64(1) // Start at 1MB to avoid conflicts with partition table
+
+	if !strings.Contains(partInfo, "no partitions") {
+		// Parse existing partitions to find next available number and position
+		lines := strings.Split(partInfo, "\n")
+		maxEndMB := int64(1)
+
+		for _, line := range lines {
+			// Look for partition entries (format: " 1    1049kB  1075MB  1074MB  ext4")
+			if strings.Contains(line, "MB") && (strings.Contains(line, "primary") || len(strings.Fields(line)) >= 4) {
+				fields := strings.Fields(line)
+				if len(fields) >= 4 {
+					partitionNumber++
+					// Parse end position to calculate next start
+					endStr := fields[3]
+					if strings.Contains(endStr, "MB") {
+						endStr = strings.TrimSuffix(endStr, "MB")
+						if endMB, err := strconv.ParseFloat(endStr, 64); err == nil {
+							if int64(endMB) > maxEndMB {
+								maxEndMB = int64(endMB)
+							}
+						}
+					}
+				}
+			}
+		}
+		startOffsetMB = maxEndMB + 1 // Start after the last partition
+	}
+
+	// Convert size from bytes to MB for parted
+	sizeMB := size / (1024 * 1024)
+	if sizeMB == 0 {
+		sizeMB = 1 // Minimum 1MB
+	}
+
+	endOffsetMB := startOffsetMB + sizeMB
+
+	// Initialize partition table if none exists
+	if strings.Contains(partInfo, "no partitions") {
+		initCmd := fmt.Sprintf("sudo parted -s %s mklabel gpt", devicePath)
+		_, err = sshClient.RunCommand(initCmd)
+		if err != nil {
+			return fmt.Errorf("failed to initialize partition table on %s: %v", devicePath, err)
+		}
+	}
+
+	// Create the partition with proper start/end positions
+	partCmd := fmt.Sprintf("sudo parted -s %s mkpart primary %dMB %dMB",
+		devicePath,
+		startOffsetMB,
+		endOffsetMB)
+
+	_, err = sshClient.RunCommand(partCmd)
+	if err != nil {
+		return fmt.Errorf("failed to create partition on %s: %v", devicePath, err)
+	}
+
+	// Wait for partition to be recognized by kernel
+	time.Sleep(2 * time.Second)
+
+	// Verify partition was created
+	verifyCmd := fmt.Sprintf("sudo parted -s %s print | grep '%d'", devicePath, partitionNumber)
+	verifyResult, err := sshClient.RunCommand(verifyCmd)
+	if err != nil || strings.TrimSpace(verifyResult) == "" {
+		return fmt.Errorf("partition creation verification failed for %s", devicePath)
+	}
+
+	return nil
+}
+
+// ListPhysicalPartitions lists all partitions on a physical device
+func (c *Config) ListPhysicalPartitions(hvUUID, deviceName string) ([]string, error) {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return nil, fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Get the full device path
+	devicePath := fmt.Sprintf("/dev/%s", deviceName)
+
+	// List partitions using parted
+	listCmd := fmt.Sprintf("sudo parted -s %s print 2>/dev/null | grep -E '^ *[0-9]+' | awk '{print $1}' || echo 'no partitions'", devicePath)
+	result, err := sshClient.RunCommand(listCmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list partitions for %s: %v", devicePath, err)
+	}
+
+	var partitions []string
+	if strings.TrimSpace(result) != "no partitions" && strings.TrimSpace(result) != "" {
+		lines := strings.Split(strings.TrimSpace(result), "\n")
+		for _, line := range lines {
+			if line = strings.TrimSpace(line); line != "" {
+				partitions = append(partitions, line)
+			}
+		}
+	}
+
+	return partitions, nil
+}
+
 // AddDevicePartition adds a NISD partition to a device
 func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, startOffset, size int64) error {
 	hv, found := c.GetHypervisor(hvUUID)
 	if !found {
 		return fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create physical partition on the device first
+	err := c.CreatePhysicalPartition(hvUUID, deviceName, size)
+	if err != nil {
+		return fmt.Errorf("failed to create physical partition: %v", err)
 	}
 
 	// Allocate ports for partition
@@ -546,6 +696,63 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 	return fmt.Errorf("device %s not found on hypervisor %s", deviceName, hvUUID)
 }
 
+// DeletePhysicalPartition removes an actual partition from the physical device
+func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNumber int) error {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Get the full device path
+	devicePath := fmt.Sprintf("/dev/%s", deviceName)
+
+	// Check if device exists
+	checkCmd := fmt.Sprintf("test -b %s && echo 'exists' || echo 'not found'", devicePath)
+	result, err := sshClient.RunCommand(checkCmd)
+	if err != nil {
+		return fmt.Errorf("failed to check device %s: %v", devicePath, err)
+	}
+	if strings.TrimSpace(result) != "exists" {
+		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+	}
+
+	// Check if partition exists
+	checkPartCmd := fmt.Sprintf("sudo parted -s %s print | grep '^ %d '", devicePath, partitionNumber)
+	partResult, err := sshClient.RunCommand(checkPartCmd)
+	if err != nil || strings.TrimSpace(partResult) == "" {
+		return fmt.Errorf("partition %d not found on device %s", partitionNumber, devicePath)
+	}
+
+	// Delete the partition using parted
+	deleteCmd := fmt.Sprintf("sudo parted -s %s rm %d", devicePath, partitionNumber)
+	_, err = sshClient.RunCommand(deleteCmd)
+	if err != nil {
+		return fmt.Errorf("failed to delete partition %d from %s: %v", partitionNumber, devicePath, err)
+	}
+
+	// Wait for kernel to update
+	time.Sleep(2 * time.Second)
+
+	// Verify partition was deleted
+	verifyCmd := fmt.Sprintf("sudo parted -s %s print | grep '^ %d ' | wc -l", devicePath, partitionNumber)
+	verifyResult, err := sshClient.RunCommand(verifyCmd)
+	if err != nil {
+		return fmt.Errorf("failed to verify partition deletion: %v", err)
+	}
+	if strings.TrimSpace(verifyResult) != "0" {
+		return fmt.Errorf("partition deletion verification failed for partition %d on %s", partitionNumber, devicePath)
+	}
+
+	return nil
+}
+
 // RemoveDevicePartition removes a NISD partition from a device
 func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string) error {
 	// Check hierarchical structure
@@ -557,7 +764,15 @@ func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string)
 						if dev.Name == deviceName {
 							for partIndex, partition := range dev.Partitions {
 								if partition.PartitionUUID == partitionUUID {
-									// Remove partition
+									// Delete physical partition first (partition numbers are 1-based)
+									physicalPartNum := partIndex + 1
+									err := c.DeletePhysicalPartition(hvUUID, deviceName, physicalPartNum)
+									if err != nil {
+										// Log warning but continue with logical removal
+										fmt.Printf("Warning: failed to delete physical partition %d: %v\n", physicalPartNum, err)
+									}
+
+									// Remove partition from configuration
 									c.PDUs[pduIndex].Racks[rackIndex].Hypervisors[hvIndex].Dev[devIndex].Partitions =
 										append(dev.Partitions[:partIndex], dev.Partitions[partIndex+1:]...)
 									return nil
@@ -577,7 +792,15 @@ func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string)
 				if dev.Name == deviceName {
 					for partIndex, partition := range dev.Partitions {
 						if partition.PartitionUUID == partitionUUID {
-							// Remove partition
+							// Delete physical partition first (partition numbers are 1-based)
+							physicalPartNum := partIndex + 1
+							err := c.DeletePhysicalPartition(hvUUID, deviceName, physicalPartNum)
+							if err != nil {
+								// Log warning but continue with logical removal
+								fmt.Printf("Warning: failed to delete physical partition %d: %v\n", physicalPartNum, err)
+							}
+
+							// Remove partition from configuration
 							c.Hypervisors[hvIndex].Dev[devIndex].Partitions =
 								append(dev.Partitions[:partIndex], dev.Partitions[partIndex+1:]...)
 							return nil
@@ -589,6 +812,77 @@ func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string)
 	}
 
 	return fmt.Errorf("partition %s not found on device %s on hypervisor %s", partitionUUID, deviceName, hvUUID)
+}
+
+// GetAllPartitionsForNISD returns all partitions available for NISD initialization
+func (c *Config) GetAllPartitionsForNISD() []struct {
+	HvUUID    string
+	HvName    string
+	Device    Device
+	Partition DevicePartition
+} {
+	var result []struct {
+		HvUUID    string
+		HvName    string
+		Device    Device
+		Partition DevicePartition
+	}
+
+	// Check hierarchical structure
+	for _, pdu := range c.PDUs {
+		for _, rack := range pdu.Racks {
+			for _, hv := range rack.Hypervisors {
+				for _, device := range hv.Dev {
+					for _, partition := range device.Partitions {
+						result = append(result, struct {
+							HvUUID    string
+							HvName    string
+							Device    Device
+							Partition DevicePartition
+						}{
+							HvUUID:    hv.ID,
+							HvName:    hv.Name,
+							Device:    device,
+							Partition: partition,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Check legacy hypervisors
+	for _, hv := range c.Hypervisors {
+		for _, device := range hv.Dev {
+			for _, partition := range device.Partitions {
+				result = append(result, struct {
+					HvUUID    string
+					HvName    string
+					Device    Device
+					Partition DevicePartition
+				}{
+					HvUUID:    hv.ID,
+					HvName:    hv.Name,
+					Device:    device,
+					Partition: partition,
+				})
+			}
+		}
+	}
+
+	return result
+}
+
+// GetAllInitializedNISDs returns all initialized NISD instances
+// In a real implementation, this would query the control plane for registered NISDs
+func (c *Config) GetAllInitializedNISDs() []ctlplfl.Nisd {
+	var result []ctlplfl.Nisd
+
+	// TODO: In a real implementation, this would query the control plane
+	// For now, we'll return an empty list as a placeholder
+	// This could be implemented by calling a control plane API to get all registered NISDs
+
+	return result
 }
 
 // GetAllDevicesWithPartitions returns all devices that can have partitions (initialized devices)
