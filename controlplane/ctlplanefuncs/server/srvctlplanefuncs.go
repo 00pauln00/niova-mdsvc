@@ -170,6 +170,22 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	return encode(funcIntrm)
 }
 
+func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
+	for _, chg := range chgs {
+		log.Trace("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
+			string(chg.Key),
+			int64(len(chg.Key)), string(chg.Value),
+			int64(len(chg.Value)), colmfamily)
+
+		if rc < 0 {
+			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
+			return fmt.Errorf("failed to apply changes for key: %s", string(chg.Key))
+		}
+	}
+	return nil
+}
+
 func ApplyFunc(args ...interface{}) (interface{}, error) {
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
@@ -181,22 +197,8 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	Chgs := intrm.Changes
-	for _, Chg := range Chgs {
-		log.Info(string(Chg.Key), " : ", string(Chg.Value))
+	applyKV(intrm.Changes, cbargs)
 
-		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
-			string(Chg.Key),
-			int64(len(Chg.Key)), string(Chg.Value),
-			int64(len(Chg.Value)), colmfamily)
-
-		if rc < 0 {
-			//Should we revert the changes?
-			log.Error("Failed to apply changes for key: ", Chg.Key)
-			return nil, fmt.Errorf("failed to apply changes for key: %s", Chg.Key)
-		}
-	}
-	//Empty return for the interface as we are filling the reply buf in the function
 	return intrm.Response, nil
 }
 
@@ -403,7 +405,7 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 }
 
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
-func CreateVdev(args ...interface{}) (interface{}, error) {
+func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
@@ -436,11 +438,9 @@ func CreateVdev(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
 
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-	return encode(funcIntrm)
+	applyKV(commitChgs, cbArgs)
+
+	return r, nil
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {

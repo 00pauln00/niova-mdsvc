@@ -144,7 +144,7 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.CreateVdev)
+	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
