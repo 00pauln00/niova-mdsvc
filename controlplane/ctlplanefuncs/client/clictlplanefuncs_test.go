@@ -194,6 +194,24 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPutAndGetRack(t *testing.T) {
+	c := newClient(t)
+	racks := []cpLib.Rack{
+		{ID: "rack-1", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
+		{ID: "rack-2", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
+	}
+
+	for _, r := range racks {
+		resp, err := c.PutRack(&r)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
+
+	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
+	log.Info("Rack Results: ", resp)
+	assert.NoError(t, err)
+}
+
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 	racks := []cpLib.Rack{
 		{ID: "rack-1", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},

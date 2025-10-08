@@ -21,7 +21,7 @@ pmdbserver:
 	go build -o libexec/CTLPlane_pmdbServer controlplane/pmdbServer/pmdbServer.go 
 
 proxyserver:
-	go build -o libexec/CTLPlane_proxy controlplane/proxy/proxy.go 
+	go build -o libexec/CTLPlane_proxy controlplane/proxy/proxy.go	controlplane/proxy/translator.go
 
 ncpcclient:
 	go build -o libexec/ncpc controlplane/ncpc/ncpc.go 
