@@ -11,6 +11,7 @@ import (
 )
 import (
 	"strconv"
+	"strings"
 )
 
 var colmfamily string
@@ -56,119 +57,98 @@ func getVdevChunkKey(vdevID string) string {
 	return fmt.Sprintf("%s/%s/%s", vdevKey, vdevID, chunkKey)
 }
 
-// func ReadSnapByName(args ...interface{}) (interface{}, error) {
-// 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+func ReadSnapByName(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-// 	var Snap ctlplfl.SnapXML
-// 	// Decode the input buffer into structure format
-// 	err := xml.Unmarshal(args[1].([]byte), &Snap)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	Snap := args[1].(ctlplfl.SnapXML)
 
-// 	//FIX: Arbitrary read size
-// 	key := fmt.Sprintf("snap/%s", Snap.SnapName)
-// 	log.Info("Key to be read : ", key)
-// 	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, key, int64(len(key)), colmfamily)
-// 	if err != nil {
-// 		log.Error("Range read failure ", err)
-// 		return nil, err
-// 	}
+	//FIX: Arbitrary read size
+	key := fmt.Sprintf("snap/%s", Snap.SnapName)
+	log.Info("Key to be read : ", key)
+	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, key, int64(len(key)), colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
 
-// 	return readResult, nil
-// }
+	return readResult, nil
+}
 
-// func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
-// 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-// 	var Snap ctlplfl.SnapXML
-// 	// Decode the input buffer into structure format
-// 	err := xml.Unmarshal(args[1].([]byte), &Snap)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	Snap := args[1].(ctlplfl.SnapXML)
 
-// 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-// 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-// 	if err != nil {
-// 		log.Error("Range read failure ", err)
-// 		return nil, err
-// 	}
+	key := fmt.Sprintf("%s/snap", Snap.Vdev)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
 
-// 	log.Info("Read result by Vdev", readResult)
-// 	for key, _ := range readResult.ResultMap {
-// 		c := strings.Split(key, "/")
+	log.Info("Read result by Vdev", readResult)
+	for key, _ := range readResult.ResultMap {
+		c := strings.Split(key, "/")
 
-// 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
-// 		seq, err := strconv.ParseUint(c[len(c)-1], 10, 64)
-// 		if err != nil {
-// 			return nil, err
-// 		}
+		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
+		seq, err := strconv.ParseUint(c[len(c)-1], 10, 64)
+		if err != nil {
+			return nil, err
+		}
 
-// 		Snap.Chunks = append(Snap.Chunks, ctlplfl.ChunkXML{
-// 			Idx: uint32(idx),
-// 			Seq: seq,
-// 		})
-// 	}
+		Snap.Chunks = append(Snap.Chunks, ctlplfl.ChunkXML{
+			Idx: uint32(idx),
+			Seq: seq,
+		})
+	}
 
-// 	//Need to figure out what if rsb size blows up more than 4MB?
-// 	rsb, err := xml.Marshal(Snap)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return rsb, nil
-// }
+	return encode(Snap)
+}
 
-// func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
+func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
-// 	var Snap ctlplfl.SnapXML
+	Snap := args[0].(ctlplfl.SnapXML)
 
-// 	// Decode the input buffer into structure format
-// 	err := xml.Unmarshal(args[0].([]byte), &Snap)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	commitChgs := make([]funclib.CommitChg, 0)
+	for _, chunk := range Snap.Chunks {
+		// Schema: {vdev}/snap/{chunk}/{Seq} : {Ref count}
+		// TODO: Change the dummy ref count
+		chg := funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/snap/%d/%d", Snap.Vdev, chunk.Idx, chunk.Seq)),
+			Value: []byte{uint8(1)},
+		}
+		commitChgs = append(commitChgs, chg)
+	}
 
-// 	commitChgs := make([]funclib.CommitChg, 0)
-// 	for _, chunk := range Snap.Chunks {
-// 		// Schema: {vdev}/snap/{chunk}/{Seq} : {Ref count}
-// 		// TODO: Change the dummy ref count
-// 		chg := funclib.CommitChg{
-// 			Key:   []byte(fmt.Sprintf("%s/snap/%d/%d", Snap.Vdev, chunk.Idx, chunk.Seq)),
-// 			Value: []byte{uint8(1)},
-// 		}
-// 		commitChgs = append(commitChgs, chg)
-// 	}
+	// Schema: snap/{name}:{blob}
+	chg := funclib.CommitChg{
+		Key:   []byte(fmt.Sprintf("snap/%s", Snap.SnapName)),
+		Value: args[0].([]byte),
+	}
 
-// 	// Schema: snap/{name}:{blob}
-// 	chg := funclib.CommitChg{
-// 		Key:   []byte(fmt.Sprintf("snap/%s", Snap.SnapName)),
-// 		Value: args[0].([]byte),
-// 	}
+	commitChgs = append(commitChgs, chg)
 
-// 	commitChgs = append(commitChgs, chg)
+	//Fill the response structure
+	snapResponse := ctlplfl.SnapResponseXML{
+		SnapName: ctlplfl.SnapName{
+			Name:    Snap.SnapName,
+			Success: true,
+		},
+	}
 
-// 	//Fill the response structure
-// 	snapResponse := ctlplfl.SnapResponseXML{
-// 		SnapName: ctlplfl.SnapName{
-// 			Name:    Snap.SnapName,
-// 			Success: true,
-// 		},
-// 	}
+	r, err := encode(snapResponse)
+	if err != nil {
+		log.Error("Failed to marshal snapshot response: ", err)
+		return nil, fmt.Errorf("failed to marshal snapshot response: %v", err)
+	}
 
-// 	r, err := xml.Marshal(snapResponse)
-// 	if err != nil {
-// 		log.Error("Failed to marshal snapshot response: ", err)
-// 		return nil, fmt.Errorf("failed to marshal snapshot response: %v", err)
-// 	}
-
-// 	//Fill in FuncIntrm structure
-// 	funcIntrm := funclib.FuncIntrm{
-// 		Changes:  commitChgs,
-// 		Response: r,
-// 	}
-// 	return encode(funcIntrm)
-// }
+	//Fill in FuncIntrm structure
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
+}
 
 func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
 	for _, chg := range chgs {
@@ -369,11 +349,6 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	// err := xml.Unmarshal(args[0].([]byte), &vdev.Size)
-	// if err != nil {
-	// 	log.Error("failed to decode vdev size: ", err)
-	// 	return nil, err
-	// }
 	vdev.Size = args[0].(int64)
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	log.Info("allocating vdev with size: ", vdev.Size)

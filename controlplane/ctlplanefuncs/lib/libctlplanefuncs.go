@@ -259,4 +259,6 @@ func RegisterGOBStructs() {
 	gob.Register(ResponseXML{})
 	gob.Register(Vdev{})
 	gob.Register(NisdChunk{})
+	gob.Register(SnapResponseXML{})
+	gob.Register(SnapXML{})
 }

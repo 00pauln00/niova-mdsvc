@@ -139,15 +139,15 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, srvctlplanefuncs.WPRackCfg)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
-	// cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
 
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
-	// cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
-	// cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
+	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
+	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
 
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)

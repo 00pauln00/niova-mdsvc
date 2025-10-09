@@ -33,6 +33,8 @@ func GetReqStruct(name string) any {
 		return &cpLib.Nisd{}
 	case cpLib.PUT_PDU:
 		return &cpLib.PDU{}
+	case cpLib.CREATE_SNAP, cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
+		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
 		var size int64
 		return &size
@@ -54,6 +56,10 @@ func GetRespStruct(name string) any {
 		return &[]cpLib.PDU{}
 	case cpLib.CREATE_VDEV:
 		return &cpLib.Vdev{}
+	case cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
+		return &cpLib.SnapXML{}
+	case cpLib.CREATE_SNAP:
+		return &cpLib.SnapResponseXML{}
 	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU:
 		return &cpLib.ResponseXML{}
 	}
