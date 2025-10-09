@@ -74,8 +74,7 @@ type pmdbServerHandler struct {
 
 func main() {
 	serverHandler := pmdbServerHandler{}
-	gob.Register(cpLib.Rack{})
-	gob.Register(cpLib.GetReq{})
+	cpLib.RegisterGOBStructs()
 
 	nso, pErr := serverHandler.parseArgs()
 	if pErr != nil {
@@ -135,18 +134,18 @@ func main() {
 	srvctlplanefuncs.SetClmFamily(colmfamily)
 	cpAPI := PumiceDBFunc.NewFuncServer()
 	// cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
-	// cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
-	// cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceInfo)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceInfo)
 	// cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
 	// cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
-	// cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
-	// cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
-	// cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
-	// cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, srvctlplanefuncs.WPRackCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
-	// cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
-	// cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
 	// cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 

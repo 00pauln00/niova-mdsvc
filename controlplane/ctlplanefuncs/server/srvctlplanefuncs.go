@@ -199,33 +199,20 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	return intrm.Response, nil
 }
 
-// func RdNisdCfg(args ...interface{}) (interface{}, error) {
-// 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+func RdNisdCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-// 	var req ctlplfl.GetReq
-// 	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	req := args[1].(ctlplfl.GetReq)
 
-// 	key := getConfKey(nisdCfgKey, req.ID)
-// 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-// 	if err != nil {
-// 		log.Error("Range read failure ", err)
-// 		return nil, err
-// 	}
-
-// 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
-
-// 	response, err := ctlplfl.XMLEncode(nisdList)
-// 	if err != nil {
-// 		log.Error("failed to encode nisd config:", err)
-// 		return nil, fmt.Errorf("failed to encode nisd config: %v", err)
-// 	}
-
-// 	log.Debug("range read nisd config result: ", response)
-// 	return response, nil
-// }
+	key := getConfKey(nisdCfgKey, req.ID)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	return encode(nisdList)
+}
 
 // func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 // 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
@@ -238,94 +225,67 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 // 	return nisdList, nil
 // }
 
-// func WPNisdCfg(args ...interface{}) (interface{}, error) {
+func WPNisdCfg(args ...interface{}) (interface{}, error) {
+	nisd := args[0].(ctlplfl.Nisd)
+	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{})
 
-// 	var nisd ctlplfl.Nisd
+	nisdResponse := ctlplfl.ResponseXML{
+		Name:    nisd.DevID,
+		Success: true,
+	}
 
-// 	err := ctlplfl.XMLDecode(args[0].([]byte), &nisd)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{})
+	r, err := encode(nisdResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode nisd response: %v", err)
+	}
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
+}
 
-// 	nisdResponse := ctlplfl.ResponseXML{
-// 		Name:    nisd.DevID,
-// 		Success: true,
-// 	}
+func RdDeviceInfo(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+	key := getConfKey(deviceCfgKey, req.ID)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
 
-// 	r, err := ctlplfl.XMLEncode(nisdResponse)
-// 	if err != nil {
-// 		log.Error("Failed to marshal nisd response: ", err)
-// 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-// 	}
-// 	funcIntrm := funclib.FuncIntrm{
-// 		Changes:  commitChgs,
-// 		Response: r,
-// 	}
-// 	return encode(funcIntrm)
-// }
+	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceParser{})
 
-// func RdDeviceInfo(args ...interface{}) (interface{}, error) {
-// 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	return encode(deviceList)
+}
 
-// 	var req ctlplfl.GetReq
-// 	// Decode the input buffer into structure format
-// 	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+func WPDeviceInfo(args ...interface{}) (interface{}, error) {
+	// Limited to update only
+	// DevID, SerialNumber, Status
+	// HypervisorID, FailureDomain (Parent Info)
+	dev := args[0].(ctlplfl.Device)
 
-// 	dev := ctlplfl.Device{
-// 		ID: req.ID,
-// 	}
-// 	key := getConfKey(deviceCfgKey, dev.ID)
-// 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-// 	if err != nil {
-// 		log.Error("Range read failure ", err)
-// 		return nil, err
-// 	}
+	// TODO: use a common response struct for all the read functions
+	nisdResponse := ctlplfl.ResponseXML{
+		Name:    dev.ID,
+		Success: true,
+	}
 
-// 	devices := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceParser{})
-// 	response, err := ctlplfl.XMLEncode(devices)
-// 	if err != nil {
-// 		log.Error("failed to encode device config:", err)
-// 		return nil, fmt.Errorf("failed to encode device config: %v", err)
-// 	}
+	r, err := encode(nisdResponse)
+	if err != nil {
+		log.Error("Failed to marshal nisd response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+	commitChgs := PopulateEntities(&dev, devicePopulator{})
 
-// 	return response, nil
-// }
-
-// func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-// 	// Limited to update only
-// 	// DevID, SerialNumber, Status
-// 	// HypervisorID, FailureDomain (Parent Info)
-// 	var dev ctlplfl.Device
-
-// 	err := ctlplfl.XMLDecode(args[0].([]byte), &dev)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	// TODO: use a common response struct for all the read functions
-// 	nisdResponse := ctlplfl.ResponseXML{
-// 		Name:    dev.ID,
-// 		Success: true,
-// 	}
-
-// 	r, err := ctlplfl.XMLEncode(nisdResponse)
-// 	if err != nil {
-// 		log.Error("Failed to marshal nisd response: ", err)
-// 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-// 	}
-// 	commitChgs := PopulateEntities(&dev, devicePopulator{})
-
-// 	//Fill in FuncIntrm structure
-// 	funcIntrm := funclib.FuncIntrm{
-// 		Changes:  commitChgs,
-// 		Response: r,
-// 	}
-// 	return encode(funcIntrm)
-// }
+	//Fill in FuncIntrm structure
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return encode(funcIntrm)
+}
 
 // // Allocates Nisd to the Requested VDEV
 // func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
@@ -440,62 +400,43 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 // 	return r, nil
 // }
 
-// func WPPDUCfg(args ...interface{}) (interface{}, error) {
-// 	var pdu ctlplfl.PDU
-// 	// Decode the input buffer into structure format
-// 	err := xml.Unmarshal(args[0].([]byte), &pdu)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	resp := &ctlplfl.ResponseXML{
-// 		Name:    pdu.ID,
-// 		Success: true,
-// 	}
-// 	r, err := ctlplfl.XMLEncode(resp)
-// 	if err != nil {
-// 		log.Error("Failed to marshal vdev response: ", err)
-// 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-// 	}
-// 	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{})
-// 	funcIntrm := funclib.FuncIntrm{
-// 		Changes:  commitChgs,
-// 		Response: r,
-// 	}
+func WPPDUCfg(args ...interface{}) (interface{}, error) {
+	pdu := args[0].(ctlplfl.PDU)
+	resp := &ctlplfl.ResponseXML{
+		Name:    pdu.ID,
+		Success: true,
+	}
+	r, err := encode(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to  encode pdu response: %v", err)
+	}
+	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{})
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
 
-// 	return encode(funcIntrm)
-// }
+	return encode(funcIntrm)
+}
 
-// func ReadPDUCfg(args ...interface{}) (interface{}, error) {
-// 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+func ReadPDUCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+	key := pduKey
+	if !req.GetAll {
+		key = getConfKey(pduKey, req.ID)
+	}
 
-// 	var req ctlplfl.GetReq
-// 	// Decode the input buffer into structure format
-// 	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
 
-// 	key := pduKey
-// 	if !req.GetAll {
-// 		key = getConfKey(pduKey, req.ID)
-// 	}
+	return encode(pduList)
 
-// 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-// 	if err != nil {
-// 		log.Error("Range read failure ", err)
-// 		return nil, err
-// 	}
-// 	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
-
-// 	response, err := ctlplfl.XMLEncode(pduList)
-// 	if err != nil {
-// 		log.Error("failed to encode device config:", err)
-// 		return nil, fmt.Errorf("failed to encode device config: %v", err)
-// 	}
-
-// 	return response, nil
-
-// }
+}
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
 
@@ -504,13 +445,11 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		Name:    rack.ID,
 		Success: true,
 	}
-	log.Info("putting rack: ", rack)
 	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{})
 	r, err := encode(resp)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("commit chgs wp: ", commitChgs)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -532,70 +471,53 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	log.Info("read result map ", readResult.ResultMap)
 	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
 	response, err := encode(rackList)
 	if err != nil {
 		log.Error("failed to encode rack info:", err)
 		return nil, fmt.Errorf("failed to encode rack info: %v", err)
 	}
-	log.Info("rack list: ", rackList)
 	return response, nil
 }
 
-// func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-// 	var hv ctlplfl.Hypervisor
-// 	// Decode the input buffer into structure format
-// 	err := xml.Unmarshal(args[0].([]byte), &hv)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	resp := &ctlplfl.ResponseXML{
-// 		Name:    hv.ID,
-// 		Success: true,
-// 	}
-// 	r, err := ctlplfl.XMLEncode(resp)
-// 	if err != nil {
-// 		log.Error("Failed to marshal vdev response: ", err)
-// 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-// 	}
-// 	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{})
-// 	funcIntrm := funclib.FuncIntrm{
-// 		Changes:  commitChgs,
-// 		Response: r,
-// 	}
+func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
+	// Decode the input buffer into structure format
+	hv := args[0].(ctlplfl.Hypervisor)
+	resp := &ctlplfl.ResponseXML{
+		Name:    hv.ID,
+		Success: true,
+	}
+	r, err := encode(resp)
+	if err != nil {
+		log.Error("Failed to marshal vdev response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{})
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
 
-// 	return encode(funcIntrm)
+	return encode(funcIntrm)
 
-// }
+}
 
-// func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
-// 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
 
-// 	var req ctlplfl.GetReq
-// 	// Decode the input buffer into structure format
-// 	err := ctlplfl.XMLDecode(args[1].([]byte), &req)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	key := hvKey
+	if !req.GetAll {
+		key = getConfKey(hvKey, req.ID)
+	}
 
-// 	key := hvKey
-// 	if !req.GetAll {
-// 		key = getConfKey(hvKey, req.ID)
-// 	}
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
 
-// 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
-// 	if err != nil {
-// 		log.Error("Range read failure ", err)
-// 		return nil, err
-// 	}
+	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
 
-// 	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
-// 	response, err := ctlplfl.XMLEncode(hvList)
-// 	if err != nil {
-// 		log.Error("failed to encode hypervisor info:", err)
-// 		return nil, fmt.Errorf("failed to encode hypervisor info: %v", err)
-// 	}
-
-// 	return response, nil
-// }
+	return encode(hvList)
+}

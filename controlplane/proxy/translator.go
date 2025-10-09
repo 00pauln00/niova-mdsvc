@@ -21,10 +21,18 @@ func GetEncodingType(r *http.Request) pmLib.Format {
 
 func GetReqStruct(name string) any {
 	switch name {
-	case cpLib.GET_RACK:
+	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR:
 		return &cpLib.GetReq{}
 	case cpLib.PUT_RACK:
 		return &cpLib.Rack{}
+	case cpLib.PUT_DEVICE:
+		return &cpLib.Device{}
+	case cpLib.PUT_HYPERVISOR:
+		return &cpLib.Hypervisor{}
+	case cpLib.PUT_NISD:
+		return &cpLib.Nisd{}
+	case cpLib.PUT_PDU:
+		return &cpLib.PDU{}
 	}
 	return nil
 }
@@ -33,7 +41,17 @@ func GetRespStruct(name string) any {
 	switch name {
 	case cpLib.GET_RACK:
 		return &[]cpLib.Rack{}
-	case cpLib.PUT_RACK:
+	case cpLib.GET_DEVICE:
+		return &[]cpLib.Device{}
+	case cpLib.GET_HYPERVISOR:
+		return &[]cpLib.Hypervisor{}
+	case cpLib.GET_NISD:
+		return &[]cpLib.Nisd{}
+	case cpLib.GET_PDU:
+		return &[]cpLib.PDU{}
+	case cpLib.CREATE_VDEV:
+		return &cpLib.Vdev{}
+	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU:
 		return &cpLib.ResponseXML{}
 	}
 	return nil

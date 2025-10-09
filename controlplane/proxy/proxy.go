@@ -716,8 +716,7 @@ func main() {
 
 	var err error
 	var i int
-	gob.Register(cpLib.GetReq{})
-	gob.Register(cpLib.Rack{})
+	cpLib.RegisterGOBStructs()
 	proxyObj := proxyHandler{}
 	//Get commandline paraameters.
 	proxyObj.getCmdParams()

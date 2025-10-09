@@ -2,10 +2,11 @@ package libctlplanefuncs
 
 import (
 	"bytes"
+	"encoding/gob"
 	"encoding/xml"
 	"errors"
-	"io"
 	"fmt"
+	"io"
 	"reflect"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -61,7 +62,7 @@ type ResponseXML struct {
 
 type Device struct {
 	ID           string `xml:"ID" json:"ID"`
-	Name         string `xml:"Name" json:"Name"`           // For display purposes
+	Name         string `xml:"Name" json:"Name"` // For display purposes
 	DevicePath   string `xml:"device_path,omitempty" json: "DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
 	Status       uint16 `xml:"Status" json:"Status"`
@@ -71,8 +72,8 @@ type Device struct {
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	//Child info
-	NisdID string `xml:"NisdID" json:"NisdID"`
-	Partitions     []DevicePartition `json:"partitions,omitempty"`
+	NisdID     string            `xml:"NisdID" json:"NisdID"`
+	Partitions []DevicePartition `json:"partitions,omitempty"`
 }
 
 type DevicePartition struct {
@@ -82,7 +83,7 @@ type DevicePartition struct {
 	Size          int64  `json:"size,omitempty"`
 	ClientPort    int    `json:"client_port,omitempty"`
 	ServerPort    int    `json:"server_port,omitempty"`
- }
+}
 
 type Nisd struct {
 	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
@@ -246,4 +247,16 @@ func Count8GBChunks(size int64) int64 {
 		return count
 	}
 	return count + 1
+}
+
+func RegisterGOBStructs() {
+	gob.Register(Rack{})
+	gob.Register(GetReq{})
+	gob.Register(Hypervisor{})
+	gob.Register(PDU{})
+	gob.Register(Nisd{})
+	gob.Register(Device{})
+	gob.Register(ResponseXML{})
+	gob.Register(Vdev{})
+	gob.Register(NisdChunk{})
 }
