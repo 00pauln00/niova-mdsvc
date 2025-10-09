@@ -33,6 +33,9 @@ func GetReqStruct(name string) any {
 		return &cpLib.Nisd{}
 	case cpLib.PUT_PDU:
 		return &cpLib.PDU{}
+	case cpLib.CREATE_VDEV:
+		var size int64
+		return &size
 	}
 	return nil
 }

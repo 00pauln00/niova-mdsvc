@@ -185,14 +185,14 @@ func TestPutAndGetHypervisor(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// func TestCreateVdev(t *testing.T) {
-// 	c := newClient(t)
-// 	vdev := &cpLib.Vdev{
-// 		Size: 20 * 1024 * 1024 * 1024}
-// 	err := c.CreateVdev(vdev)
-// 	log.Info("CreateVdev Result: ", vdev)
-// 	assert.NoError(t, err)
-// }
+func TestCreateVdev(t *testing.T) {
+	c := newClient(t)
+	vdev := &cpLib.Vdev{
+		Size: 105 * 1024 * 1024 * 1024}
+	err := c.CreateVdev(vdev)
+	log.Info("CreateVdev Result: ", vdev)
+	assert.NoError(t, err)
+}
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 	racks := []cpLib.Rack{
