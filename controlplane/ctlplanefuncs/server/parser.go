@@ -1,8 +1,6 @@
 package srvctlplanefuncs
 
 import (
-	"bytes"
-	"encoding/gob"
 	"strconv"
 	"strings"
 
@@ -15,21 +13,6 @@ const ( // Key Prefixes
 	ELEMENT_KEY      = 2
 	KEY_LEN          = 3
 )
-
-func decode(payload []byte, s interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(payload))
-	return dec.Decode(s)
-}
-
-func encode(s interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
 
 type Entity interface{}
 
