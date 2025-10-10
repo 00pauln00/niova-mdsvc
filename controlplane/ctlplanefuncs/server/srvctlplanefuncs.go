@@ -152,7 +152,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
 	for _, chg := range chgs {
-		log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+		log.Trace("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
 		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
 			string(chg.Key),
 			int64(len(chg.Key)), string(chg.Value),
@@ -204,7 +204,6 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 		return nil, err
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
-	log.Info("fetching nisd list: ", nisdList)
 	return nisdList, nil
 }
 
@@ -216,7 +215,6 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 		Name:    nisd.DevID,
 		Success: true,
 	}
-	log.Info("writing device info :", commitChgs)
 	r, err := encode(nisdResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode nisd response: %v", err)
@@ -237,9 +235,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	log.Info("device map :", readResult)
 	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceParser{})
-	log.Info("device info :", deviceList)
 	return encode(deviceList)
 }
 
@@ -260,7 +256,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal nisd response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-	commitChgs := PopulateEntities(&dev, devicePopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{})
 
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{

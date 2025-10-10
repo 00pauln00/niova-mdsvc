@@ -123,7 +123,7 @@ func TestPutAndGetDevice(t *testing.T) {
 	}
 
 	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: "dev-002"})
-	log.Info("GetDeviceInfo: ", res)
+	log.Infof("GetDeviceInfo: %s, %s, %s, %s", res.HypervisorID, res.SerialNumber, res.ID, res.NisdID)
 	assert.NoError(t, err)
 
 }

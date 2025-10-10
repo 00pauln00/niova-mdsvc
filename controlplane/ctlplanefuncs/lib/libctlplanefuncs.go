@@ -63,7 +63,7 @@ type ResponseXML struct {
 type Device struct {
 	ID           string `xml:"ID" json:"ID"`
 	Name         string `xml:"Name" json:"Name"` // For display purposes
-	DevicePath   string `xml:"device_path,omitempty" json: "DevicePath"`
+	DevicePath   string `xml:"device_path,omitempty" json:"DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
 	Status       uint16 `xml:"Status" json:"Status"`
 	Size         int64  `xml:"Size" json:"Size"`

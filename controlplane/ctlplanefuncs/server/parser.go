@@ -55,7 +55,6 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 			entity = pe.NewEntity(id)
 			entityMap[id] = entity
 		}
-
 		pe.ParseField(entity, parts, v)
 	}
 
