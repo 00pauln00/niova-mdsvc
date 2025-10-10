@@ -63,16 +63,17 @@ func main() {
 		}
 		devInfo, err := c.GetDeviceInfo(req)
 		if err != nil {
-			log.Error("failed to get device uuid", err)
+			log.Error("failed to get device uuid: ", err)
 			os.Exit(-1)
 		}
 		log.Debug("fetched device info from control plane: ", devInfo)
-		req.ID = devInfo.NisdID
-		nisd, err := c.GetNisdCfg(req)
+		req.ID = devInfo[0].NisdID
+		nisdInfo, err := c.GetNisdCfg(req)
 		if err != nil {
-			log.Error("failed to get nisd details:", err)
+			log.Error("failed to get nisd details: ", err)
 			os.Exit(-1)
 		}
+		nisd = &nisdInfo[0]
 		log.Debug("fetched nisd info from control plane: ", nisd)
 	}
 

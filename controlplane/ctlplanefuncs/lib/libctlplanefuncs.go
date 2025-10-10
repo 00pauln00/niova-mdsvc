@@ -1,13 +1,8 @@
 package libctlplanefuncs
 
 import (
-	"bytes"
 	"encoding/gob"
-	"encoding/xml"
-	"errors"
 	"fmt"
-	"io"
-	"reflect"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -200,44 +195,6 @@ func formatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-func XMLEncode(data interface{}) ([]byte, error) {
-	return xml.Marshal(data)
-}
-
-func XMLDecode(bin []byte, out interface{}) error {
-	dec := xml.NewDecoder(bytes.NewReader(bin))
-	val := reflect.ValueOf(out)
-	if val.Kind() != reflect.Ptr {
-		return errors.New("out must be a pointer")
-	}
-
-	elem := val.Elem()
-	switch elem.Kind() {
-	case reflect.Slice:
-		elemType := elem.Type().Elem()
-		for {
-			newElem := reflect.New(elemType)
-			err := dec.Decode(newElem.Interface())
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			elem.Set(reflect.Append(elem, newElem.Elem()))
-		}
-	case reflect.Struct:
-		err := dec.Decode(out)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("out must be a pointer to struct or slice")
-	}
-
-	return nil
 }
 
 func Count8GBChunks(size int64) int64 {

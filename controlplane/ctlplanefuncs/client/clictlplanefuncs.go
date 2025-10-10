@@ -11,26 +11,19 @@ import (
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
 
-type EncodeType int
-
-const (
-	XML EncodeType = iota
-	GoBinary
-)
-
 // Client side interferace for control plane functions
 type CliCFuncs struct {
 	appUUID  string
 	writeSeq uint64
 	sdObj    *sd.ServiceDiscoveryHandler
-	encType  EncodeType
+	encType  pmCmn.Format
 }
 
 func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFuncs {
 	ccf := CliCFuncs{
 		appUUID:  appUUID,
 		writeSeq: uint64(0),
-		encType:  XML, // Default encoding type
+		encType:  pmCmn.JSON, // Default encoding type
 	}
 
 	ccf.sdObj = &sd.ServiceDiscoveryHandler{
@@ -49,24 +42,6 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	log.Info("Successfully initialized controlplane client: ", appUUID)
 
 	return &ccf
-}
-
-func (ccf *CliCFuncs) encode(data interface{}) ([]byte, error) {
-	if ccf.encType == GoBinary {
-		return pmCmn.GobEncode(data)
-	} else if ccf.encType == XML {
-		return ctlplfl.XMLEncode(data)
-	}
-	return nil, errors.New("unsupported encoding type")
-}
-
-func (ccf *CliCFuncs) decode(bin []byte, st interface{}) error {
-	if ccf.encType == GoBinary {
-		return pmCmn.GobDecode(bin, st)
-	} else if ccf.encType == XML {
-		return ctlplfl.XMLDecode(bin, st)
-	}
-	return errors.New("unsupported decoding type")
 }
 
 func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, error) {
@@ -90,7 +65,7 @@ func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 
 func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 	url := "name=" + urla
-	rqb, err := ccf.encode(data)
+	rqb, err := pmCmn.Encoder(ccf.encType, data)
 	if err != nil {
 		log.Error("failed to encode data: ", err)
 		return err
@@ -102,7 +77,7 @@ func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 		return err
 	}
 
-	err = ccf.decode(rsb, resp)
+	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
 		log.Error("failed to decode response: ", err)
 		return err
@@ -113,7 +88,7 @@ func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 
 func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
 	url := "name=" + urla
-	rqb, err := ccf.encode(data)
+	rqb, err := pmCmn.Encoder(ccf.encType, data)
 	if err != nil {
 		log.Error("failed to encode data: ", err)
 		return err
@@ -124,7 +99,7 @@ func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
 		log.Error("request failed: ", err)
 		return err
 	}
-	err = ccf.decode(rsb, resp)
+	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
 		log.Error("failed to decode response: ", err)
 		return err
@@ -148,7 +123,7 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 	Snap.Vdev = vdev
 	Snap.Chunks = chks
 
-	rqb, err := ccf.encode(Snap)
+	rqb, err := pmCmn.Encoder(ccf.encType, Snap)
 	if err != nil {
 		return err
 	}
@@ -159,7 +134,7 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 	}
 
 	var snapRes ctlplfl.SnapResponseXML
-	err = ccf.decode(rsb, snapRes)
+	err = pmCmn.Decoder(ccf.encType, rsb, snapRes)
 	if err != nil {
 		return err
 	}
@@ -176,7 +151,7 @@ func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
 
 	var snap ctlplfl.SnapXML
 	snap.SnapName = name
-	rqb, err := ccf.encode(snap)
+	rqb, err := pmCmn.Encoder(ccf.encType, snap)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +164,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 
 	var snap ctlplfl.SnapXML
 	snap.Vdev = vdev
-	rqb, err := ccf.encode(snap)
+	rqb, err := pmCmn.Encoder(ccf.encType, snap)
 	if err != nil {
 		return nil, err
 	}
@@ -208,11 +183,11 @@ func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXM
 }
 
 // TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) (*ctlplfl.Device, error) {
-	dev := &ctlplfl.Device{}
-	err := ccf.get(req, dev, ctlplfl.GET_DEVICE)
+func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
+	dev := make([]ctlplfl.Device, 0)
+	err := ccf.get(req, &dev, ctlplfl.GET_DEVICE)
 	if err != nil {
-		log.Error("failed to fet device info: ", err)
+		log.Error("failed to get device info: ", err)
 		return nil, err
 	}
 	return dev, nil
@@ -228,9 +203,9 @@ func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, erro
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
-	ncfg := &ctlplfl.Nisd{}
-	err := ccf.get(req, ncfg, ctlplfl.GET_NISD)
+func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+	ncfg := make([]ctlplfl.Nisd, 0)
+	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
 	if err != nil {
 		log.Error("failed to fet nisd info: ", err)
 		return nil, err
