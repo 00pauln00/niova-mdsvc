@@ -127,7 +127,7 @@ type Hypervisor struct {
 }
 
 type NisdChunk struct {
-	Nisd  *Nisd
+	Nisd  Nisd
 	Chunk []int
 }
 

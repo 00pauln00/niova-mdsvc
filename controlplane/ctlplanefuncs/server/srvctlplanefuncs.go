@@ -275,7 +275,7 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
 	for _, nisd := range nisds {
 		if (nisd.AvailableSize > int64(vdev.Size)) && remainingVdevSize > 0 {
 			nisdChunk := ctlplfl.NisdChunk{
-				Nisd:  &nisd,
+				Nisd:  nisd,
 				Chunk: make([]int, vdev.NumChunks),
 			}
 			allocatedNisd = append(allocatedNisd, &nisd)
