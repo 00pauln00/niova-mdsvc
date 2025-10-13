@@ -1,8 +1,6 @@
 package srvctlplanefuncs
 
 import (
-	"bytes"
-	"encoding/gob"
 	"strconv"
 	"strings"
 
@@ -15,21 +13,6 @@ const ( // Key Prefixes
 	ELEMENT_KEY      = 2
 	KEY_LEN          = 3
 )
-
-func decode(payload []byte, s interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(payload))
-	return dec.Decode(s)
-}
-
-func encode(s interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
 
 type Entity interface{}
 
@@ -182,3 +165,24 @@ func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
 	pdu.ID = parts[BASE_UUID_PREFIX]
 }
 func (pduParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.PDU) }
+
+type ptParser struct{}
+
+func (ptParser) GetRootKey() string { return ptKey }
+func (ptParser) NewEntity(id string) Entity {
+	return &ctlplfl.DevicePartition{PartitionUUID: id}
+}
+func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
+	pt := entity.(*ctlplfl.DevicePartition)
+	if len(parts) == KEY_LEN {
+        switch parts[ELEMENT_KEY] {
+        case DEVICE_NAME:
+            pt.DevID = string(value)
+        case SIZE:
+			s, _ := strconv.Atoi(string(value))
+            pt.Size = int64(s)
+        }
+    }
+}
+func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
+

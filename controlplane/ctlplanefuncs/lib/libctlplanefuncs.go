@@ -1,13 +1,8 @@
 package libctlplanefuncs
 
 import (
-	"bytes"
 	"encoding/gob"
-	"encoding/xml"
-	"errors"
 	"fmt"
-	"io"
-	"reflect"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -30,6 +25,8 @@ const (
 	PUT_RACK       = "PutRack"
 	GET_HYPERVISOR = "GetHypervisor"
 	PUT_HYPERVISOR = "PutHypervisor"
+	PUT_PARTITION  = "PutPartition"
+	GET_PARTITION  = "GetPartition"
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	NAME           = "name"
 )
@@ -78,11 +75,9 @@ type Device struct {
 
 type DevicePartition struct {
 	PartitionUUID string `json:"partition_uuid"`
-	NISDInstance  string `json:"nisd_instance"`
-	StartOffset   int64  `json:"start_offset,omitempty"`
+	NISDUUID      string `json:"nisd_uuid"`
+	DevID         string `json:"Dev_Id"`
 	Size          int64  `json:"size,omitempty"`
-	ClientPort    int    `json:"client_port,omitempty"`
-	ServerPort    int    `json:"server_port,omitempty"`
 }
 
 type Nisd struct {
@@ -127,7 +122,7 @@ type Hypervisor struct {
 }
 
 type NisdChunk struct {
-	Nisd  *Nisd
+	Nisd  Nisd
 	Chunk []int
 }
 
@@ -202,44 +197,6 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-func XMLEncode(data interface{}) ([]byte, error) {
-	return xml.Marshal(data)
-}
-
-func XMLDecode(bin []byte, out interface{}) error {
-	dec := xml.NewDecoder(bytes.NewReader(bin))
-	val := reflect.ValueOf(out)
-	if val.Kind() != reflect.Ptr {
-		return errors.New("out must be a pointer")
-	}
-
-	elem := val.Elem()
-	switch elem.Kind() {
-	case reflect.Slice:
-		elemType := elem.Type().Elem()
-		for {
-			newElem := reflect.New(elemType)
-			err := dec.Decode(newElem.Interface())
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			elem.Set(reflect.Append(elem, newElem.Elem()))
-		}
-	case reflect.Struct:
-		err := dec.Decode(out)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("out must be a pointer to struct or slice")
-	}
-
-	return nil
-}
-
 func Count8GBChunks(size int64) int64 {
 	rem := size % CHUNK_SIZE
 	count := size / CHUNK_SIZE
@@ -256,6 +213,7 @@ func RegisterGOBStructs() {
 	gob.Register(PDU{})
 	gob.Register(Nisd{})
 	gob.Register(Device{})
+	gob.Register(DevicePartition{})
 	gob.Register(ResponseXML{})
 	gob.Register(Vdev{})
 	gob.Register(NisdChunk{})

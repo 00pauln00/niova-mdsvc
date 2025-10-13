@@ -21,7 +21,7 @@ func GetEncodingType(r *http.Request) pmLib.Format {
 
 func GetReqStruct(name string) any {
 	switch name {
-	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR:
+	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR, cpLib.GET_PARTITION:
 		return &cpLib.GetReq{}
 	case cpLib.PUT_RACK:
 		return &cpLib.Rack{}
@@ -33,6 +33,8 @@ func GetReqStruct(name string) any {
 		return &cpLib.Nisd{}
 	case cpLib.PUT_PDU:
 		return &cpLib.PDU{}
+	case cpLib.PUT_PARTITION:
+		return &cpLib.DevicePartition{}
 	case cpLib.CREATE_SNAP, cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
@@ -54,13 +56,15 @@ func GetRespStruct(name string) any {
 		return &[]cpLib.Nisd{}
 	case cpLib.GET_PDU:
 		return &[]cpLib.PDU{}
+	case cpLib.GET_PARTITION:
+		return &[]cpLib.DevicePartition{}
 	case cpLib.CREATE_VDEV:
 		return &cpLib.Vdev{}
 	case cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_SNAP:
 		return &cpLib.SnapResponseXML{}
-	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU:
+	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION:
 		return &cpLib.ResponseXML{}
 	}
 	return nil

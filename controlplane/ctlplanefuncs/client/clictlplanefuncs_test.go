@@ -123,7 +123,7 @@ func TestPutAndGetDevice(t *testing.T) {
 	}
 
 	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: "dev-002"})
-	log.Infof("GetDeviceInfo: %s, %s, %s, %s", res.HypervisorID, res.SerialNumber, res.ID, res.NisdID)
+	log.Infof("device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 	assert.NoError(t, err)
 
 }
@@ -192,6 +192,21 @@ func TestCreateVdev(t *testing.T) {
 	err := c.CreateVdev(vdev)
 	log.Info("CreateVdev Result: ", vdev)
 	assert.NoError(t, err)
+}
+
+func TestPutPartition(t *testing.T) {
+	c := newClient(t)
+	pt := &cpLib.DevicePartition{
+		PartitionUUID: "96ea4c60-a5df-11f0-a315-fb09c06e6471",
+		DevID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
+		Size: 10 * 1024 * 1024 * 1024,
+	}
+	resp,err := c.PutPartition(pt)
+	log.Info("created partition: ", resp)
+	assert.NoError(t, err)
+	resp1, err := c.GetPartition(cpLib.GetReq{ID: "96ea4c60-a5df-11f0-a315-fb09c06e6471"})
+	assert.NoError(t, err)
+	log.Info("Get partition: ", resp1)
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
