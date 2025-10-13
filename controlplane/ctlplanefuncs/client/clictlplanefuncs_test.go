@@ -194,6 +194,21 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPutPartition(t *testing.T) {
+	c := newClient(t)
+	pt := &cpLib.DevicePartition{
+		PartitionUUID: "96ea4c60-a5df-11f0-a315-fb09c06e6471",
+		DevID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
+		Size: 10 * 1024 * 1024 * 1024,
+	}
+	resp,err := c.PutPartition(pt)
+	log.Info("created partition: ", resp)
+	assert.NoError(t, err)
+	resp1, err := c.GetPartition(cpLib.GetReq{ID: "96ea4c60-a5df-11f0-a315-fb09c06e6471"})
+	assert.NoError(t, err)
+	log.Info("Get partition: ", resp1)
+}
+
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 	racks := []cpLib.Rack{
 		{ID: "rack-1", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},

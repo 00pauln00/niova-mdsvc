@@ -242,6 +242,26 @@ func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
 	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
 }
 
+func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(devp, resp, ctlplfl.PUT_PARTITION)
+	if err != nil {
+		log.Error("Put Partition failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) (*ctlplfl.DevicePartition, error) {
+	pt := &ctlplfl.DevicePartition{}
+	err := ccf.get(req, &pt, ctlplfl.GET_PARTITION)
+	if err != nil {
+		log.Error("Get Partition failed: ", err)
+		return nil, err
+	}
+	return pt, nil
+}
+
 func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(req, resp, ctlplfl.PUT_PDU)

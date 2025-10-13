@@ -34,6 +34,24 @@ func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	)
 }
 
+type partitionPopulator struct{}
+
+func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+	pt := entity.(*cpLib.DevicePartition)
+	*commitChgs = append(*commitChgs,
+		funclib.CommitChg{
+			Key: []byte(getConfKey(ptKey, pt.PartitionUUID)),
+		},
+		funclib.CommitChg{
+            Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(ptKey, pt.PartitionUUID), DEVICE_NAME)),
+            Value: []byte(pt.DevID),
+        }, funclib.CommitChg{
+            Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(ptKey, pt.PartitionUUID), SIZE)),
+            Value: []byte(strconv.Itoa(int(pt.Size))),
+        },
+	)
+}
+
 type nisdPopulator struct{}
 
 func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {

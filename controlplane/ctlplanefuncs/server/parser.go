@@ -165,3 +165,24 @@ func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
 	pdu.ID = parts[BASE_UUID_PREFIX]
 }
 func (pduParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.PDU) }
+
+type ptParser struct{}
+
+func (ptParser) GetRootKey() string { return ptKey }
+func (ptParser) NewEntity(id string) Entity {
+	return &ctlplfl.DevicePartition{PartitionUUID: id}
+}
+func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
+	pt := entity.(*ctlplfl.DevicePartition)
+	if len(parts) == KEY_LEN {
+        switch parts[ELEMENT_KEY] {
+        case DEVICE_NAME:
+            pt.DevID = string(value)
+        case SIZE:
+			s, _ := strconv.Atoi(string(value))
+            pt.Size = int64(s)
+        }
+    }
+}
+func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
+

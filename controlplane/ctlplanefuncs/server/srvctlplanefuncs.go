@@ -44,6 +44,7 @@ const (
 	vdevKey      = "v"
 	chunkKey     = "c"
 	hvKey        = "hv"
+	ptKey        = "pt"
 )
 
 func SetClmFamily(cf string) {
@@ -374,6 +375,40 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	applyKV(commitChgs, cbArgs)
 
 	return r, nil
+}
+
+func WPCreatePartition(args ...interface{}) (interface{}, error) {
+	pt :=  args[0].(ctlplfl.DevicePartition)
+	resp := &ctlplfl.ResponseXML{
+		Name: pt.PartitionUUID,
+		Success: true,
+	}
+	r, err := encode(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode pt response: %v", err)
+	}
+	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{})
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}		
+	return encode(funcIntrm)
+}
+
+func ReadPartition(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+	key := ptKey
+	if !req.GetAll {
+		key = getConfKey(ptKey, req.ID) 
+	}
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
+	return encode(pt)
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
