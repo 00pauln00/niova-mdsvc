@@ -866,11 +866,13 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 		return nil, fmt.Errorf("failed to get device size: %v", err)
 	}
 
+/*
 	// Create multiple physical partitions
 	err = c.CreateMultipleEqualPartitions(hvUUID, deviceName, numPartitions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create physical partitions: %v", err)
 	}
+*/
 
 	// Calculate partition size (excluding 1MB for partition table)
 	usableSize := deviceSize - (1024 * 1024)
@@ -880,20 +882,15 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 
 	// Create NISD partitions for each physical partition
 	for i := 0; i < numPartitions; i++ {
-		// Allocate ports for partition
-/*
-		clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
-		if err != nil {
-			return nil, fmt.Errorf("failed to allocate ports for partition %d: %v", i+1, err)
-		}
-*/
 
 		// Generate NISD instance and UUID
 		nisdInstance := c.GenerateNISDInstance()
 		partitionUUID := uuid.New().String()
 
+		//FIXME right now single partition per device as delete partition table is throwing error
 		partition := DevicePartition{
 			PartitionUUID:	partitionUUID,
+			PartitionPath:	deviceName,
 			NISDUUID:		nisdInstance,
 			Size:			partitionSize,
 		}

@@ -3153,6 +3153,16 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 						return m, nil
 					}
 
+					// for loop for created partitions
+					for _, part := range createdPartitions {
+						_, err =  m.cpClient.PutPartition(&part)
+						if err != nil {
+							log.Info("Failed to add partition to pumiceDB: %v", err)
+							m.message = fmt.Sprintf("Failed to add partition to pumiceDB: %v", err)
+							return m, nil
+						}
+					}
+
 					// Save configuration
 					if err := m.config.SaveToFile(m.configPath); err != nil {
 						m.message = fmt.Sprintf("Partitions created but failed to save: %v", err)
