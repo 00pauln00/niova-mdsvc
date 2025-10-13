@@ -165,24 +165,23 @@ type model struct {
 	selectedHvForPartition     ctlplfl.Hypervisor
 
 	// NISD Management
-	nisdMgmtCursor              int
-	selectedNISDPartitionIdx    int
-	selectedNISDHypervisorIdx   int
-	selectedNISDDeviceIdx       int
-	selectedNISDForStart        int
-	currentNISD                 ctlplfl.Nisd
-	selectedPartitionForNISD    DevicePartition
-	selectedHvForNISD           ctlplfl.Hypervisor
-	selectedDeviceForNISD       Device
-	selectedNISDToStart         ctlplfl.Nisd
-
+	nisdMgmtCursor            int
+	selectedNISDPartitionIdx  int
+	selectedNISDHypervisorIdx int
+	selectedNISDDeviceIdx     int
+	selectedNISDForStart      int
+	currentNISD               ctlplfl.Nisd
+	selectedPartitionForNISD  DevicePartition
+	selectedHvForNISD         ctlplfl.Hypervisor
+	selectedDeviceForNISD     Device
+	selectedNISDToStart       ctlplfl.Nisd
 
 	// Control Plane
-	cpClient        *ctlplcl.CliCFuncs
-	cpEnabled       bool
-	cpRaftUUID      string
-	cpGossipPath    string
-	cpConnected     bool
+	cpClient     *ctlplcl.CliCFuncs
+	cpEnabled    bool
+	cpRaftUUID   string
+	cpGossipPath string
+	cpConnected  bool
 
 	// General
 	message  string
@@ -309,7 +308,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	deviceFailureDomainInput.Placeholder = "Enter failure domain for device"
 	deviceFailureDomainInput.CharLimit = 500
 
-
 	isConnected := false
 	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
 	if cpClient != nil {
@@ -343,11 +341,11 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
 		// Control plane configuration
-		cpEnabled:             cpEnabled,
-		cpRaftUUID:            cpRaftUUID,
-		cpGossipPath:          cpGossipPath,
-		cpClient:			   cpClient,
-		cpConnected:           isConnected,
+		cpEnabled:    cpEnabled,
+		cpRaftUUID:   cpRaftUUID,
+		cpGossipPath: cpGossipPath,
+		cpClient:     cpClient,
+		cpConnected:  isConnected,
 	}
 }
 
@@ -652,9 +650,9 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 
 			selectedRackInfo := allRacks[m.selectedRackIdx]
 			hypervisor := Hypervisor{
-				ID:      m.editingUUID, // Will be generated if empty in AddHypervisor
+				ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
 				Name:      name,
-				RackID:		selectedRackInfo.Rack.ID, // Use the correct Rack UUID
+				RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
 				IPAddress: ip,
 				SSHPort:   sshPort,
 				PortRange: portRange,
@@ -1069,7 +1067,7 @@ func (m model) updateDeviceEdit(msg tea.Msg) (model, tea.Cmd) {
 				m.deviceFailureDomain.SetValue(device.Device.FailureDomain)
 				m.deviceFailureDomain.Focus()
 				//FIXME
-				m.selectedHypervisorIdx = 0 
+				m.selectedHypervisorIdx = 0
 				m.state = stateDeviceInitialization // Reuse the initialization form for editing
 				return m, textinput.Blink
 			}
@@ -1188,7 +1186,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 					// Get the updated device after initialization
 					updatedDevice := hv.Dev[m.selectedDeviceIdx]
 					deviceInfo := ctlplfl.Device{
-						ID:         updatedDevice.ID,
+						ID:            updatedDevice.ID,
 						NisdID:        "", // Empty for now, can be set later
 						SerialNumber:  updatedDevice.SerialNumber,
 						Status:        0, // Active status
@@ -1239,11 +1237,11 @@ func (m model) getAllInitializedDevices() []DeviceInfo {
 	var devices []DeviceInfo
 	for hvIndex, hv := range m.config.Hypervisors {
 		for devIndex, device := range hv.Dev {
-				devices = append(devices, DeviceInfo{
-					Device:   device,
-					HvIndex:  hvIndex,
-					DevIndex: devIndex,
-				})
+			devices = append(devices, DeviceInfo{
+				Device:   device,
+				HvIndex:  hvIndex,
+				DevIndex: devIndex,
+			})
 		}
 	}
 	return devices
@@ -1410,7 +1408,7 @@ func (m model) buildTreeItemList() []TreeItem {
 									ParentUUID: hv.ID,
 									Level:      3,
 								})
-								
+
 								// Add partitions if device is expanded
 								if m.expandedDevices[deviceUUID] {
 									for _, partition := range device.Partitions {
@@ -1450,7 +1448,7 @@ func (m model) buildTreeItemList() []TreeItem {
 					ParentUUID: hv.ID,
 					Level:      1,
 				})
-				
+
 				// Add partitions if legacy device is expanded
 				if m.expandedDevices[deviceUUID] {
 					for _, partition := range device.Partitions {
@@ -2182,12 +2180,12 @@ func (m model) renderHierarchicalTable() string {
 					line += fmt.Sprintf(" [%d partitions]", len(device.Partitions))
 				}
 			}
-			
+
 		case "partition":
 			// Find the partition details
 			var partition DevicePartition
 			found := false
-			
+
 			// Find the partition by UUID across all devices
 			for _, pdu := range m.config.PDUs {
 				if found {
@@ -2216,7 +2214,7 @@ func (m model) renderHierarchicalTable() string {
 					}
 				}
 			}
-			
+
 			// Check legacy hypervisors too
 			if !found {
 				for _, hv := range m.config.Hypervisors {
@@ -2850,7 +2848,7 @@ func (m model) viewDeviceView() string {
 		}
 
 		device := deviceInfo.Device
-		
+
 		// Build status indicator
 		status := ""
 		if device.Initialized {
@@ -2867,7 +2865,7 @@ func (m model) viewDeviceView() string {
 		if len(device.Partitions) > 0 {
 			headerLine += fmt.Sprintf(" [%d partitions]", len(device.Partitions))
 		}
-		
+
 		if i == m.selectedDeviceIdx {
 			s.WriteString(selectedItemStyle.Render(headerLine) + "\n")
 
@@ -2879,7 +2877,7 @@ func (m model) viewDeviceView() string {
 			if device.Size != 0 {
 				s.WriteString(fmt.Sprintf("    Size: %s\n", formatBytes(device.Size)))
 			}
-			
+
 			if device.Initialized {
 				if device.ID != "" {
 					s.WriteString(fmt.Sprintf("    Device UUID: %s\n", device.ID))
@@ -2893,7 +2891,7 @@ func (m model) viewDeviceView() string {
 			} else {
 				s.WriteString("    Status: Device not initialized\n")
 			}
-			
+
 			// Show partitions if any
 			if len(device.Partitions) > 0 {
 				s.WriteString(fmt.Sprintf("    Partitions (%d):\n", len(device.Partitions)))
@@ -3155,7 +3153,7 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 
 					// for loop for created partitions
 					for _, part := range createdPartitions {
-						_, err =  m.cpClient.PutPartition(&part)
+						_, err = m.cpClient.PutPartition(&part)
 						if err != nil {
 							log.Info("Failed to add partition to pumiceDB: %v", err)
 							m.message = fmt.Sprintf("Failed to add partition to pumiceDB: %v", err)
@@ -3243,7 +3241,7 @@ func (m model) viewPartitionCreate() string {
 			} else {
 				status = "[UNINITIALIZED]"
 			}
-			
+
 			line := fmt.Sprintf("%s%s: %s %s", cursor, deviceInfo.HvName, deviceInfo.Device.Name, status)
 			if deviceInfo.Device.Size != 0 {
 				line += fmt.Sprintf(" (%s)", formatBytes(deviceInfo.Device.Size))
@@ -3633,8 +3631,8 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 
 		case "enter":
 			name := strings.TrimSpace(m.inputs[0].Value())
-			description := strings.TrimSpace(m.inputs[1].Value()) // description - TODO: use when implementing full PDU creation
-			location := strings.TrimSpace(m.inputs[2].Value()) // location - TODO: use when implementing full PDU creation
+			description := strings.TrimSpace(m.inputs[1].Value())   // description - TODO: use when implementing full PDU creation
+			location := strings.TrimSpace(m.inputs[2].Value())      // location - TODO: use when implementing full PDU creation
 			powerCapacity := strings.TrimSpace(m.inputs[3].Value()) // powerCapacity - TODO: use when implementing full PDU creation
 
 			if name == "" {
@@ -3643,11 +3641,11 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 			}
 
 			pdu := PDU{
-				ID:          m.editingUUID, // Will be generated if empty in AddPDU
+				ID:            m.editingUUID, // Will be generated if empty in AddPDU
 				Name:          name,
 				Location:      location,
 				PowerCapacity: powerCapacity,
-				Specification:   description,
+				Specification: description,
 				Racks:         []Rack{},
 			}
 
@@ -3883,7 +3881,7 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 		case "enter":
 			name := strings.TrimSpace(m.inputs[0].Value())
 			description := strings.TrimSpace(m.inputs[1].Value()) // description - TODO: use when implementing full Rack creation
-			location := strings.TrimSpace(m.inputs[2].Value()) // location - TODO: use when implementing full Rack creation
+			location := strings.TrimSpace(m.inputs[2].Value())    // location - TODO: use when implementing full Rack creation
 
 			if name == "" {
 				m.message = "Rack Name is required"
@@ -3897,10 +3895,10 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 
 			pdu := m.config.PDUs[m.selectedPDUIdx]
 			rack := Rack{
-				ID:        m.editingUUID, // Will be generated if empty in AddRack
-				Name:        name,
-				PDUID:		pdu.ID,
-				Location:    location,
+				ID:            m.editingUUID, // Will be generated if empty in AddRack
+				Name:          name,
+				PDUID:         pdu.ID,
+				Location:      location,
 				Specification: description,
 			}
 
@@ -4857,8 +4855,8 @@ func (m model) getAllRacks() []RackInfo {
 // HypervisorInfo contains hypervisor information with location context
 type HypervisorInfo struct {
 	Hypervisor ctlplfl.Hypervisor
-	Location   string // "Rack: <RackID>" or "Legacy"
-	Source     string // "rack" or "legacy"
+	Location   string    // "Rack: <RackID>" or "Legacy"
+	Source     string    // "rack" or "legacy"
 	RackInfo   *RackInfo // nil for legacy hypervisors
 }
 
@@ -5073,20 +5071,20 @@ func (m model) updateWriteDeviceForm(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	case "tab", "shift+tab", "up", "down":
 		s := msg.String()
-		
+
 		// Navigate between inputs
 		if s == "up" || s == "shift+tab" {
 			m.writeDeviceCursor--
 		} else {
 			m.writeDeviceCursor++
 		}
-		
+
 		if m.writeDeviceCursor < 0 {
 			m.writeDeviceCursor = len(m.writeDeviceInputs) - 1
 		} else if m.writeDeviceCursor >= len(m.writeDeviceInputs) {
 			m.writeDeviceCursor = 0
 		}
-		
+
 		// Update focus
 		for i := range m.writeDeviceInputs {
 			if i == m.writeDeviceCursor {
@@ -5100,7 +5098,7 @@ func (m model) updateWriteDeviceForm(msg tea.KeyMsg) (model, tea.Cmd) {
 		// Submit the form
 		return m.submitWriteDevice()
 	}
-	
+
 	// Handle input updates
 	var cmd tea.Cmd
 	m.writeDeviceInputs[m.writeDeviceCursor], cmd = m.writeDeviceInputs[m.writeDeviceCursor].Update(msg)
@@ -5123,14 +5121,14 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 		HypervisorID:  m.writeDeviceInputs[4].Value(),
 		FailureDomain: m.writeDeviceInputs[5].Value(),
 	}
-	
+
 	// Parse status field
 	if statusStr := m.writeDeviceInputs[3].Value(); statusStr != "" {
 		if status, err := strconv.ParseUint(statusStr, 10, 16); err == nil {
 			deviceInfo.Status = uint16(status)
 		}
 	}
-	
+
 	log.Info("Sending device info to control plane: ", deviceInfo)
 
 	_, err := m.cpClient.PutDeviceInfo(&deviceInfo)
@@ -5146,7 +5144,7 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 			m.writeDeviceInputs[i].SetValue("")
 		}
 	}
-	
+
 	m.state = stateWriteDevice
 	return m, nil
 }
@@ -5154,7 +5152,7 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 // WriteDevice view functions
 func (m model) viewWriteDevice() string {
 	title := titleStyle.Render("Write Device to Control Plane")
-	
+
 	content := fmt.Sprintf(`
 %s
 
@@ -5163,18 +5161,18 @@ This will send device configuration data to the niova-mdsvc control plane.
 Press 'enter' to continue or 'q' to go back.
 
 %s`, title, m.message)
-	
+
 	return content
 }
 
 func (m model) viewWriteDeviceForm() string {
 	title := titleStyle.Render("Device Information Form")
-	
+
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
-	
+
 	labels := []string{"Device ID:", "NISD ID:", "Serial Number:", "Status:", "HyperVisor ID:", "Failure Domain:"}
-	
+
 	for i, label := range labels {
 		if i == m.writeDeviceCursor {
 			s.WriteString(focusedStyle.Render(fmt.Sprintf("%-15s", label)) + " ")
@@ -5183,13 +5181,13 @@ func (m model) viewWriteDeviceForm() string {
 		}
 		s.WriteString(m.writeDeviceInputs[i].View() + "\n\n")
 	}
-	
+
 	s.WriteString("\nPress 'tab' to navigate, 'enter' to submit, 'q' to cancel\n")
-	
+
 	if m.message != "" {
 		s.WriteString("\n" + m.message + "\n")
 	}
-	
+
 	return s.String()
 }
 */
@@ -5349,7 +5347,7 @@ func (m model) viewNISDPartitionSelection() string {
 			partitionInfo.Partition.Size)
 
 		if i == m.selectedNISDHypervisorIdx {
-			s.WriteString(selectedItemStyle.Render(cursor + info) + "\n")
+			s.WriteString(selectedItemStyle.Render(cursor+info) + "\n")
 		} else {
 			s.WriteString(cursor + info + "\n")
 		}
@@ -5456,9 +5454,6 @@ func (m model) viewShowInitializedNISD() string {
 
 // Helper function to initialize NISD
 func (m model) initializeNISD() error {
-	if !m.cpEnabled {
-		return fmt.Errorf("control plane is not enabled")
-	}
 
 	if m.cpClient == nil {
 		return fmt.Errorf("control plane client is not initialized")
@@ -5473,11 +5468,19 @@ func (m model) initializeNISD() error {
 		return fmt.Errorf("hypervisor %s not found", m.selectedHvForNISD.ID)
 	}
 
+	// Allocate ports for NISD
+	clientPort, serverPort, err := m.config.AllocatePortPair(m.selectedHvForNISD.ID, hv.PortRange)
+	if err != nil {
+		return fmt.Errorf("failed to allocate ports for NISD: %v", err)
+	}
+
 	// Create NISD struct
 	nisd := &ctlplfl.Nisd{
 		ID:            nisdUUID,
 		DevID:         m.selectedDeviceForNISD.Name,
 		HyperVisorID:  m.selectedHvForNISD.ID,
+		ClientPort:    uint16(clientPort),
+		PeerPort:      uint16(serverPort),
 		FailureDomain: hv.RackID, // Use rack ID as failure domain
 		IPAddr:        hv.IPAddress,
 		InitDev:       true,
@@ -5490,6 +5493,8 @@ func (m model) initializeNISD() error {
 	if err != nil {
 		return fmt.Errorf("failed to register NISD with control plane: %v", err)
 	}
+
+	log.Info("PutNisdCfg: ", nisd)
 
 	if resp == nil {
 		return fmt.Errorf("received nil response from control plane")
@@ -5576,7 +5581,7 @@ func (m model) viewNISDSelection() string {
 			nisd.PeerPort)
 
 		if i == m.selectedNISDForStart {
-			s.WriteString(selectedItemStyle.Render(cursor + info) + "\n")
+			s.WriteString(selectedItemStyle.Render(cursor+info) + "\n")
 		} else {
 			s.WriteString(cursor + info + "\n")
 		}
@@ -5696,10 +5701,6 @@ func (m model) startNISDProcess() error {
 	// - Connect to the hypervisor via SSH
 	// - Start the NISD daemon with the configured parameters
 	// - Verify the process is running and listening on the correct ports
-
-	if !m.cpEnabled {
-		return fmt.Errorf("control plane is not enabled")
-	}
 
 	// Simulate process start logic
 	fmt.Printf("Starting NISD process:\n")

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/google/uuid"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 // Type aliases to use libctlplanefuncs types
@@ -22,7 +22,7 @@ type Rack = ctlplfl.Rack
 type Hypervisor = ctlplfl.Hypervisor
 
 type Config struct {
-	PDUs []ctlplfl.PDU `json:"pdus"`
+	PDUs  []ctlplfl.PDU  `json:"pdus"`
 	Racks []ctlplfl.Rack `json:"racks"`
 	// Legacy field for backward compatibility
 	Hypervisors []ctlplfl.Hypervisor `json:"hypervisors,omitempty"`
@@ -304,7 +304,6 @@ func LoadConfigFromFile(filename string) (*Config, error) {
 	return &config, nil
 }
 
-
 // ParsePortRange parses a port range string like "8000-8100" and returns start and end ports
 func ParsePortRange(portRange string) (int, int, error) {
 	if portRange == "" {
@@ -361,7 +360,6 @@ func (c *Config) GetHypervisorFailureDomain(hvUUID string) string {
 	return ""
 }
 
-/*
 // AllocatePortPair allocates a client and server port pair from the given range,
 // avoiding already allocated ports
 func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int, int, error) {
@@ -373,42 +371,12 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int,
 	// Collect all allocated ports for this hypervisor
 	allocatedPorts := make(map[int]bool)
 
-	// Check hierarchical structure
-	for _, pdu := range c.PDUs {
-		for _, rack := range pdu.Racks {
-			for _, hv := range rack.Hypervisors {
-				if hv.ID == hypervisorUUID {
-					for _, dev := range hv.Dev {
-						// Include partition ports
-						for _, partition := range dev.Partitions {
-							if partition.ClientPort != 0 {
-								allocatedPorts[partition.ClientPort] = true
-							}
-							if partition.ServerPort != 0 {
-								allocatedPorts[partition.ServerPort] = true
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Check legacy hypervisors for backward compatibility
-	for _, hv := range c.Hypervisors {
-		if hv.ID == hypervisorUUID {
-			for _, dev := range hv.Dev {
-				for _, partition := range dev.Partitions {
-					if partition.ClientPort != 0 {
-						allocatedPorts[partition.ClientPort] = true
-					}
-					if partition.ServerPort != 0 {
-						allocatedPorts[partition.ServerPort] = true
-					}
-				}
-			}
-		}
-	}
+	// TODO: In a full implementation, this would check existing NISD instances
+	// from the control plane to get their allocated ports.
+	// For now, we'll use a simple port allocation starting from the range start.
+	//
+	// Note: NISD ports are managed at the NISD level, not partition level.
+	// DevicePartition struct doesn't have ClientPort/ServerPort fields.
 
 	// Find two consecutive available ports
 	for port := startPort; port < endPort-1; port += 2 {
@@ -422,7 +390,6 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int,
 
 	return 0, 0, fmt.Errorf("no available port pairs in range %s", portRange)
 }
-*/
 
 // InitializeDevice initializes a device with UUID, ports, and other metadata
 func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain string) error {
@@ -434,26 +401,26 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 					for devIndex, dev := range hv.Dev {
 						if dev.Name == deviceName && !dev.Initialized {
 
-/*
-							// Allocate ports
-							_, _, err := c.AllocatePortPair(hypervisorUUID, hv.PortRange)
-							if err != nil {
-								return fmt.Errorf("failed to allocate ports: %v", err)
-							}
-*/
+							/*
+								// Allocate ports
+								_, _, err := c.AllocatePortPair(hypervisorUUID, hv.PortRange)
+								if err != nil {
+									return fmt.Errorf("failed to allocate ports: %v", err)
+								}
+							*/
 
 							// Build hierarchical failure domain
 							hierarchicalFailureDomain := fmt.Sprintf("%s/%s/%s/%s", pdu.Name, rack.Name, hv.Name, failureDomain)
 
 							// Update device
 							c.PDUs[i].Racks[j].Hypervisors[k].Dev[devIndex] = Device{
-								ID:             dev.ID,
-								Name:           dev.Name,
-								Size:           dev.Size,
-								HypervisorID: hypervisorUUID,
-								DevicePath:     fmt.Sprintf("/dev/%s", dev.Name),
-								FailureDomain:  hierarchicalFailureDomain,
-								Initialized:    true,
+								ID:            dev.ID,
+								Name:          dev.Name,
+								Size:          dev.Size,
+								HypervisorID:  hypervisorUUID,
+								DevicePath:    fmt.Sprintf("/dev/%s", dev.Name),
+								FailureDomain: hierarchicalFailureDomain,
+								Initialized:   true,
 							}
 
 							return nil
@@ -471,23 +438,23 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 			for devIndex, dev := range hv.Dev {
 				if dev.Name == deviceName && !dev.Initialized {
 
-/*
-					// Allocate ports
-					_, _, err := c.AllocatePortPair(hypervisorUUID, hv.PortRange)
-					if err != nil {
-						return fmt.Errorf("failed to allocate ports: %v", err)
-					}
-*/
+					/*
+						// Allocate ports
+						_, _, err := c.AllocatePortPair(hypervisorUUID, hv.PortRange)
+						if err != nil {
+							return fmt.Errorf("failed to allocate ports: %v", err)
+						}
+					*/
 
 					// Update device
 					c.Hypervisors[hvIndex].Dev[devIndex] = Device{
-						ID:             dev.ID,
-						Name:           dev.Name,
-						Size:           dev.Size,
-						HypervisorID: hypervisorUUID,
-						DevicePath:     fmt.Sprintf("/dev/%s", dev.Name),
-						FailureDomain:  failureDomain,
-						Initialized:    true,
+						ID:            dev.ID,
+						Name:          dev.Name,
+						Size:          dev.Size,
+						HypervisorID:  hypervisorUUID,
+						DevicePath:    fmt.Sprintf("/dev/%s", dev.Name),
+						FailureDomain: failureDomain,
+						Initialized:   true,
 					}
 
 					return nil
@@ -806,18 +773,18 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 		return fmt.Errorf("failed to create physical partition: %v", err)
 	}
 
-/*
-	// Allocate ports for partition
-	clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
-	if err != nil {
-		return fmt.Errorf("failed to allocate ports for partition: %v", err)
-	}
-*/
+	/*
+		// Allocate ports for partition
+		clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
+		if err != nil {
+			return fmt.Errorf("failed to allocate ports for partition: %v", err)
+		}
+	*/
 
 	partition := DevicePartition{
-		PartitionUUID:	uuid.New().String(),
-		NISDUUID:  		nisdInstance,
-		Size:			size,
+		PartitionUUID: uuid.New().String(),
+		NISDUUID:      nisdInstance,
+		Size:          size,
 	}
 
 	// Find device and add partition
@@ -866,13 +833,13 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 		return nil, fmt.Errorf("failed to get device size: %v", err)
 	}
 
-/*
-	// Create multiple physical partitions
-	err = c.CreateMultipleEqualPartitions(hvUUID, deviceName, numPartitions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create physical partitions: %v", err)
-	}
-*/
+	/*
+		// Create multiple physical partitions
+		err = c.CreateMultipleEqualPartitions(hvUUID, deviceName, numPartitions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create physical partitions: %v", err)
+		}
+	*/
 
 	// Calculate partition size (excluding 1MB for partition table)
 	usableSize := deviceSize - (1024 * 1024)
@@ -889,10 +856,10 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 
 		//FIXME right now single partition per device as delete partition table is throwing error
 		partition := DevicePartition{
-			PartitionUUID:	partitionUUID,
-			PartitionPath:	deviceName,
-			NISDUUID:		nisdInstance,
-			Size:			partitionSize,
+			PartitionUUID: partitionUUID,
+			PartitionPath: deviceName,
+			NISDUUID:      nisdInstance,
+			Size:          partitionSize,
 		}
 
 		createdPartitions = append(createdPartitions, partition)
