@@ -1418,7 +1418,7 @@ func (m model) buildTreeItemList() []TreeItem {
 											Type:       "partition",
 											UUID:       partition.PartitionUUID,
 											ParentUUID: deviceUUID,
-											Name:       partition.NISDInstance,
+											Name:       partition.NISDUUID,
 											Level:      4,
 										})
 									}
@@ -1458,7 +1458,7 @@ func (m model) buildTreeItemList() []TreeItem {
 							Type:       "partition",
 							UUID:       partition.PartitionUUID,
 							ParentUUID: deviceUUID,
-							Name:       partition.NISDInstance,
+							Name:       partition.NISDUUID,
 							Level:      2,
 						})
 					}
@@ -1611,8 +1611,8 @@ func (m model) updateConfigView() {
 						}
 						// Show partitions if any
 						for _, partition := range dev.Partitions {
-							content.WriteString(fmt.Sprintf("              Partition: %s [UUID: %s, Ports: %d/%d]\n",
-								partition.NISDInstance, partition.PartitionUUID, partition.ClientPort, partition.ServerPort))
+							content.WriteString(fmt.Sprintf("              Partition: %s [UUID: %s]\n",
+								partition.NISDUUID, partition.PartitionUUID))
 						}
 					}
 				}
@@ -1650,8 +1650,8 @@ func (m model) updateConfigView() {
 				}
 				// Show partitions if any
 				for _, partition := range dev.Partitions {
-					content.WriteString(fmt.Sprintf("      Partition: %s [UUID: %s, Ports: %d/%d]\n",
-						partition.NISDInstance, partition.PartitionUUID, partition.ClientPort, partition.ServerPort))
+					content.WriteString(fmt.Sprintf("      Partition: %s [UUID: %s]\n",
+						partition.NISDUUID, partition.PartitionUUID))
 				}
 			}
 		}
@@ -2238,11 +2238,10 @@ func (m model) renderHierarchicalTable() string {
 				}
 			}
 
-			line = fmt.Sprintf("  %s", partition.NISDInstance)
+			line = fmt.Sprintf("  %s", partition.NISDUUID)
 			if partition.Size > 0 {
 				line += fmt.Sprintf(" (%s)", formatBytes(partition.Size))
 			}
-			line += fmt.Sprintf(" [Ports: %d/%d]", partition.ClientPort, partition.ServerPort)
 			if partition.PartitionUUID != "" {
 				line += fmt.Sprintf(" (UUID: %s)", partition.PartitionUUID[:8]+"...")
 			}
@@ -2495,7 +2494,7 @@ func (m model) viewViewHypervisor() string {
 					s.WriteString(fmt.Sprintf("     Partitions (%d):\n", len(device.Partitions)))
 					for j, partition := range device.Partitions {
 						s.WriteString(fmt.Sprintf("       %d. %s (Size: %s)\n",
-							j+1, partition.NISDInstance, formatBytes(partition.Size)))
+							j+1, partition.NISDUUID, formatBytes(partition.Size)))
 					}
 				}
 			}
@@ -2899,11 +2898,10 @@ func (m model) viewDeviceView() string {
 			if len(device.Partitions) > 0 {
 				s.WriteString(fmt.Sprintf("    Partitions (%d):\n", len(device.Partitions)))
 				for j, partition := range device.Partitions {
-					s.WriteString(fmt.Sprintf("      %d. %s", j+1, partition.NISDInstance))
+					s.WriteString(fmt.Sprintf("      %d. %s", j+1, partition.NISDUUID))
 					if partition.Size > 0 {
 						s.WriteString(fmt.Sprintf(" (%s)", formatBytes(partition.Size)))
 					}
-					s.WriteString(fmt.Sprintf(" [Ports: %d/%d]\n", partition.ClientPort, partition.ServerPort))
 				}
 			}
 		} else {
@@ -3347,11 +3345,10 @@ func (m model) viewPartitionView() string {
 					cursor = "  ▶ "
 				}
 
-				partitionLine := fmt.Sprintf("%sPartition: %s", cursor, partition.Partition.NISDInstance)
+				partitionLine := fmt.Sprintf("%sPartition: %s", cursor, partition.Partition.NISDUUID)
 				if partition.Partition.Size > 0 {
 					partitionLine += fmt.Sprintf(" (%s)", formatBytes(partition.Partition.Size))
 				}
-				partitionLine += fmt.Sprintf(" [Ports: %d/%d]", partition.Partition.ClientPort, partition.Partition.ServerPort)
 
 				if partitionIndex == m.selectedPartitionIdx {
 					partitionLine = selectedItemStyle.Render(partitionLine)
@@ -3360,9 +3357,6 @@ func (m model) viewPartitionView() string {
 				s.WriteString(partitionLine + "\n")
 				if partitionIndex == m.selectedPartitionIdx {
 					s.WriteString(fmt.Sprintf("      UUID: %s\n", partition.Partition.PartitionUUID))
-					if partition.Partition.StartOffset > 0 {
-						s.WriteString(fmt.Sprintf("      Offset: %s\n", formatBytes(partition.Partition.StartOffset)))
-					}
 				}
 				partitionIndex++
 			}
@@ -3413,7 +3407,7 @@ func (m model) updatePartitionDelete(msg tea.Msg) (model, tea.Cmd) {
 					if err := m.config.SaveToFile(m.configPath); err != nil {
 						m.message = fmt.Sprintf("Partition deleted but failed to save: %v", err)
 					} else {
-						m.message = fmt.Sprintf("Successfully deleted NISD partition: %s", selectedPartition.Partition.NISDInstance)
+						m.message = fmt.Sprintf("Successfully deleted NISD partition: %s", selectedPartition.Partition.NISDUUID)
 
 						// Reset selection index if it's now out of bounds
 						newPartitions := m.getAllPartitionsAcrossDevices()
@@ -3482,11 +3476,10 @@ func (m model) viewPartitionDelete() string {
 					cursor = "  ▶ "
 				}
 
-				partitionLine := fmt.Sprintf("%sPartition: %s", cursor, partition.Partition.NISDInstance)
+				partitionLine := fmt.Sprintf("%sPartition: %s", cursor, partition.Partition.NISDUUID)
 				if partition.Partition.Size > 0 {
 					partitionLine += fmt.Sprintf(" (%s)", formatBytes(partition.Partition.Size))
 				}
-				partitionLine += fmt.Sprintf(" [Ports: %d/%d]", partition.Partition.ClientPort, partition.Partition.ServerPort)
 
 				if partitionIndex == m.selectedPartitionIdx {
 					partitionLine = selectedItemStyle.Render(partitionLine)
@@ -3497,9 +3490,6 @@ func (m model) viewPartitionDelete() string {
 				s.WriteString(partitionLine + "\n")
 				if partitionIndex == m.selectedPartitionIdx {
 					s.WriteString(fmt.Sprintf("      UUID: %s\n", partition.Partition.PartitionUUID))
-					if partition.Partition.StartOffset > 0 {
-						s.WriteString(fmt.Sprintf("      Offset: %s\n", formatBytes(partition.Partition.StartOffset)))
-					}
 				}
 				partitionIndex++
 			}
@@ -3537,12 +3527,10 @@ func (m model) viewShowAddedPartition() string {
 
 	s.WriteString("Sample Partition Details (first partition):\n\n")
 	s.WriteString(fmt.Sprintf("Partition UUID: %s\n", m.currentPartition.PartitionUUID))
-	s.WriteString(fmt.Sprintf("NISD Instance: %s\n", m.currentPartition.NISDInstance))
+	s.WriteString(fmt.Sprintf("NISD Instance: %s\n", m.currentPartition.NISDUUID))
 	if m.currentPartition.Size > 0 {
 		s.WriteString(fmt.Sprintf("Size per partition: %s\n", formatBytes(m.currentPartition.Size)))
 	}
-	s.WriteString(fmt.Sprintf("Client Port: %d\n", m.currentPartition.ClientPort))
-	s.WriteString(fmt.Sprintf("Server Port: %d\n", m.currentPartition.ServerPort))
 
 	s.WriteString("\nUse 'View Partitions' to see all created partitions.")
 	s.WriteString("\n\nPress enter or esc to return to partition management")
@@ -5344,13 +5332,11 @@ func (m model) viewNISDPartitionSelection() string {
 		}
 
 		// Display partition info
-		info := fmt.Sprintf("HV: %s | Device: %s | Partition: %s | Size: %d bytes | Ports: %d/%d",
+		info := fmt.Sprintf("HV: %s | Device: %s | Partition: %s | Size: %d bytes",
 			partitionInfo.HvName,
 			partitionInfo.Device.Name,
-			partitionInfo.Partition.NISDInstance,
-			partitionInfo.Partition.Size,
-			partitionInfo.Partition.ClientPort,
-			partitionInfo.Partition.ServerPort)
+			partitionInfo.Partition.NISDUUID,
+			partitionInfo.Partition.Size)
 
 		if i == m.selectedNISDHypervisorIdx {
 			s.WriteString(selectedItemStyle.Render(cursor + info) + "\n")
@@ -5407,10 +5393,8 @@ func (m model) viewNISDInitialize() string {
 	// Display selected partition details
 	s.WriteString(fmt.Sprintf("Hypervisor: %s\n", m.selectedHvForNISD.Name))
 	s.WriteString(fmt.Sprintf("Device: %s\n", m.selectedDeviceForNISD.Name))
-	s.WriteString(fmt.Sprintf("Partition Instance: %s\n", m.selectedPartitionForNISD.NISDInstance))
+	s.WriteString(fmt.Sprintf("Partition Instance: %s\n", m.selectedPartitionForNISD.NISDUUID))
 	s.WriteString(fmt.Sprintf("Partition Size: %d bytes\n", m.selectedPartitionForNISD.Size))
-	s.WriteString(fmt.Sprintf("Client Port: %d\n", m.selectedPartitionForNISD.ClientPort))
-	s.WriteString(fmt.Sprintf("Server Port: %d\n", m.selectedPartitionForNISD.ServerPort))
 
 	s.WriteString("\nThis will create a new NISD instance and register it with the control plane.\n\n")
 	s.WriteString("Press ENTER to initialize NISD, or ESC to cancel")
@@ -5486,8 +5470,6 @@ func (m model) initializeNISD() error {
 		HyperVisorID:  m.selectedHvForNISD.ID,
 		FailureDomain: hv.RackID, // Use rack ID as failure domain
 		IPAddr:        hv.IPAddress,
-		ClientPort:    uint16(m.selectedPartitionForNISD.ClientPort),
-		PeerPort:      uint16(m.selectedPartitionForNISD.ServerPort),
 		InitDev:       true,
 		TotalSize:     m.selectedPartitionForNISD.Size,
 		AvailableSize: m.selectedPartitionForNISD.Size,

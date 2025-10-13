@@ -361,6 +361,7 @@ func (c *Config) GetHypervisorFailureDomain(hvUUID string) string {
 	return ""
 }
 
+/*
 // AllocatePortPair allocates a client and server port pair from the given range,
 // avoiding already allocated ports
 func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int, int, error) {
@@ -421,6 +422,7 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int,
 
 	return 0, 0, fmt.Errorf("no available port pairs in range %s", portRange)
 }
+*/
 
 // InitializeDevice initializes a device with UUID, ports, and other metadata
 func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain string) error {
@@ -432,11 +434,13 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 					for devIndex, dev := range hv.Dev {
 						if dev.Name == deviceName && !dev.Initialized {
 
+/*
 							// Allocate ports
 							_, _, err := c.AllocatePortPair(hypervisorUUID, hv.PortRange)
 							if err != nil {
 								return fmt.Errorf("failed to allocate ports: %v", err)
 							}
+*/
 
 							// Build hierarchical failure domain
 							hierarchicalFailureDomain := fmt.Sprintf("%s/%s/%s/%s", pdu.Name, rack.Name, hv.Name, failureDomain)
@@ -467,11 +471,13 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 			for devIndex, dev := range hv.Dev {
 				if dev.Name == deviceName && !dev.Initialized {
 
+/*
 					// Allocate ports
 					_, _, err := c.AllocatePortPair(hypervisorUUID, hv.PortRange)
 					if err != nil {
 						return fmt.Errorf("failed to allocate ports: %v", err)
 					}
+*/
 
 					// Update device
 					c.Hypervisors[hvIndex].Dev[devIndex] = Device{
@@ -789,7 +795,7 @@ func (c *Config) ListPhysicalPartitions(hvUUID, deviceName string) ([]string, er
 
 // AddDevicePartition adds a NISD partition to a device
 func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, startOffset, size int64) error {
-	hv, found := c.GetHypervisor(hvUUID)
+	_, found := c.GetHypervisor(hvUUID)
 	if !found {
 		return fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
 	}
@@ -800,19 +806,18 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 		return fmt.Errorf("failed to create physical partition: %v", err)
 	}
 
+/*
 	// Allocate ports for partition
 	clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
 	if err != nil {
 		return fmt.Errorf("failed to allocate ports for partition: %v", err)
 	}
+*/
 
 	partition := DevicePartition{
-		PartitionUUID: uuid.New().String(),
-		NISDInstance:  nisdInstance,
-		StartOffset:   startOffset,
-		Size:          size,
-		ClientPort:    clientPort,
-		ServerPort:    serverPort,
+		PartitionUUID:	uuid.New().String(),
+		NISDUUID:  		nisdInstance,
+		Size:			size,
 	}
 
 	// Find device and add partition
@@ -850,7 +855,7 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 
 // AddMultipleDevicePartitions creates multiple equal-sized NISD partitions on a device
 func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numPartitions int) ([]DevicePartition, error) {
-	hv, found := c.GetHypervisor(hvUUID)
+	_, found := c.GetHypervisor(hvUUID)
 	if !found {
 		return nil, fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
 	}
@@ -876,25 +881,21 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 	// Create NISD partitions for each physical partition
 	for i := 0; i < numPartitions; i++ {
 		// Allocate ports for partition
+/*
 		clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
 		if err != nil {
 			return nil, fmt.Errorf("failed to allocate ports for partition %d: %v", i+1, err)
 		}
+*/
 
 		// Generate NISD instance and UUID
 		nisdInstance := c.GenerateNISDInstance()
 		partitionUUID := uuid.New().String()
 
-		// Calculate start offset for this partition
-		startOffset := int64(1024*1024) + int64(i)*partitionSize
-
 		partition := DevicePartition{
-			PartitionUUID: partitionUUID,
-			NISDInstance:  nisdInstance,
-			StartOffset:   startOffset,
-			Size:          partitionSize,
-			ClientPort:    clientPort,
-			ServerPort:    serverPort,
+			PartitionUUID:	partitionUUID,
+			NISDUUID:		nisdInstance,
+			Size:			partitionSize,
 		}
 
 		createdPartitions = append(createdPartitions, partition)
@@ -1236,7 +1237,7 @@ func (c *Config) GenerateNISDInstance() string {
 			for _, hv := range rack.Hypervisors {
 				for _, dev := range hv.Dev {
 					for _, partition := range dev.Partitions {
-						existingInstances[partition.NISDInstance] = true
+						existingInstances[partition.NISDUUID] = true
 					}
 				}
 			}
@@ -1247,7 +1248,7 @@ func (c *Config) GenerateNISDInstance() string {
 	for _, hv := range c.Hypervisors {
 		for _, dev := range hv.Dev {
 			for _, partition := range dev.Partitions {
-				existingInstances[partition.NISDInstance] = true
+				existingInstances[partition.NISDUUID] = true
 			}
 		}
 	}
