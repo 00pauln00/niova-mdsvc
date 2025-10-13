@@ -227,14 +227,14 @@ func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.Resp
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) (*ctlplfl.DevicePartition, error) {
-	pt := &ctlplfl.DevicePartition{}
-	err := ccf.get(req, &pt, ctlplfl.GET_PARTITION)
+func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartition, error) {
+	pts := make([]ctlplfl.DevicePartition, 0)
+	err := ccf.get(req, &pts, ctlplfl.GET_PARTITION)
 	if err != nil {
 		log.Error("Get Partition failed: ", err)
 		return nil, err
 	}
-	return pt, nil
+	return pts, nil
 }
 
 func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
