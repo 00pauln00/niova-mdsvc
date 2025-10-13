@@ -1,33 +1,52 @@
 #!/bin/bash
+# controlplane.sh
+# $1 = container index (0,1,2,...)
 
-#Create configuration files
-./raft-config.sh $1
+INDEX=$1
 
-RAFT_UUID=$(ls configs | awk -F. '/\.raft$/ { print $1 }')
-mkdir logs
+if [ -z "$INDEX" ]; then
+    echo "Usage: $0 <container-index>"
+    exit 1
+fi
+
+mkdir -p logs
+
+# Get Raft UUID (same for all nodes)
+RAFT_FILE=$(ls -1 configs/*.raft | head -n1)
+RAFT_UUID=$(basename "$RAFT_FILE" .raft)
 
 
-# Extract peer UUIDs from the configs directory
-for file in ./configs/*.peer; do
-    uuid="$(basename "$file" .peer)"
-    
-    # Run pmdb servers for each peer UUID
-    ./libexec/niova/CTLPlane_pmdbServer \
-        -g ./configs/gossipNodes \
-        -r "${RAFT_UUID}" \
-        -u "${uuid}" \
-        -l "/controlplane/logs/pmdb_server_${uuid}.log" \
-    	-p 0 > "/controlplane/logs/pmdb_server_${uuid}_stdouterr" 2>&1 &
-done
+if [ -z "$RAFT_UUID" ]; then
+    echo "ERROR: No .raft file found in configs/"
+    exit 1
+fi
+
+# Pick peer UUID based on alphabetical order and container index
+PEER_FILE=$(ls -1 configs/*.peer | sed -n "$((INDEX+1))p")
+
+if [ -z "$PEER_FILE" ]; then
+    echo "ERROR: No .peer file found for index $INDEX"
+    exit 1
+fi
+
+PEER_UUID=$(basename "$PEER_FILE" .peer)
+echo "Starting node with PEER_UUID=$PEER_UUID and RAFT_UUID=$RAFT_UUID"
+
+# Start pmdb server
+./libexec/niova/CTLPlane_pmdbServer \
+    -g ./configs/gossipNodes \
+    -r "$RAFT_UUID" \
+    -u "$PEER_UUID" \
+    -l "/controlplane/logs/pmdb_server_${PEER_UUID}.log" \
+    -p 0 > "/controlplane/logs/pmdb_server_${PEER_UUID}_stdouterr" 2>&1 &
 
 sleep 5
 
-CUUID="$(uuidgen)"
-
-# Run the proxy
+# Start proxy client
+CUUID=$(uuidgen)
 ./libexec/niova/CTLPlane_proxy \
-    -r "${RAFT_UUID}" \
-    -u "${CUUID}" \
+    -r "$RAFT_UUID" \
+    -u "$CUUID" \
     -pa /controlplane/configs/gossipNodes \
     -n "Node_${CUUID}" \
-    -l "/controlplane/logs/pmdb_client_${CUUID}.log" > "./logs/pmdb_client_${CUUID}_stdouterr" 2>&1
+    -l "/controlplane/logs/pmdb_client_${CUUID}.log" > "/controlplane/logs/pmdb_client_${CUUID}_stdouterr" 2>&1
