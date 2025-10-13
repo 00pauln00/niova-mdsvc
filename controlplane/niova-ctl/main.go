@@ -160,7 +160,7 @@ type model struct {
 	partitionMgmtCursor        int
 	selectedPartitionIdx       int
 	currentPartition           DevicePartition
-	partitionSizeInput         textinput.Model
+	partitionCountInput        textinput.Model
 	selectedDeviceForPartition Device
 	selectedHvForPartition     ctlplfl.Hypervisor
 
@@ -2124,7 +2124,7 @@ func (m model) renderHierarchicalTable() string {
 
 				line = fmt.Sprintf("%s %s", icon, item.Name)
 				if device.Size != 0 {
-					line += fmt.Sprintf(" (%s)", device.Size)
+					line += fmt.Sprintf(" (%s)", formatBytes(device.Size))
 				}
 				if len(device.Partitions) > 0 {
 					line += fmt.Sprintf(" [%d partitions]", len(device.Partitions))
@@ -2176,7 +2176,7 @@ func (m model) renderHierarchicalTable() string {
 
 				line = fmt.Sprintf("%s %s", icon, item.Name)
 				if device.Size != 0 {
-					line += fmt.Sprintf(" (%s)", device.Size)
+					line += fmt.Sprintf(" (%s)", formatBytes(device.Size))
 				}
 				if len(device.Partitions) > 0 {
 					line += fmt.Sprintf(" [%d partitions]", len(device.Partitions))
@@ -2495,7 +2495,7 @@ func (m model) viewViewHypervisor() string {
 					s.WriteString(fmt.Sprintf("     Partitions (%d):\n", len(device.Partitions)))
 					for j, partition := range device.Partitions {
 						s.WriteString(fmt.Sprintf("       %d. %s (Size: %s)\n",
-							j+1, partition.NISDInstance, partition.Size))
+							j+1, partition.NISDInstance, formatBytes(partition.Size)))
 					}
 				}
 			}
@@ -2863,7 +2863,7 @@ func (m model) viewDeviceView() string {
 		// Header line
 		headerLine := fmt.Sprintf("%s%d. %s %s on %s", cursor, i+1, device.ID, status, deviceInfo.HvName)
 		if device.Size != 0 {
-			headerLine += fmt.Sprintf(" (%s)", device.Size)
+			headerLine += fmt.Sprintf(" (%s)", formatBytes(device.Size))
 		}
 		if len(device.Partitions) > 0 {
 			headerLine += fmt.Sprintf(" [%d partitions]", len(device.Partitions))
@@ -2878,7 +2878,7 @@ func (m model) viewDeviceView() string {
 				s.WriteString(fmt.Sprintf("    Hardware ID: %s\n", device.ID))
 			}
 			if device.Size != 0 {
-				s.WriteString(fmt.Sprintf("    Size: %s\n", device.Size))
+				s.WriteString(fmt.Sprintf("    Size: %s\n", formatBytes(device.Size)))
 			}
 			
 			if device.Initialized {
@@ -3027,10 +3027,10 @@ func (m model) updatePartitionManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.state = statePartitionCreate
 				m.selectedPartitionIdx = -1
 				m.message = ""
-				// Initialize partition size input
-				m.partitionSizeInput = textinput.New()
-				m.partitionSizeInput.Placeholder = "Enter partition size in bytes (e.g., 1073741824 for 1GB)"
-				m.partitionSizeInput.Focus()
+				// Initialize partition count input
+				m.partitionCountInput = textinput.New()
+				m.partitionCountInput.Placeholder = "Enter number of partitions (e.g., 4)"
+				m.partitionCountInput.Focus()
 				return m, nil
 			case 1: // View Partitions
 				m.state = statePartitionView
@@ -3123,73 +3123,59 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 					m.selectedDeviceIdx = m.selectedHypervisorIdx
 					m.selectedDeviceForPartition = devices[m.selectedHypervisorIdx].Device
 					m.selectedHvForPartition = Hypervisor{ID: devices[m.selectedHypervisorIdx].HvUUID, Name: devices[m.selectedHypervisorIdx].HvName}
-					m.partitionSizeInput.Focus()
+					m.partitionCountInput.Focus()
 				} else {
-					// Size entered, create partition
-					sizeStr := m.partitionSizeInput.Value()
-					if sizeStr == "" {
-						m.message = "Partition size is required"
+					// Number of partitions entered, create multiple partitions
+					countStr := m.partitionCountInput.Value()
+					if countStr == "" {
+						m.message = "Number of partitions is required"
 						return m, nil
 					}
 
-					size, err := strconv.ParseInt(sizeStr, 10, 64)
-					if err != nil || size <= 0 {
-						m.message = "Invalid partition size. Please enter a positive number in bytes"
+					numPartitions, err := strconv.Atoi(countStr)
+					if err != nil || numPartitions <= 0 {
+						m.message = "Invalid number of partitions. Please enter a positive number"
 						return m, nil
 					}
 
-					// Generate NISD instance and UUID
-					nisdInstance := m.config.GenerateNISDInstance()
-					partitionUUID := generateUUID()
+					if numPartitions > 20 {
+						m.message = "Too many partitions. Maximum is 20 partitions"
+						return m, nil
+					}
 
-					// Create partition
-					err = m.config.AddDevicePartition(
+					// Create multiple partitions
+					createdPartitions, err := m.config.AddMultipleDevicePartitions(
 						m.selectedHvForPartition.ID,
 						m.selectedDeviceForPartition.Name,
-						nisdInstance,
-						0, // Start offset - will be calculated automatically
-						size,
+						numPartitions,
 					)
 
 					if err != nil {
-						m.message = fmt.Sprintf("Failed to create partition: %v", err)
+						m.message = fmt.Sprintf("Failed to create partitions: %v", err)
 						return m, nil
 					}
 
 					// Save configuration
 					if err := m.config.SaveToFile(m.configPath); err != nil {
-						m.message = fmt.Sprintf("Partition created but failed to save: %v", err)
+						m.message = fmt.Sprintf("Partitions created but failed to save: %v", err)
 					} else {
-						// Set current partition for display
-						m.currentPartition = DevicePartition{
-							PartitionUUID: partitionUUID,
-							NISDInstance:  nisdInstance,
-							Size:          size,
-						}
-						// Find the created partition to get ports
-						for _, device := range m.config.GetAllDevicesForPartitioning() {
-							if device.HvUUID == m.selectedHvForPartition.ID && device.Device.Name == m.selectedDeviceForPartition.Name {
-								for _, partition := range device.Device.Partitions {
-									if partition.NISDInstance == nisdInstance {
-										m.currentPartition = partition
-										break
-									}
-								}
-							}
+						// Set current partition for display (use the first one)
+						if len(createdPartitions) > 0 {
+							m.currentPartition = createdPartitions[0]
 						}
 
 						m.state = stateShowAddedPartition
-						m.message = ""
+						m.message = fmt.Sprintf("Successfully created %d partitions on device %s", numPartitions, m.selectedDeviceForPartition.Name)
 					}
 					return m, nil
 				}
 			}
 		case "esc":
 			if m.selectedDeviceIdx != -1 {
-				// Cancel size input, go back to device selection
+				// Cancel count input, go back to device selection
 				m.selectedDeviceIdx = -1
-				m.partitionSizeInput.SetValue("")
-				m.partitionSizeInput.Blur()
+				m.partitionCountInput.SetValue("")
+				m.partitionCountInput.Blur()
 			} else {
 				// Exit to partition management
 				m.state = statePartitionManagement
@@ -3200,9 +3186,9 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 		}
 	}
 
-	// Update size input if it's focused
+	// Update count input if it's focused
 	if m.selectedDeviceIdx != -1 {
-		m.partitionSizeInput, cmd = m.partitionSizeInput.Update(msg)
+		m.partitionCountInput, cmd = m.partitionCountInput.Update(msg)
 	}
 
 	return m, cmd
@@ -3252,7 +3238,7 @@ func (m model) viewPartitionCreate() string {
 			
 			line := fmt.Sprintf("%s%s: %s %s", cursor, deviceInfo.HvName, deviceInfo.Device.Name, status)
 			if deviceInfo.Device.Size != 0 {
-				line += fmt.Sprintf(" (%s)", deviceInfo.Device.Size)
+				line += fmt.Sprintf(" (%s)", formatBytes(deviceInfo.Device.Size))
 			}
 			if len(deviceInfo.Device.Partitions) > 0 {
 				line += fmt.Sprintf(" [%d existing partitions]", len(deviceInfo.Device.Partitions))
@@ -3266,19 +3252,27 @@ func (m model) viewPartitionCreate() string {
 
 		s.WriteString("\nControls: ↑/↓ navigate, enter select device, esc back")
 	} else {
-		// Size input phase
+		// Partition count input phase
 		deviceInfo := devices[m.selectedDeviceIdx]
-		s.WriteString(fmt.Sprintf("Creating partition on: %s: %s\n\n", deviceInfo.HvName, deviceInfo.Device.Name))
+		s.WriteString(fmt.Sprintf("Creating partitions on: %s: %s\n\n", deviceInfo.HvName, deviceInfo.Device.Name))
 
-		s.WriteString("Enter partition size in bytes:\n")
+		// Display device size if available
+		if deviceInfo.Device.Size > 0 {
+			s.WriteString(fmt.Sprintf("Device Size: %s\n\n", formatBytes(deviceInfo.Device.Size)))
+		}
+
+		s.WriteString("Enter number of partitions to create:\n")
+		s.WriteString("- All partitions will be equal in size\n")
+		s.WriteString("- Any existing partition table will be deleted\n")
+		s.WriteString("- Maximum 20 partitions allowed\n\n")
 		s.WriteString("Examples:\n")
-		s.WriteString("  1073741824    (1 GB)\n")
-		s.WriteString("  10737418240   (10 GB)\n")
-		s.WriteString("  107374182400  (100 GB)\n\n")
+		s.WriteString("  2  (create 2 equal partitions)\n")
+		s.WriteString("  4  (create 4 equal partitions)\n")
+		s.WriteString("  8  (create 8 equal partitions)\n\n")
 
-		s.WriteString("Size: " + m.partitionSizeInput.View() + "\n")
+		s.WriteString("Number of partitions: " + m.partitionCountInput.View() + "\n")
 
-		s.WriteString("\nControls: enter create partition, esc cancel")
+		s.WriteString("\nControls: enter create partitions, esc cancel")
 	}
 
 	return s.String()
@@ -3532,21 +3526,26 @@ func (m model) updateShowAddedPartition(msg tea.Msg) (model, tea.Cmd) {
 }
 
 func (m model) viewShowAddedPartition() string {
-	title := titleStyle.Render("Partition Created Successfully")
+	title := titleStyle.Render("Partitions Created Successfully")
 
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
 
-	s.WriteString("NISD Partition Details:\n\n")
+	if m.message != "" {
+		s.WriteString(successStyle.Render(m.message) + "\n\n")
+	}
+
+	s.WriteString("Sample Partition Details (first partition):\n\n")
 	s.WriteString(fmt.Sprintf("Partition UUID: %s\n", m.currentPartition.PartitionUUID))
 	s.WriteString(fmt.Sprintf("NISD Instance: %s\n", m.currentPartition.NISDInstance))
 	if m.currentPartition.Size > 0 {
-		s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentPartition.Size))
+		s.WriteString(fmt.Sprintf("Size per partition: %s\n", formatBytes(m.currentPartition.Size)))
 	}
 	s.WriteString(fmt.Sprintf("Client Port: %d\n", m.currentPartition.ClientPort))
 	s.WriteString(fmt.Sprintf("Server Port: %d\n", m.currentPartition.ServerPort))
 
-	s.WriteString("\nPress enter or esc to return to partition management")
+	s.WriteString("\nUse 'View Partitions' to see all created partitions.")
+	s.WriteString("\n\nPress enter or esc to return to partition management")
 
 	return s.String()
 }

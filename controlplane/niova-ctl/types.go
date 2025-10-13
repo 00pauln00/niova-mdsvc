@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/google/uuid"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
@@ -492,6 +493,157 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 	return fmt.Errorf("hypervisor with UUID %s not found", hypervisorUUID)
 }
 
+// GetDeviceSize gets the actual size of a device in bytes
+func (c *Config) GetDeviceSize(hvUUID, deviceName string) (int64, error) {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return 0, fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Get the full device path
+	devicePath := fmt.Sprintf("/dev/%s", deviceName)
+
+	// Check if device exists
+	checkCmd := fmt.Sprintf("test -b %s && echo 'exists' || echo 'not found'", devicePath)
+	result, err := sshClient.RunCommand(checkCmd)
+	if err != nil {
+		return 0, fmt.Errorf("failed to check device %s: %v", devicePath, err)
+	}
+	if strings.TrimSpace(result) != "exists" {
+		return 0, fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+	}
+
+	// Get device size in bytes using blockdev
+	sizeCmd := fmt.Sprintf("blockdev --getsize64 %s", devicePath)
+	sizeResult, err := sshClient.RunCommand(sizeCmd)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get size for device %s: %v", devicePath, err)
+	}
+
+	sizeBytes, err := strconv.ParseInt(strings.TrimSpace(sizeResult), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse device size: %v", err)
+	}
+
+	return sizeBytes, nil
+}
+
+// DeleteAllPartitionsFromDevice removes all partitions from a device
+func (c *Config) DeleteAllPartitionsFromDevice(hvUUID, deviceName string) error {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Get the full device path
+	devicePath := fmt.Sprintf("/dev/%s", deviceName)
+
+	// Check if device exists
+	checkCmd := fmt.Sprintf("test -b %s && echo 'exists' || echo 'not found'", devicePath)
+	result, err := sshClient.RunCommand(checkCmd)
+	if err != nil {
+		return fmt.Errorf("failed to check device %s: %v", devicePath, err)
+	}
+	if strings.TrimSpace(result) != "exists" {
+		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+	}
+
+	// Create new GPT partition table (this removes all existing partitions)
+	deleteCmd := fmt.Sprintf("parted -s %s mklabel gpt", devicePath)
+	_, err = sshClient.RunCommand(deleteCmd)
+	if err != nil {
+		log.Info("failed to delete partition table on %s (%s): %v", devicePath, deleteCmd, err)
+		return fmt.Errorf("failed to delete partition table on %s (%s): %v", devicePath, deleteCmd, err)
+	}
+
+	// Wait for kernel to update
+	time.Sleep(2 * time.Second)
+
+	return nil
+}
+
+// CreateMultipleEqualPartitions creates equal-sized partitions on a device
+func (c *Config) CreateMultipleEqualPartitions(hvUUID, deviceName string, numPartitions int) error {
+	if numPartitions <= 0 {
+		return fmt.Errorf("number of partitions must be greater than 0")
+	}
+
+	// Get device size
+	deviceSize, err := c.GetDeviceSize(hvUUID, deviceName)
+	if err != nil {
+		return fmt.Errorf("failed to get device size: %v", err)
+	}
+
+	// Delete existing partition table
+	err = c.DeleteAllPartitionsFromDevice(hvUUID, deviceName)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing partitions: %v", err)
+	}
+
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Get the full device path
+	devicePath := fmt.Sprintf("/dev/%s", deviceName)
+
+	// Calculate partition sizes
+	// Reserve first 1MB for partition table
+	usableSize := deviceSize - (1024 * 1024)
+	partitionSize := usableSize / int64(numPartitions)
+	partitionSizeMB := partitionSize / (1024 * 1024)
+
+	if partitionSizeMB == 0 {
+		return fmt.Errorf("device too small to create %d partitions", numPartitions)
+	}
+
+	// Create partitions
+	for i := 0; i < numPartitions; i++ {
+		startMB := int64(1) + int64(i)*partitionSizeMB
+		endMB := startMB + partitionSizeMB
+
+		// For the last partition, use all remaining space
+		if i == numPartitions-1 {
+			endMB = deviceSize / (1024 * 1024)
+		}
+
+		partCmd := fmt.Sprintf("parted -s %s mkpart primary %dMB %dMB",
+			devicePath, startMB, endMB)
+
+		_, err = sshClient.RunCommand(partCmd)
+		if err != nil {
+			return fmt.Errorf("failed to create partition %d on %s: %v", i+1, devicePath, err)
+		}
+	}
+
+	// Wait for partitions to be recognized by kernel
+	time.Sleep(3 * time.Second)
+
+	return nil
+}
+
 // CreatePhysicalPartition creates an actual partition on the physical device
 func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) error {
 	hv, found := c.GetHypervisor(hvUUID)
@@ -520,7 +672,7 @@ func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) 
 	}
 
 	// Get current partition table info
-	partInfoCmd := fmt.Sprintf("sudo parted -s %s print 2>/dev/null || echo 'no partitions'", devicePath)
+	partInfoCmd := fmt.Sprintf("parted -s %s print 2>/dev/null || echo 'no partitions'", devicePath)
 	partInfo, err := sshClient.RunCommand(partInfoCmd)
 	if err != nil {
 		return fmt.Errorf("failed to get partition info for %s: %v", devicePath, err)
@@ -567,7 +719,7 @@ func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) 
 
 	// Initialize partition table if none exists
 	if strings.Contains(partInfo, "no partitions") {
-		initCmd := fmt.Sprintf("sudo parted -s %s mklabel gpt", devicePath)
+		initCmd := fmt.Sprintf("parted -s %s mklabel gpt", devicePath)
 		_, err = sshClient.RunCommand(initCmd)
 		if err != nil {
 			return fmt.Errorf("failed to initialize partition table on %s: %v", devicePath, err)
@@ -575,7 +727,7 @@ func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) 
 	}
 
 	// Create the partition with proper start/end positions
-	partCmd := fmt.Sprintf("sudo parted -s %s mkpart primary %dMB %dMB",
+	partCmd := fmt.Sprintf("parted -s %s mkpart primary %dMB %dMB",
 		devicePath,
 		startOffsetMB,
 		endOffsetMB)
@@ -589,7 +741,7 @@ func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) 
 	time.Sleep(2 * time.Second)
 
 	// Verify partition was created
-	verifyCmd := fmt.Sprintf("sudo parted -s %s print | grep '%d'", devicePath, partitionNumber)
+	verifyCmd := fmt.Sprintf("parted -s %s print | grep '%d'", devicePath, partitionNumber)
 	verifyResult, err := sshClient.RunCommand(verifyCmd)
 	if err != nil || strings.TrimSpace(verifyResult) == "" {
 		return fmt.Errorf("partition creation verification failed for %s", devicePath)
@@ -616,7 +768,7 @@ func (c *Config) ListPhysicalPartitions(hvUUID, deviceName string) ([]string, er
 	devicePath := fmt.Sprintf("/dev/%s", deviceName)
 
 	// List partitions using parted
-	listCmd := fmt.Sprintf("sudo parted -s %s print 2>/dev/null | grep -E '^ *[0-9]+' | awk '{print $1}' || echo 'no partitions'", devicePath)
+	listCmd := fmt.Sprintf("parted -s %s print 2>/dev/null | grep -E '^ *[0-9]+' | awk '{print $1}' || echo 'no partitions'", devicePath)
 	result, err := sshClient.RunCommand(listCmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list partitions for %s: %v", devicePath, err)
@@ -696,6 +848,91 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 	return fmt.Errorf("device %s not found on hypervisor %s", deviceName, hvUUID)
 }
 
+// AddMultipleDevicePartitions creates multiple equal-sized NISD partitions on a device
+func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numPartitions int) ([]DevicePartition, error) {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return nil, fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Get device size to calculate partition sizes
+	deviceSize, err := c.GetDeviceSize(hvUUID, deviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device size: %v", err)
+	}
+
+	// Create multiple physical partitions
+	err = c.CreateMultipleEqualPartitions(hvUUID, deviceName, numPartitions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create physical partitions: %v", err)
+	}
+
+	// Calculate partition size (excluding 1MB for partition table)
+	usableSize := deviceSize - (1024 * 1024)
+	partitionSize := usableSize / int64(numPartitions)
+
+	var createdPartitions []DevicePartition
+
+	// Create NISD partitions for each physical partition
+	for i := 0; i < numPartitions; i++ {
+		// Allocate ports for partition
+		clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate ports for partition %d: %v", i+1, err)
+		}
+
+		// Generate NISD instance and UUID
+		nisdInstance := c.GenerateNISDInstance()
+		partitionUUID := uuid.New().String()
+
+		// Calculate start offset for this partition
+		startOffset := int64(1024*1024) + int64(i)*partitionSize
+
+		partition := DevicePartition{
+			PartitionUUID: partitionUUID,
+			NISDInstance:  nisdInstance,
+			StartOffset:   startOffset,
+			Size:          partitionSize,
+			ClientPort:    clientPort,
+			ServerPort:    serverPort,
+		}
+
+		createdPartitions = append(createdPartitions, partition)
+	}
+
+	// Add all partitions to the device
+	for i, pdu := range c.PDUs {
+		for j, rack := range pdu.Racks {
+			for k, hypervisor := range rack.Hypervisors {
+				if hypervisor.ID == hvUUID {
+					for devIndex, dev := range hypervisor.Dev {
+						if dev.Name == deviceName {
+							// Clear existing partitions and add new ones
+							c.PDUs[i].Racks[j].Hypervisors[k].Dev[devIndex].Partitions = createdPartitions
+							return createdPartitions, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check legacy hypervisors
+	for hvIndex, hypervisor := range c.Hypervisors {
+		if hypervisor.ID == hvUUID {
+			for devIndex, dev := range hypervisor.Dev {
+				if dev.Name == deviceName {
+					// Clear existing partitions and add new ones
+					c.Hypervisors[hvIndex].Dev[devIndex].Partitions = createdPartitions
+					return createdPartitions, nil
+				}
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("device %s not found on hypervisor %s", deviceName, hvUUID)
+}
+
 // DeletePhysicalPartition removes an actual partition from the physical device
 func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNumber int) error {
 	hv, found := c.GetHypervisor(hvUUID)
@@ -724,14 +961,14 @@ func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNum
 	}
 
 	// Check if partition exists
-	checkPartCmd := fmt.Sprintf("sudo parted -s %s print | grep '^ %d '", devicePath, partitionNumber)
+	checkPartCmd := fmt.Sprintf("parted -s %s print | grep '^ %d '", devicePath, partitionNumber)
 	partResult, err := sshClient.RunCommand(checkPartCmd)
 	if err != nil || strings.TrimSpace(partResult) == "" {
 		return fmt.Errorf("partition %d not found on device %s", partitionNumber, devicePath)
 	}
 
 	// Delete the partition using parted
-	deleteCmd := fmt.Sprintf("sudo parted -s %s rm %d", devicePath, partitionNumber)
+	deleteCmd := fmt.Sprintf("parted -s %s rm %d", devicePath, partitionNumber)
 	_, err = sshClient.RunCommand(deleteCmd)
 	if err != nil {
 		return fmt.Errorf("failed to delete partition %d from %s: %v", partitionNumber, devicePath, err)
@@ -741,7 +978,7 @@ func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNum
 	time.Sleep(2 * time.Second)
 
 	// Verify partition was deleted
-	verifyCmd := fmt.Sprintf("sudo parted -s %s print | grep '^ %d ' | wc -l", devicePath, partitionNumber)
+	verifyCmd := fmt.Sprintf("parted -s %s print | grep '^ %d ' | wc -l", devicePath, partitionNumber)
 	verifyResult, err := sshClient.RunCommand(verifyCmd)
 	if err != nil {
 		return fmt.Errorf("failed to verify partition deletion: %v", err)
