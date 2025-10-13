@@ -383,7 +383,7 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 		Name: pt.PartitionUUID,
 		Success: true,
 	}
-	r, err := encode(resp)
+	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode pt response: %v", err)
 	}
@@ -392,7 +392,7 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 		Changes:  commitChgs,
 		Response: r,
 	}		
-	return encode(funcIntrm)
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
 func ReadPartition(args ...interface{}) (interface{}, error) {
@@ -408,7 +408,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
-	return encode(pt)
+	return pmCmn.Encoder(pmCmn.GOB, pt)
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
