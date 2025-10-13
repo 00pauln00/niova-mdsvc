@@ -43,12 +43,12 @@ func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitCh
 			Key: []byte(getConfKey(ptKey, pt.PartitionUUID)),
 		},
 		funclib.CommitChg{
-            Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(ptKey, pt.PartitionUUID), DEVICE_NAME)),
-            Value: []byte(pt.DevID),
-        }, funclib.CommitChg{
-            Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(ptKey, pt.PartitionUUID), SIZE)),
-            Value: []byte(strconv.Itoa(int(pt.Size))),
-        },
+			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(ptKey, pt.PartitionUUID), DEVICE_NAME)),
+			Value: []byte(pt.DevID),
+		}, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(ptKey, pt.PartitionUUID), SIZE)),
+			Value: []byte(strconv.Itoa(int(pt.Size))),
+		},
 	)
 }
 
@@ -109,6 +109,8 @@ func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) 
 			value = dev.HypervisorID
 		case FAILURE_DOMAIN:
 			value = dev.FailureDomain
+		case NISD_ID:
+			value = dev.NisdID
 		default:
 			continue
 		}

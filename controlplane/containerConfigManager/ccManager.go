@@ -15,6 +15,7 @@ import (
 )
 
 const GEN_CONF_FILE = "config-gen.yaml"
+const ZERO_INDEX = 0
 
 // loadConfig loads config from file if present, otherwise creates a new one.
 func loadConfig(setupConfig string, cc *cpLib.NisdCntrConfig) error {
@@ -45,36 +46,41 @@ func main() {
 	raftID := flag.String("r", "", "pass the raft uuid")
 	configPath := flag.String("c", "./gossipNodes", "pass the gossip config path")
 	setupConfig := flag.String("sc", "./config.yaml", "pass the gossip config path")
+	logLevel := flag.Int("ll", 4, "set log level (0=panic, 1=fatal, 2=error, 3=warn, 4=info, 5=debug, 6=trace)")
 	flag.Parse()
+	log.SetLevel(log.Level(*logLevel))
 	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
 	var conf cpLib.NisdCntrConfig
-	conf.NisdConfig = make([]*cpLib.Nisd, 0)
+	conf.NisdConfig = make([]cpLib.Nisd, 0)
 	err := loadConfig(*setupConfig, &conf)
 	if err != nil {
 		log.Error("failed to load config file: ", err)
 		os.Exit(-1)
 	}
 
-	for _, nisd := range conf.NisdConfig {
+	log.Debugf("read nisd config details: %+v", conf.NisdConfig)
+
+	for i, nisd := range conf.NisdConfig {
 		req := cpLib.GetReq{
-			ID: nisd.DevID,
+			ID:     nisd.DevID,
+			GetAll: false,
 		}
 		devInfo, err := c.GetDeviceInfo(req)
 		if err != nil {
 			log.Error("failed to get device uuid: ", err)
 			os.Exit(-1)
 		}
-		log.Debug("fetched device info from control plane: ", devInfo)
-		req.ID = devInfo[0].NisdID
+		log.Debug("fetched device info from control plane: ", devInfo[ZERO_INDEX].NisdID)
+		req.ID = devInfo[ZERO_INDEX].NisdID
 		nisdInfo, err := c.GetNisdCfg(req)
 		if err != nil {
 			log.Error("failed to get nisd details: ", err)
 			os.Exit(-1)
 		}
-		nisd = &nisdInfo[0]
-		log.Debug("fetched nisd info from control plane: ", nisd)
+		conf.NisdConfig[i] = nisdInfo[ZERO_INDEX]
+		log.Debug("fetched nisd info from control plane: ", nisdInfo[ZERO_INDEX])
 	}
 
 	configY, err := yaml.Marshal(conf)

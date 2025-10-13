@@ -190,6 +190,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 	req := args[1].(ctlplfl.GetReq)
 
 	key := getConfKey(nisdCfgKey, req.ID)
+	log.Trace("fetching nisd details for key : ", key)
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -214,7 +215,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{})
 
 	nisdResponse := ctlplfl.ResponseXML{
-		Name:    nisd.DevID,
+		Name:    nisd.ID,
 		Success: true,
 	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
@@ -378,9 +379,9 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 }
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
-	pt :=  args[0].(ctlplfl.DevicePartition)
+	pt := args[0].(ctlplfl.DevicePartition)
 	resp := &ctlplfl.ResponseXML{
-		Name: pt.PartitionUUID,
+		Name:    pt.PartitionUUID,
 		Success: true,
 	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
@@ -391,7 +392,7 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
-	}		
+	}
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
@@ -400,7 +401,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	req := args[1].(ctlplfl.GetReq)
 	key := ptKey
 	if !req.GetAll {
-		key = getConfKey(ptKey, req.ID) 
+		key = getConfKey(ptKey, req.ID)
 	}
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {

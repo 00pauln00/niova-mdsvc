@@ -89,8 +89,8 @@ type Nisd struct {
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
 	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
 	InitDev       bool   `yaml:"init"`
-	TotalSize     int64  `xml:"TotalSize"`
-	AvailableSize int64  `xml:"AvailableSize"`
+	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
+	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
 }
 
 type PDU struct {
@@ -165,7 +165,7 @@ type s3Config struct {
 type NisdCntrConfig struct {
 	S3Config   s3Config         `yaml:"s3_config"`
 	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
-	NisdConfig []*Nisd          `yaml:"nisd_config"`
+	NisdConfig []Nisd           `yaml:"nisd_config"`
 }
 
 // String returns a string representation of the Device

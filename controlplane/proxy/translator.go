@@ -72,6 +72,7 @@ func GetRespStruct(name string) any {
 
 func DecodeRequest(enctype pmLib.Format, name string, req []byte) (any, error) {
 	res := GetReqStruct(name)
+	log.Tracef("decoding request type %s, with %v decoder", name, enctype)
 	err := pmLib.Decoder(enctype, req, res)
 	if err != nil {
 		log.Error("%v: failed to decode request: ", enctype, err)
@@ -87,7 +88,7 @@ func EncodeResponse(enctype pmLib.Format, name string, resp *[]byte) error {
 		log.Error("gob: failed to decode response: ", err)
 		return err
 	}
-	log.Info("encoding res: ", res)
+	log.Tracef("encoding response type %s, with %v encoder", name, enctype)
 	*resp, err = pmLib.Encoder(enctype, res)
 	if err != nil {
 		log.Error("%v: failed to encode response: ", enctype, err)
