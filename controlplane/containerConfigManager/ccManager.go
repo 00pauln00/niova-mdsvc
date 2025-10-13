@@ -79,7 +79,10 @@ func main() {
 			log.Error("failed to get nisd details: ", err)
 			os.Exit(-1)
 		}
-		conf.NisdConfig[i] = nisdInfo[ZERO_INDEX]
+		conf.NisdConfig[i].ID = nisdInfo[ZERO_INDEX].ID
+		conf.NisdConfig[i].ClientPort = nisdInfo[ZERO_INDEX].ClientPort
+		conf.NisdConfig[i].PeerPort = nisdInfo[ZERO_INDEX].PeerPort
+		conf.NisdConfig[i].DevID = nisdInfo[ZERO_INDEX].DevID
 		log.Debug("fetched nisd info from control plane: ", nisdInfo[ZERO_INDEX])
 	}
 
