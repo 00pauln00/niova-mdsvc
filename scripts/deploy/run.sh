@@ -34,7 +34,7 @@ echo "Starting node with PEER_UUID=$PEER_UUID and RAFT_UUID=$RAFT_UUID"
     -r "$RAFT_UUID" \
     -u "$PEER_UUID" \
     -g /work/ctlplane/configs/gossipNodes \
-    -l "/work/ctlplane/logs/pmdb_server_${uuid}.log" \
+    -l "/work/ctlplane/logs/pmdb_server_${PEER_UUID}.log" \
     -p 1 > "/work/ctlplane/logs/pmdb_server_${PEER_UUID}_stdouterr" 2>&1 &
 
 sleep 5
