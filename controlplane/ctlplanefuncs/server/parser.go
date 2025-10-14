@@ -170,7 +170,7 @@ type ptParser struct{}
 
 func (ptParser) GetRootKey() string { return ptKey }
 func (ptParser) NewEntity(id string) Entity {
-	return &ctlplfl.DevicePartition{PartitionUUID: id}
+	return &ctlplfl.DevicePartition{PartitionID: id}
 }
 func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 	pt := entity.(*ctlplfl.DevicePartition)

@@ -613,6 +613,42 @@ func (c *Config) CreateMultipleEqualPartitions(hvUUID, deviceName string, numPar
 	return nil
 }
 
+// GetDevicePartitionNames retrieves the actual partition names for a device using lsblk
+func (c *Config) GetDevicePartitionNames(hvUUID, deviceName string) ([]string, error) {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return nil, fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Use lsblk to get partition names for the specific device
+	// The command gets all partitions for the device, sorted by partition number
+	cmd := fmt.Sprintf("lsblk -ln -o NAME /dev/%s | grep -E '^%s' | tail -n +2 | sort", deviceName, deviceName)
+	output, err := sshClient.RunCommand(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get partition names for device %s: %v", deviceName, err)
+	}
+
+	// Parse the output to get partition names
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var partitionNames []string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && line != deviceName {
+			partitionNames = append(partitionNames, line)
+		}
+	}
+
+	return partitionNames, nil
+}
+
 // CreatePhysicalPartition creates an actual partition on the physical device
 func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) error {
 	hv, found := c.GetHypervisor(hvUUID)
@@ -756,6 +792,7 @@ func (c *Config) ListPhysicalPartitions(hvUUID, deviceName string) ([]string, er
 	return partitions, nil
 }
 
+/*
 // AddDevicePartition adds a NISD partition to a device
 func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, startOffset, size int64) error {
 	_, found := c.GetHypervisor(hvUUID)
@@ -768,14 +805,6 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 	if err != nil {
 		return fmt.Errorf("failed to create physical partition: %v", err)
 	}
-
-	/*
-		// Allocate ports for partition
-		clientPort, serverPort, err := c.AllocatePortPair(hvUUID, hv.PortRange)
-		if err != nil {
-			return fmt.Errorf("failed to allocate ports for partition: %v", err)
-		}
-	*/
 
 	partition := DevicePartition{
 		PartitionUUID: uuid.New().String(),
@@ -816,6 +845,8 @@ func (c *Config) AddDevicePartition(hvUUID, deviceName, nisdInstance string, sta
 	return fmt.Errorf("device %s not found on hypervisor %s", deviceName, hvUUID)
 }
 
+*/
+
 // AddMultipleDevicePartitions creates multiple equal-sized NISD partitions on a device
 func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numPartitions int) ([]DevicePartition, error) {
 	_, found := c.GetHypervisor(hvUUID)
@@ -835,6 +866,16 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 		return nil, fmt.Errorf("failed to create physical partitions: %v", err)
 	}
 
+	// Get actual partition names after creation
+	actualPartitionNames, err := c.GetDevicePartitionNames(hvUUID, deviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get actual partition names: %v", err)
+	}
+
+	if len(actualPartitionNames) != numPartitions {
+		return nil, fmt.Errorf("expected %d partitions but found %d", numPartitions, len(actualPartitionNames))
+	}
+
 	// Calculate partition size (excluding 1MB for partition table)
 	usableSize := deviceSize - (1024 * 1024)
 	partitionSize := usableSize / int64(numPartitions)
@@ -846,14 +887,10 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 
 		// Generate NISD instance and UUID
 		nisdInstance := uuid.New().String()
-		partitionUUID := uuid.New().String()
-
-		// Create partition name (e.g., sda1, sda2, sda3, etc.)
-		partitionName := fmt.Sprintf("%s%d", deviceName, i+1)
 
 		partition := DevicePartition{
-			PartitionUUID: partitionUUID,
-			PartitionPath: partitionName,
+			PartitionID:   actualPartitionNames[i],
+			PartitionPath: actualPartitionNames[i],
 			NISDUUID:      nisdInstance,
 			Size:          partitionSize,
 		}
@@ -952,7 +989,7 @@ func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNum
 }
 
 // RemoveDevicePartition removes a NISD partition from a device
-func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string) error {
+func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionID string) error {
 	// Check hierarchical structure
 	for pduIndex, pdu := range c.PDUs {
 		for rackIndex, rack := range pdu.Racks {
@@ -961,7 +998,7 @@ func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string)
 					for devIndex, dev := range hv.Dev {
 						if dev.Name == deviceName {
 							for partIndex, partition := range dev.Partitions {
-								if partition.PartitionUUID == partitionUUID {
+								if partition.PartitionID == partitionID {
 									// Delete physical partition first (partition numbers are 1-based)
 									physicalPartNum := partIndex + 1
 									err := c.DeletePhysicalPartition(hvUUID, deviceName, physicalPartNum)
@@ -989,7 +1026,7 @@ func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string)
 			for devIndex, dev := range hypervisor.Dev {
 				if dev.Name == deviceName {
 					for partIndex, partition := range dev.Partitions {
-						if partition.PartitionUUID == partitionUUID {
+						if partition.PartitionID == partitionID {
 							// Delete physical partition first (partition numbers are 1-based)
 							physicalPartNum := partIndex + 1
 							err := c.DeletePhysicalPartition(hvUUID, deviceName, physicalPartNum)
@@ -1009,7 +1046,7 @@ func (c *Config) RemoveDevicePartition(hvUUID, deviceName, partitionUUID string)
 		}
 	}
 
-	return fmt.Errorf("partition %s not found on device %s on hypervisor %s", partitionUUID, deviceName, hvUUID)
+	return fmt.Errorf("partition %s not found on device %s on hypervisor %s", partitionID, deviceName, hvUUID)
 }
 
 // GetAllPartitionsForNISD returns all partitions available for NISD initialization

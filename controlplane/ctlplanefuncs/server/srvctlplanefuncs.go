@@ -381,7 +381,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	pt := args[0].(ctlplfl.DevicePartition)
 	resp := &ctlplfl.ResponseXML{
-		Name:    pt.PartitionUUID,
+		Name:    pt.PartitionID,
 		Success: true,
 	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)

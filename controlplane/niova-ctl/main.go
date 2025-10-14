@@ -1414,7 +1414,7 @@ func (m model) buildTreeItemList() []TreeItem {
 									for _, partition := range device.Partitions {
 										items = append(items, TreeItem{
 											Type:       "partition",
-											UUID:       partition.PartitionUUID,
+											UUID:       partition.PartitionID,
 											ParentUUID: deviceUUID,
 											Name:       partition.NISDUUID,
 											Level:      4,
@@ -1454,7 +1454,7 @@ func (m model) buildTreeItemList() []TreeItem {
 					for _, partition := range device.Partitions {
 						items = append(items, TreeItem{
 							Type:       "partition",
-							UUID:       partition.PartitionUUID,
+							UUID:       partition.PartitionID,
 							ParentUUID: deviceUUID,
 							Name:       partition.NISDUUID,
 							Level:      2,
@@ -1610,7 +1610,7 @@ func (m model) updateConfigView() {
 						// Show partitions if any
 						for _, partition := range dev.Partitions {
 							content.WriteString(fmt.Sprintf("              Partition: %s [UUID: %s]\n",
-								partition.NISDUUID, partition.PartitionUUID))
+								partition.NISDUUID, partition.PartitionID))
 						}
 					}
 				}
@@ -1649,7 +1649,7 @@ func (m model) updateConfigView() {
 				// Show partitions if any
 				for _, partition := range dev.Partitions {
 					content.WriteString(fmt.Sprintf("      Partition: %s [UUID: %s]\n",
-						partition.NISDUUID, partition.PartitionUUID))
+						partition.NISDUUID, partition.PartitionID))
 				}
 			}
 		}
@@ -2204,7 +2204,7 @@ func (m model) renderHierarchicalTable() string {
 								break
 							}
 							for _, p := range device.Partitions {
-								if p.PartitionUUID == item.UUID {
+								if p.PartitionID == item.UUID {
 									partition = p
 									found = true
 									break
@@ -2226,7 +2226,7 @@ func (m model) renderHierarchicalTable() string {
 							break
 						}
 						for _, p := range device.Partitions {
-							if p.PartitionUUID == item.UUID {
+							if p.PartitionID == item.UUID {
 								partition = p
 								found = true
 								break
@@ -2240,8 +2240,8 @@ func (m model) renderHierarchicalTable() string {
 			if partition.Size > 0 {
 				line += fmt.Sprintf(" (%s)", formatBytes(partition.Size))
 			}
-			if partition.PartitionUUID != "" {
-				line += fmt.Sprintf(" (UUID: %s)", partition.PartitionUUID[:8]+"...")
+			if partition.PartitionID != "" {
+				line += fmt.Sprintf(" (ID: %s)", partition.PartitionID[:8]+"...")
 			}
 		}
 
@@ -3153,6 +3153,7 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 
 					// for loop for created partitions
 					for _, part := range createdPartitions {
+						log.Info("PutPartition: ", part)
 						_, err = m.cpClient.PutPartition(&part)
 						if err != nil {
 							log.Info("Failed to add partition to pumiceDB: %v", err)
@@ -3364,7 +3365,7 @@ func (m model) viewPartitionView() string {
 
 				s.WriteString(partitionLine + "\n")
 				if partitionIndex == m.selectedPartitionIdx {
-					s.WriteString(fmt.Sprintf("      UUID: %s\n", partition.Partition.PartitionUUID))
+					s.WriteString(fmt.Sprintf("      UUID: %s\n", partition.Partition.PartitionID))
 				}
 				partitionIndex++
 			}
@@ -3405,7 +3406,7 @@ func (m model) updatePartitionDelete(msg tea.Msg) (model, tea.Cmd) {
 				err := m.config.RemoveDevicePartition(
 					selectedPartition.HvUUID,
 					selectedPartition.DeviceName,
-					selectedPartition.Partition.PartitionUUID,
+					selectedPartition.Partition.PartitionID,
 				)
 
 				if err != nil {
@@ -3497,7 +3498,7 @@ func (m model) viewPartitionDelete() string {
 
 				s.WriteString(partitionLine + "\n")
 				if partitionIndex == m.selectedPartitionIdx {
-					s.WriteString(fmt.Sprintf("      UUID: %s\n", partition.Partition.PartitionUUID))
+					s.WriteString(fmt.Sprintf("      UUID: %s\n", partition.Partition.PartitionID))
 				}
 				partitionIndex++
 			}
@@ -3534,7 +3535,7 @@ func (m model) viewShowAddedPartition() string {
 	}
 
 	s.WriteString("Sample Partition Details (first partition):\n\n")
-	s.WriteString(fmt.Sprintf("Partition UUID: %s\n", m.currentPartition.PartitionUUID))
+	s.WriteString(fmt.Sprintf("Partition ID: %s\n", m.currentPartition.PartitionID))
 	s.WriteString(fmt.Sprintf("NISD Instance: %s\n", m.currentPartition.NISDUUID))
 	if m.currentPartition.Size > 0 {
 		s.WriteString(fmt.Sprintf("Size per partition: %s\n", formatBytes(m.currentPartition.Size)))

@@ -74,7 +74,7 @@ type Device struct {
 }
 
 type DevicePartition struct {
-	PartitionUUID string `json:"partition_uuid"`
+	PartitionID string `json:"partition_id"`
 	PartitionPath string `json:"partition_path"`
 	NISDUUID      string `json:"nisd_uuid"`
 	DevID         string `json:"Dev_Id"`

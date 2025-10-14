@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"golang.org/x/crypto/ssh"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	log "github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
 )
 
 type SSHClient struct {
@@ -122,8 +122,20 @@ func parseByIdDevices(output string) []ctlplfl.Device {
 			id := parts[0]
 			target := parts[1]
 
+			// Skip partition devices (contain "-part" in the ID)
+			if strings.Contains(id, "-part") {
+				continue
+			}
+
 			if strings.Contains(target, "../") {
 				deviceName := strings.TrimPrefix(filepath.Base(target), "../")
+
+				// Additional check: skip if device name contains 'p' followed by digits (nvme partitions)
+				// or ends with digits (sda1, sdb2, etc.)
+				if regexp.MustCompile(`p\d+$|[a-z]\d+$`).MatchString(deviceName) {
+					continue
+				}
+
 				devices = append(devices, Device{
 					ID:   id,
 					Name: deviceName,
@@ -139,7 +151,8 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 	devices := make([]Device, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
 
-	re := regexp.MustCompile(`^(\S+)\s+(\S+)\s+disk`)
+	// Updated regex to handle NAME SIZE SERIAL TYPE format, making SERIAL optional
+	re := regexp.MustCompile(`^(\S+)\s+(\S+)\s+(\S*)\s+disk`)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -148,18 +161,25 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 		}
 
 		matches := re.FindStringSubmatch(line)
-		if len(matches) >= 3 {
+		if len(matches) >= 4 {
 			name := matches[1]
 			_ = matches[2] // sizeStr - TODO: Parse size strings like "1T", "500G" etc. properly
+			serialNum := matches[3]
+
+			log.Info("Device name: ", name)
+			// Additional check: ensure this is really a physical device, not a partition
+			//if regexp.MustCompile(`p\d+$|[a-z]\d+$`).MatchString(name) {
+			//	log.Info("Skipping devices: ", name)
+			//	continue
+			//}
 
 			// Convert size string to bytes (simplified - just use 0 for now)
-			serialNum := matches[3]
 			var sizeBytes int64 = 0
 
 			devices = append(devices, Device{
-				ID: uuid.New().String(),
-				Name:  name,
-				Size:  sizeBytes,
+				ID:           name,
+				Name:         name,
+				Size:         sizeBytes,
 				SerialNumber: serialNum,
 			})
 		}

@@ -40,13 +40,13 @@ func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitCh
 	pt := entity.(*cpLib.DevicePartition)
 	*commitChgs = append(*commitChgs,
 		funclib.CommitChg{
-			Key: []byte(getConfKey(ptKey, pt.PartitionUUID)),
+			Key: []byte(getConfKey(ptKey, pt.PartitionID)),
 		},
 		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(ptKey, pt.PartitionUUID), DEVICE_NAME)),
+			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(ptKey, pt.PartitionID), DEVICE_NAME)),
 			Value: []byte(pt.DevID),
 		}, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(ptKey, pt.PartitionUUID), SIZE)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(ptKey, pt.PartitionID), SIZE)),
 			Value: []byte(strconv.Itoa(int(pt.Size))),
 		},
 	)
