@@ -175,7 +175,7 @@ func (handler *proxyHandler) getConfigData() error {
 		}
 		handler.addrList = append(handler.addrList, ipAddr)
 	}
-	handler.addr = net.ParseIP(IPAddrs[0])
+	handler.addr = net.ParseIP("0.0.0.0")
 
 	//Read Ports
 	scanner.Scan()
@@ -249,7 +249,7 @@ func (handler *proxyHandler) startSerfAgent() error {
 	handler.serfAgentObj = serfAgent.SerfAgentHandler{
 		Name:              handler.serfAgentName,
 		AddrList:          handler.addrList,
-		Addr:              net.ParseIP("127.0.0.1"),
+		Addr:              handler.addr,
 		AgentLogger:       defaultLogger.Default(),
 		RaftUUID:          handler.raftUUID,
 		ServicePortRangeS: handler.ServicePortRangeS,
