@@ -228,7 +228,7 @@ func (handler *pmdbServerHandler) checkHTTPLiveness() {
 			fmt.Println("HTTP Server failed to start")
 			os.Exit(0)
 		}
-		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(RecvdPort))+"/check", false)
+		_, err := httpClient.HTTP_Request(emptyByteArray, handler.nodeAddr.String()+strconv.Itoa(int(RecvdPort))+"/check", false)
 		if err != nil {
 			fmt.Println("HTTP Liveness - ", err)
 		} else {
@@ -377,7 +377,7 @@ func (handler *pmdbServerHandler) readGossipClusterFile() error {
 		ipAddr := net.ParseIP(IPAddrs[i])
 		handler.addrList = append(handler.addrList, ipAddr)
 	}
-	handler.nodeAddr = net.ParseIP(IPAddrs[0])
+	handler.nodeAddr = net.ParseIP("0.0.0.0")
 	//Read Ports
 	scanner.Scan()
 	Ports := strings.Split(scanner.Text(), " ")
@@ -432,7 +432,7 @@ func (handler *pmdbServerHandler) startSerfAgent() error {
 	serfAgentHandler := serfAgent.SerfAgentHandler{
 		Name:              handler.peerUUID.String(),
 		AddrList:          handler.addrList,
-		Addr:              net.ParseIP("127.0.0.1"),
+		Addr:              handler.nodeAddr,
 		AgentLogger:       defaultLogger.Default(),
 		RaftUUID:          handler.raftUUID,
 		ServicePortRangeS: handler.servicePortRangeS,
