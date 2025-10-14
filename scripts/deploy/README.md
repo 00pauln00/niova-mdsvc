@@ -44,6 +44,12 @@ To verify that both **server** and **proxy** processes are running:
 pdsh -w 192.168.96.8[4-8] 'ps -ef | grep CTLPlane'
 ```
 
+To kill CTLPlane processes
+
+```bash
+pdsh -w 192.168.96.8[4-8] 'sudo killall CTLPlane_pmdbServer'
+pdsh -w 192.168.96.8[4-8] 'sudo killall CTLPlane_proxy'
+```
 ---
 
 ## 🗂️ Logs and Configuration
