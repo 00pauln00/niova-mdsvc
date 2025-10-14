@@ -11,7 +11,7 @@
 Before deployment, ensure the following:
 
 1. The **same NFS volume** is mounted on **I/O nodes 4–8**.  
-2. The **`/mnt/ctlplane` filesystem** is mounted on **I/O nodes 4–8**.
+2. The **local filesystem `/var`** on **I/O nodes 4–8**.
 
 ---
 
