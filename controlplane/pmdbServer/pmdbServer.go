@@ -228,7 +228,7 @@ func (handler *pmdbServerHandler) checkHTTPLiveness() {
 			fmt.Println("HTTP Server failed to start")
 			os.Exit(0)
 		}
-		_, err := httpClient.HTTP_Request(emptyByteArray, handler.nodeAddr.String()+strconv.Itoa(int(RecvdPort))+"/check", false)
+		_, err := httpClient.HTTP_Request(emptyByteArray, handler.nodeAddr.String()+":"+strconv.Itoa(int(RecvdPort))+"/check", false)
 		if err != nil {
 			fmt.Println("HTTP Liveness - ", err)
 		} else {
