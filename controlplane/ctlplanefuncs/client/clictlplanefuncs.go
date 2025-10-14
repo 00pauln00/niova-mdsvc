@@ -79,7 +79,7 @@ func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 
 	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
-		log.Error("failed to decode response: ", err)
+		log.Error("failed to decode response in put: ", err)
 		return err
 	}
 
@@ -101,7 +101,7 @@ func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
 	}
 	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
-		log.Error("failed to decode response: ", err)
+		log.Error("failed to decode response in get: ", err)
 		return err
 	}
 	return nil

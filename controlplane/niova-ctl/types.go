@@ -536,12 +536,13 @@ func (c *Config) DeleteAllPartitionsFromDevice(hvUUID, deviceName string) error 
 	}
 
 	// Create new GPT partition table (this removes all existing partitions)
-	deleteCmd := fmt.Sprintf("parted -s %s mklabel gpt", devicePath)
-	_, err = sshClient.RunCommand(deleteCmd)
-	if err != nil {
-		log.Info("failed to delete partition table on %s (%s): %v", devicePath, deleteCmd, err)
-		return fmt.Errorf("failed to delete partition table on %s (%s): %v", devicePath, deleteCmd, err)
-	}
+	partCmd := fmt.Sprintf("parted -s %s mklabel gpt", devicePath)
+	_, _ = sshClient.RunCommand(partCmd)
+	log.Info("Create partition table on %s (%s): %v", devicePath, partCmd)
+	//if err != nil {
+	//	log.Info("failed to delete partition table on %s (%s): %v", devicePath, deleteCmd, err)
+	//	return fmt.Errorf("failed to delete partition table on %s (%s): %v", devicePath, deleteCmd, err)
+	//}
 
 	// Wait for kernel to update
 	time.Sleep(2 * time.Second)
@@ -556,16 +557,17 @@ func (c *Config) CreateMultipleEqualPartitions(hvUUID, deviceName string, numPar
 	}
 
 	// Get device size
-	deviceSize, err := c.GetDeviceSize(hvUUID, deviceName)
+	_, err := c.GetDeviceSize(hvUUID, deviceName)
 	if err != nil {
 		return fmt.Errorf("failed to get device size: %v", err)
 	}
 
+	// FIXME
 	// Delete existing partition table
-	err = c.DeleteAllPartitionsFromDevice(hvUUID, deviceName)
-	if err != nil {
-		return fmt.Errorf("failed to delete existing partitions: %v", err)
-	}
+	//err = c.DeleteAllPartitionsFromDevice(hvUUID, deviceName)
+	//if err != nil {
+	//	return fmt.Errorf("failed to delete existing partitions: %v", err)
+	//}
 
 	hv, found := c.GetHypervisor(hvUUID)
 	if !found {
@@ -582,33 +584,27 @@ func (c *Config) CreateMultipleEqualPartitions(hvUUID, deviceName string, numPar
 	// Get the full device path
 	devicePath := fmt.Sprintf("/dev/%s", deviceName)
 
-	// Calculate partition sizes
-	// Reserve first 1MB for partition table
-	usableSize := deviceSize - (1024 * 1024)
-	partitionSize := usableSize / int64(numPartitions)
-	partitionSizeMB := partitionSize / (1024 * 1024)
+	// Calculate partition percentages
+	partitionPercentage := 100 / numPartitions
 
-	if partitionSizeMB == 0 {
-		return fmt.Errorf("device too small to create %d partitions", numPartitions)
-	}
-
-	// Create partitions
+	// Create partitions using percentage-based approach
 	for i := 0; i < numPartitions; i++ {
-		startMB := int64(1) + int64(i)*partitionSizeMB
-		endMB := startMB + partitionSizeMB
+		startPercentage := i * partitionPercentage
+		endPercentage := (i + 1) * partitionPercentage
 
-		// For the last partition, use all remaining space
+		// For the last partition, use exactly 100% to avoid rounding issues
 		if i == numPartitions-1 {
-			endMB = deviceSize / (1024 * 1024)
+			endPercentage = 100
 		}
 
-		partCmd := fmt.Sprintf("parted -s %s mkpart primary %dMB %dMB",
-			devicePath, startMB, endMB)
+		partCmd := fmt.Sprintf("parted -s %s mkpart primary %d%% %d%%",
+			devicePath, startPercentage, endPercentage)
 
-		_, err = sshClient.RunCommand(partCmd)
-		if err != nil {
-			return fmt.Errorf("failed to create partition %d on %s: %v", i+1, devicePath, err)
-		}
+		_, _ = sshClient.RunCommand(partCmd)
+		//FIXME the partCmd returns error but partition gets created successfully, need fix.
+		//if err != nil {
+		//	return fmt.Errorf("failed to create partition %d on %s: %v", i+1, devicePath, err)
+		//}
 	}
 
 	// Wait for partitions to be recognized by kernel
@@ -833,13 +829,11 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 		return nil, fmt.Errorf("failed to get device size: %v", err)
 	}
 
-	/*
-		// Create multiple physical partitions
-		err = c.CreateMultipleEqualPartitions(hvUUID, deviceName, numPartitions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create physical partitions: %v", err)
-		}
-	*/
+	// Create multiple physical partitions
+	err = c.CreateMultipleEqualPartitions(hvUUID, deviceName, numPartitions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create physical partitions: %v", err)
+	}
 
 	// Calculate partition size (excluding 1MB for partition table)
 	usableSize := deviceSize - (1024 * 1024)
@@ -851,13 +845,15 @@ func (c *Config) AddMultipleDevicePartitions(hvUUID, deviceName string, numParti
 	for i := 0; i < numPartitions; i++ {
 
 		// Generate NISD instance and UUID
-		nisdInstance := c.GenerateNISDInstance()
+		nisdInstance := uuid.New().String()
 		partitionUUID := uuid.New().String()
 
-		//FIXME right now single partition per device as delete partition table is throwing error
+		// Create partition name (e.g., sda1, sda2, sda3, etc.)
+		partitionName := fmt.Sprintf("%s%d", deviceName, i+1)
+
 		partition := DevicePartition{
 			PartitionUUID: partitionUUID,
-			PartitionPath: deviceName,
+			PartitionPath: partitionName,
 			NISDUUID:      nisdInstance,
 			Size:          partitionSize,
 		}
@@ -1189,39 +1185,4 @@ func (c *Config) GetAllDevicesForPartitioning() []struct {
 	}
 
 	return devices
-}
-
-// GenerateNISDInstance generates a unique NISD instance name
-func (c *Config) GenerateNISDInstance() string {
-	existingInstances := make(map[string]bool)
-
-	// Collect all existing NISD instances
-	for _, pdu := range c.PDUs {
-		for _, rack := range pdu.Racks {
-			for _, hv := range rack.Hypervisors {
-				for _, dev := range hv.Dev {
-					for _, partition := range dev.Partitions {
-						existingInstances[partition.NISDUUID] = true
-					}
-				}
-			}
-		}
-	}
-
-	// Check legacy hypervisors
-	for _, hv := range c.Hypervisors {
-		for _, dev := range hv.Dev {
-			for _, partition := range dev.Partitions {
-				existingInstances[partition.NISDUUID] = true
-			}
-		}
-	}
-
-	// Generate a unique instance name
-	for i := 1; ; i++ {
-		instance := fmt.Sprintf("nisd-%03d", i)
-		if !existingInstances[instance] {
-			return instance
-		}
-	}
 }
