@@ -669,8 +669,18 @@ func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePart
 	}
 	defer sshClient.Close()
 
-	// Use lsblk to get partition names and sizes for the specific device
-	// The command gets all partitions for the device with their sizes
+	// First, find the by-id name for the device
+	byIdCmd := fmt.Sprintf("ls -la /dev/disk/by-id/ | grep '%s$' | head -1 | awk '{print $9}'", deviceName)
+	byIdOutput, err := sshClient.RunCommand(byIdCmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get by-id name for device %s: %v", deviceName, err)
+	}
+	deviceByIdName := strings.TrimSpace(byIdOutput)
+	if deviceByIdName == "" {
+		return nil, fmt.Errorf("could not find by-id name for device %s", deviceName)
+	}
+
+	// Get partition information using lsblk
 	cmd := fmt.Sprintf("lsblk -ln -b -o NAME,SIZE /dev/%s | grep -E '^%s' | tail -n +2 | sort", deviceName, deviceName)
 	output, err := sshClient.RunCommand(cmd)
 	if err != nil {
@@ -695,10 +705,32 @@ func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePart
 						log.Warn("Failed to parse size for partition %s: %v", partitionName, err)
 						size = 0
 					}
-					partitionInfos = append(partitionInfos, DevicePartitionInfo{
-						Name: partitionName,
-						Size: size,
-					})
+
+					// Find the corresponding by-id name for this partition
+					partitionByIdCmd := fmt.Sprintf("ls -la /dev/disk/by-id/ | grep '%s$' | head -1 | awk '{print $9}'", partitionName)
+					partitionByIdOutput, err := sshClient.RunCommand(partitionByIdCmd)
+					if err != nil {
+						log.Warn("Failed to get by-id name for partition %s: %v", partitionName, err)
+						// Fall back to regular partition name if by-id lookup fails
+						partitionInfos = append(partitionInfos, DevicePartitionInfo{
+							Name: partitionName,
+							Size: size,
+						})
+					} else {
+						partitionByIdName := strings.TrimSpace(partitionByIdOutput)
+						if partitionByIdName != "" {
+							partitionInfos = append(partitionInfos, DevicePartitionInfo{
+								Name: partitionByIdName,
+								Size: size,
+							})
+						} else {
+							// Fall back to regular partition name if by-id name is empty
+							partitionInfos = append(partitionInfos, DevicePartitionInfo{
+								Name: partitionName,
+								Size: size,
+							})
+						}
+					}
 				}
 			}
 		}
