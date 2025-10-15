@@ -65,6 +65,7 @@ const (
 	statePartitionView
 	statePartitionDelete
 	stateShowAddedPartition
+	statePartitionKeyCreation
 	// NISD Management States
 	stateNISDManagement
 	stateNISDInitialize
@@ -163,6 +164,10 @@ type model struct {
 	partitionCountInput        textinput.Model
 	selectedDeviceForPartition Device
 	selectedHvForPartition     ctlplfl.Hypervisor
+	// Partition Key Creation
+	existingPartitions         []DevicePartitionInfo
+	selectedExistingPartitionIdx int
+	selectedPartitions         map[int]bool  // Track which partitions are selected
 
 	// NISD Management
 	nisdMgmtCursor            int
@@ -489,6 +494,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updatePartitionDelete(msg)
 	case stateShowAddedPartition:
 		m, cmd = m.updateShowAddedPartition(msg)
+	case statePartitionKeyCreation:
+		m, cmd = m.updatePartitionKeyCreation(msg)
 	// NISD Management
 	case stateNISDManagement:
 		m, cmd = m.updateNISDManagement(msg)
@@ -1746,6 +1753,8 @@ func (m model) View() string {
 		return m.viewPartitionDelete()
 	case stateShowAddedPartition:
 		return m.viewShowAddedPartition()
+	case statePartitionKeyCreation:
+		return m.viewPartitionKeyCreation()
 	// NISD Management Views
 	case stateNISDManagement:
 		return m.viewNISDManagement()
@@ -3115,11 +3124,31 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 			devices := m.config.GetAllDevicesForPartitioning()
 			if m.selectedHypervisorIdx >= 0 && m.selectedHypervisorIdx < len(devices) {
 				if m.selectedDeviceIdx == -1 {
-					// Device selected, now get size input
+					// Device selected, now fetch existing partitions and show them
 					m.selectedDeviceIdx = m.selectedHypervisorIdx
 					m.selectedDeviceForPartition = devices[m.selectedHypervisorIdx].Device
 					m.selectedHvForPartition = Hypervisor{ID: devices[m.selectedHypervisorIdx].HvUUID, Name: devices[m.selectedHypervisorIdx].HvName}
-					m.partitionCountInput.Focus()
+
+					// Fetch existing partitions from the device
+					existingParts, err := m.config.GetDevicePartitionInfo(
+						m.selectedHvForPartition.ID,
+						m.selectedDeviceForPartition.Name,
+					)
+					if err != nil {
+						m.message = fmt.Sprintf("Failed to get existing partitions: %v", err)
+						return m, nil
+					}
+
+					if len(existingParts) == 0 {
+						m.message = "No existing partitions found on device. Please create partitions manually first."
+						return m, nil
+					}
+
+					m.existingPartitions = existingParts
+					m.selectedExistingPartitionIdx = 0
+					m.selectedPartitions = make(map[int]bool)  // Initialize selection map
+					m.state = statePartitionKeyCreation
+					return m, nil
 				} else {
 					// Number of partitions entered, create multiple partitions
 					countStr := m.partitionCountInput.Value()
@@ -3139,41 +3168,25 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 						return m, nil
 					}
 
-					// Create multiple partitions
-					createdPartitions, err := m.config.AddMultipleDevicePartitions(
+					// Fetch existing partitions from the device
+					existingParts, err := m.config.GetDevicePartitionInfo(
 						m.selectedHvForPartition.ID,
 						m.selectedDeviceForPartition.Name,
-						numPartitions,
 					)
-
 					if err != nil {
-						m.message = fmt.Sprintf("Failed to create partitions: %v", err)
+						m.message = fmt.Sprintf("Failed to get existing partitions: %v", err)
 						return m, nil
 					}
 
-					// for loop for created partitions
-					for _, part := range createdPartitions {
-						log.Info("PutPartition: ", part)
-						_, err = m.cpClient.PutPartition(&part)
-						if err != nil {
-							log.Info("Failed to add partition to pumiceDB: %v", err)
-							m.message = fmt.Sprintf("Failed to add partition to pumiceDB: %v", err)
-							return m, nil
-						}
+					if len(existingParts) == 0 {
+						m.message = "No existing partitions found on device. Please create partitions manually first."
+						return m, nil
 					}
 
-					// Save configuration
-					if err := m.config.SaveToFile(m.configPath); err != nil {
-						m.message = fmt.Sprintf("Partitions created but failed to save: %v", err)
-					} else {
-						// Set current partition for display (use the first one)
-						if len(createdPartitions) > 0 {
-							m.currentPartition = createdPartitions[0]
-						}
-
-						m.state = stateShowAddedPartition
-						m.message = fmt.Sprintf("Successfully created %d partitions on device %s", numPartitions, m.selectedDeviceForPartition.Name)
-					}
+					m.existingPartitions = existingParts
+					m.selectedExistingPartitionIdx = 0
+					m.selectedPartitions = make(map[int]bool)  // Initialize selection map
+					m.state = statePartitionKeyCreation
 					return m, nil
 				}
 			}
@@ -3545,6 +3558,203 @@ func (m model) viewShowAddedPartition() string {
 	s.WriteString("\n\nPress enter or esc to return to partition management")
 
 	return s.String()
+}
+
+// Partition Key Creation Methods
+func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.selectedExistingPartitionIdx > 0 {
+				m.selectedExistingPartitionIdx--
+			}
+		case "down", "j":
+			if m.selectedExistingPartitionIdx < len(m.existingPartitions)-1 {
+				m.selectedExistingPartitionIdx++
+			}
+		case " ":
+			// Toggle selection for current partition
+			if m.selectedExistingPartitionIdx >= 0 && m.selectedExistingPartitionIdx < len(m.existingPartitions) {
+				m.selectedPartitions[m.selectedExistingPartitionIdx] = !m.selectedPartitions[m.selectedExistingPartitionIdx]
+			}
+		case "a":
+			// Select all partitions
+			for i := 0; i < len(m.existingPartitions); i++ {
+				m.selectedPartitions[i] = true
+			}
+		case "n":
+			// Deselect all partitions
+			m.selectedPartitions = make(map[int]bool)
+		case "enter":
+			// Create partition keys for all selected partitions
+			selectedCount := 0
+			for _, selected := range m.selectedPartitions {
+				if selected {
+					selectedCount++
+				}
+			}
+
+			if selectedCount == 0 {
+				m.message = "No partitions selected. Use space to select partitions or 'a' to select all."
+				return m, nil
+			}
+
+			var createdPartitions []DevicePartition
+			var errorMessages []string
+
+			// Process each selected partition
+			for i, partitionInfo := range m.existingPartitions {
+				if !m.selectedPartitions[i] {
+					continue // Skip unselected partitions
+				}
+
+				// Create DevicePartition struct with PartitionID = partition name
+				partition := DevicePartition{
+					PartitionID: partitionInfo.Name,
+					NISDUUID:    uuid.New().String(), // Generate new UUID for NISD instance
+					Size:        partitionInfo.Size,  // Use the actual partition size
+				}
+
+				// Call PutPartition to create the partition key
+				log.Info("PutPartition: ", partition)
+				_, err := m.cpClient.PutPartition(&partition)
+				if err != nil {
+					log.Info("Failed to add partition to pumiceDB: %v", err)
+					errorMessages = append(errorMessages, fmt.Sprintf("Failed to create key for %s: %v", partitionInfo.Name, err))
+					continue
+				}
+
+				// Save to configuration
+				err = m.addPartitionToConfig(partition)
+				if err != nil {
+					errorMessages = append(errorMessages, fmt.Sprintf("Failed to save %s to config: %v", partitionInfo.Name, err))
+					continue
+				}
+
+				createdPartitions = append(createdPartitions, partition)
+			}
+
+			// Save configuration file
+			if len(createdPartitions) > 0 {
+				if err := m.config.SaveToFile(m.configPath); err != nil {
+					m.message = fmt.Sprintf("Created %d partition keys but failed to save config: %v", len(createdPartitions), err)
+				} else {
+					m.currentPartition = createdPartitions[0] // Set first created partition for display
+					m.state = stateShowAddedPartition
+					if len(errorMessages) > 0 {
+						m.message = fmt.Sprintf("Created %d partition keys successfully. Errors: %s", len(createdPartitions), strings.Join(errorMessages, "; "))
+					} else {
+						m.message = fmt.Sprintf("Successfully created %d partition keys", len(createdPartitions))
+					}
+				}
+			} else {
+				m.message = fmt.Sprintf("Failed to create any partition keys. Errors: %s", strings.Join(errorMessages, "; "))
+			}
+			return m, nil
+		case "esc":
+			m.state = statePartitionManagement
+			m.selectedExistingPartitionIdx = 0
+			m.existingPartitions = nil
+			m.selectedPartitions = nil
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewPartitionKeyCreation() string {
+	title := titleStyle.Render("Create Partition Keys for Existing Partitions")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		s.WriteString(fmt.Sprintf("Status: %s\n\n", m.message))
+	}
+
+	s.WriteString(fmt.Sprintf("Device: %s on %s\n\n", m.selectedDeviceForPartition.Name, m.selectedHvForPartition.Name))
+
+	if len(m.existingPartitions) == 0 {
+		s.WriteString("No existing partitions found.\n")
+		s.WriteString("Please create partitions manually on the device first.\n\n")
+		s.WriteString("Press esc to go back")
+		return s.String()
+	}
+
+	s.WriteString(fmt.Sprintf("Found %d existing partitions. Select partitions to create keys:\n\n", len(m.existingPartitions)))
+
+	for i, partitionInfo := range m.existingPartitions {
+		cursor := "  "
+		if i == m.selectedExistingPartitionIdx {
+			cursor = selectedItemStyle.Render("→ ")
+		}
+
+		// Show selection status
+		checkbox := "[ ]"
+		if m.selectedPartitions[i] {
+			checkbox = "[✓]"
+		}
+
+		// Format partition info with size
+		sizeInfo := ""
+		if partitionInfo.Size > 0 {
+			sizeInfo = fmt.Sprintf(" (%s)", formatBytes(partitionInfo.Size))
+		}
+
+		s.WriteString(fmt.Sprintf("%s%s %d. %s%s\n", cursor, checkbox, i+1, partitionInfo.Name, sizeInfo))
+	}
+
+	s.WriteString("\n")
+	s.WriteString("This will create partition keys with PartitionID = partition name\n")
+	s.WriteString("and call PutPartition() to register them in the control plane.\n\n")
+	s.WriteString("Controls:\n")
+	s.WriteString("  ↑/↓ navigate\n")
+	s.WriteString("  space toggle selection\n")
+	s.WriteString("  a select all\n")
+	s.WriteString("  n deselect all\n")
+	s.WriteString("  enter create keys for selected partitions\n")
+	s.WriteString("  esc back")
+
+	return s.String()
+}
+
+// Helper function to add a single partition to the config
+func (m model) addPartitionToConfig(partition DevicePartition) error {
+	// Add partition to the device in PDUs structure
+	for i, pdu := range m.config.PDUs {
+		for j, rack := range pdu.Racks {
+			for k, hypervisor := range rack.Hypervisors {
+				if hypervisor.ID == m.selectedHvForPartition.ID {
+					for devIndex, dev := range hypervisor.Dev {
+						if dev.Name == m.selectedDeviceForPartition.Name {
+							// Append the new partition to existing partitions
+							m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[devIndex].Partitions = append(
+								m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[devIndex].Partitions, partition)
+							return nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check legacy hypervisors structure
+	for hvIndex, hypervisor := range m.config.Hypervisors {
+		if hypervisor.ID == m.selectedHvForPartition.ID {
+			for devIndex, dev := range hypervisor.Dev {
+				if dev.Name == m.selectedDeviceForPartition.Name {
+					// Append the new partition to existing partitions
+					m.config.Hypervisors[hvIndex].Dev[devIndex].Partitions = append(
+						m.config.Hypervisors[hvIndex].Dev[devIndex].Partitions, partition)
+					return nil
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("device %s not found on hypervisor %s", m.selectedDeviceForPartition.Name, m.selectedHvForPartition.ID)
 }
 
 // PDU Management Methods

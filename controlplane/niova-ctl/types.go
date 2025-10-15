@@ -649,6 +649,64 @@ func (c *Config) GetDevicePartitionNames(hvUUID, deviceName string) ([]string, e
 	return partitionNames, nil
 }
 
+// DevicePartitionInfo holds information about a partition
+type DevicePartitionInfo struct {
+	Name string
+	Size int64
+}
+
+// GetDevicePartitionInfo retrieves the actual partition names and sizes for a device using lsblk
+func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePartitionInfo, error) {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return nil, fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Use lsblk to get partition names and sizes for the specific device
+	// The command gets all partitions for the device with their sizes
+	cmd := fmt.Sprintf("lsblk -ln -b -o NAME,SIZE /dev/%s | grep -E '^%s' | tail -n +2 | sort", deviceName, deviceName)
+	output, err := sshClient.RunCommand(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get partition info for device %s: %v", deviceName, err)
+	}
+
+	// Parse the output to get partition names and sizes
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var partitionInfos []DevicePartitionInfo
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			// Split by whitespace to get name and size
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				partitionName := parts[0]
+				if partitionName != deviceName {
+					sizeStr := parts[1]
+					size, err := strconv.ParseInt(sizeStr, 10, 64)
+					if err != nil {
+						log.Warn("Failed to parse size for partition %s: %v", partitionName, err)
+						size = 0
+					}
+					partitionInfos = append(partitionInfos, DevicePartitionInfo{
+						Name: partitionName,
+						Size: size,
+					})
+				}
+			}
+		}
+	}
+
+	return partitionInfos, nil
+}
+
 // CreatePhysicalPartition creates an actual partition on the physical device
 func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) error {
 	hv, found := c.GetHypervisor(hvUUID)
