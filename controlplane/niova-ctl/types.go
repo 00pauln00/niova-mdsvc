@@ -739,6 +739,34 @@ func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePart
 	return partitionInfos, nil
 }
 
+// getDeviceByIdName gets the /dev/disk/by-id/ name for a device
+func (c *Config) getDeviceByIdName(hvUUID, deviceName string) (string, error) {
+	hv, found := c.GetHypervisor(hvUUID)
+	if !found {
+		return "", fmt.Errorf("hypervisor with UUID %s not found", hvUUID)
+	}
+
+	// Create SSH connection to hypervisor
+	sshClient, err := NewSSHClient(hv.IPAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+	}
+	defer sshClient.Close()
+
+	// Find the by-id name for the device
+	byIdCmd := fmt.Sprintf("ls -la /dev/disk/by-id/ | grep '%s$' | head -1 | awk '{print $9}'", deviceName)
+	byIdOutput, err := sshClient.RunCommand(byIdCmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to get by-id name for device %s: %v", deviceName, err)
+	}
+	deviceByIdName := strings.TrimSpace(byIdOutput)
+	if deviceByIdName == "" {
+		return "", fmt.Errorf("could not find by-id name for device %s", deviceName)
+	}
+
+	return deviceByIdName, nil
+}
+
 // CreatePhysicalPartition creates an actual partition on the physical device
 func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) error {
 	hv, found := c.GetHypervisor(hvUUID)
