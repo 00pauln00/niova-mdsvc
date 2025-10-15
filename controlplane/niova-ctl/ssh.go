@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,6 +148,67 @@ func parseByIdDevices(output string) []ctlplfl.Device {
 	return devices
 }
 
+// parseSizeToBytes converts human-readable size strings (like "1T", "500G", "1.2G") to bytes
+// Examples:
+//
+//	"1T" -> 1099511627776 (1 * 1024^4)
+//	"500G" -> 536870912000 (500 * 1024^3)
+//	"1.5G" -> 1610612736 (1.5 * 1024^3)
+//	"2048M" -> 2147483648 (2048 * 1024^2)
+//	"1024K" -> 1048576 (1024 * 1024)
+//	"12345" -> 12345 (raw bytes)
+func parseSizeToBytes(sizeStr string) int64 {
+	if sizeStr == "" {
+		return 0
+	}
+
+	// Remove any whitespace
+	sizeStr = strings.TrimSpace(sizeStr)
+	if sizeStr == "" {
+		return 0
+	}
+
+	// Extract numeric part and unit
+	re := regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*([KMGTPE]?)$`)
+	matches := re.FindStringSubmatch(strings.ToUpper(sizeStr))
+	if len(matches) < 3 {
+		// Try to parse as raw number (bytes)
+		if bytes, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+			return bytes
+		}
+		return 0
+	}
+
+	// Parse the numeric part
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0
+	}
+
+	// Apply multiplier based on unit
+	unit := matches[2]
+	var multiplier int64 = 1
+
+	switch unit {
+	case "K":
+		multiplier = 1024
+	case "M":
+		multiplier = 1024 * 1024
+	case "G":
+		multiplier = 1024 * 1024 * 1024
+	case "T":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	case "P":
+		multiplier = 1024 * 1024 * 1024 * 1024 * 1024
+	case "E":
+		multiplier = 1024 * 1024 * 1024 * 1024 * 1024 * 1024
+	case "":
+		multiplier = 1 // No unit means bytes
+	}
+
+	return int64(value * float64(multiplier))
+}
+
 func parseLsblkDevices(output string) []ctlplfl.Device {
 	devices := make([]Device, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
@@ -163,18 +225,19 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 		matches := re.FindStringSubmatch(line)
 		if len(matches) >= 4 {
 			name := matches[1]
-			_ = matches[2] // sizeStr - TODO: Parse size strings like "1T", "500G" etc. properly
+			sizeStr := matches[2] // Size string like "1T", "500G", "1.2G", etc.
 			serialNum := matches[3]
 
-			log.Info("Device name: ", name)
+			log.Info("Device name in parseLsblkDevices: ", name)
 			// Additional check: ensure this is really a physical device, not a partition
 			//if regexp.MustCompile(`p\d+$|[a-z]\d+$`).MatchString(name) {
 			//	log.Info("Skipping devices: ", name)
 			//	continue
 			//}
 
-			// Convert size string to bytes (simplified - just use 0 for now)
-			var sizeBytes int64 = 0
+			// Convert size string to bytes
+			sizeBytes := parseSizeToBytes(sizeStr)
+			log.Info("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)
 
 			devices = append(devices, Device{
 				ID:           name,

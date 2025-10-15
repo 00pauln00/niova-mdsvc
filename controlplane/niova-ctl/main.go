@@ -176,6 +176,7 @@ type model struct {
 	selectedNISDHypervisorIdx int
 	selectedNISDDeviceIdx     int
 	selectedNISDForStart      int
+	selectedNISDPartitions    map[int]bool // Track which partitions are selected for NISD initialization
 	currentNISD               ctlplfl.Nisd
 	selectedPartitionForNISD  DevicePartition
 	selectedHvForNISD         ctlplfl.Hypervisor
@@ -569,6 +570,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDHypervisorIdx = -1
 				m.selectedNISDDeviceIdx = -1
 				m.selectedNISDPartitionIdx = -1
+				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
 				return m, nil
 			case 5: // View Configuration
@@ -1192,7 +1194,8 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				m.message = fmt.Sprintf("Device %s initialized successfully", device.ID)
 
 				// Send to control plane if available
-				if m.cpEnabled && m.cpClient != nil {
+				if m.cpClient != nil {
+					log.Info("Put device info")
 					// Get the updated device after initialization
 					updatedDevice := hv.Dev[m.selectedDeviceIdx]
 					deviceInfo := ctlplfl.Device{
@@ -1212,6 +1215,8 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 						log.Info("Successfully synced device to control plane")
 						m.message += " and synced to control plane"
 					}
+				} else {
+					log.Info("Put Device is not getting written!!!")
 				}
 			}
 
@@ -3547,7 +3552,7 @@ func (m model) updateShowAddedPartition(msg tea.Msg) (model, tea.Cmd) {
 }
 
 func (m model) viewShowAddedPartition() string {
-	title := titleStyle.Render("Partitions Created Successfully")
+	title := titleStyle.Render("Partition Key Created Successfully")
 
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
@@ -3556,11 +3561,11 @@ func (m model) viewShowAddedPartition() string {
 		s.WriteString(successStyle.Render(m.message) + "\n\n")
 	}
 
-	s.WriteString("Sample Partition Details (first partition):\n\n")
-	s.WriteString(fmt.Sprintf("Partition ID: %s\n", m.currentPartition.PartitionID))
-	s.WriteString(fmt.Sprintf("NISD Instance: %s\n", m.currentPartition.NISDUUID))
+	s.WriteString("Partition Details:\n\n")
+	s.WriteString(fmt.Sprintf("• Partition ID: %s\n", m.currentPartition.PartitionID))
+	s.WriteString(fmt.Sprintf("• NISD Instance: %s\n", m.currentPartition.NISDUUID))
 	if m.currentPartition.Size > 0 {
-		s.WriteString(fmt.Sprintf("Size per partition: %s\n", formatBytes(m.currentPartition.Size)))
+		s.WriteString(fmt.Sprintf("• Size: %s\n", formatBytes(m.currentPartition.Size)))
 	}
 
 	s.WriteString("\nUse 'View Partitions' to see all created partitions.")
@@ -3773,7 +3778,7 @@ func (m model) updateWholeDevicePrompt(msg tea.Msg) (model, tea.Cmd) {
 		switch msg.String() {
 		case "y", "Y":
 			// User wants to use whole device - create partition key for it
-			err := m.createWholeDevicePartitionKey()
+			partition, err := m.createWholeDevicePartitionKey()
 			if err != nil {
 				m.message = fmt.Sprintf("Failed to create partition key for whole device: %v", err)
 				m.state = statePartitionCreate
@@ -3786,6 +3791,7 @@ func (m model) updateWholeDevicePrompt(msg tea.Msg) (model, tea.Cmd) {
 			} else {
 				m.message = "Successfully created partition key for whole device"
 			}
+			m.currentPartition = partition // Set the partition for display
 			m.state = stateShowAddedPartition
 			return m, nil
 		case "n", "N", "esc":
@@ -3836,11 +3842,11 @@ func (m model) viewWholeDevicePrompt() string {
 }
 
 // createWholeDevicePartitionKey creates a partition key for the whole device
-func (m model) createWholeDevicePartitionKey() error {
+func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 	// Get the device name from /dev/disk/by-id/
 	deviceByIdName, err := m.config.getDeviceByIdName(m.selectedHvForPartition.ID, m.selectedDeviceForPartition.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get device by-id name: %v", err)
+		return DevicePartition{}, fmt.Errorf("failed to get device by-id name: %v", err)
 	}
 
 	// Create DevicePartition struct with device name as PartitionID and device size
@@ -3855,20 +3861,20 @@ func (m model) createWholeDevicePartitionKey() error {
 		log.Info("PutPartition for whole device: ", devicePartition)
 		_, err := m.cpClient.PutPartition(&devicePartition)
 		if err != nil {
-			return fmt.Errorf("failed to call PutPartition for whole device: %v", err)
+			return DevicePartition{}, fmt.Errorf("failed to call PutPartition for whole device: %v", err)
 		}
+	} else {
+		log.Info("Error PutPartition for whole device not geting written !!")
 	}
 
 	// Add partition to configuration
 	err = m.addPartitionToConfig(devicePartition)
 	if err != nil {
-		return fmt.Errorf("failed to add whole device partition to config: %v", err)
+		return DevicePartition{}, fmt.Errorf("failed to add whole device partition to config: %v", err)
 	}
 
-	// Set current partition for display
-	m.currentPartition = devicePartition
-
-	return nil
+	// Return the created partition for display
+	return devicePartition, nil
 }
 
 // PDU Management Methods
@@ -5539,6 +5545,7 @@ func (m model) updateNISDManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDHypervisorIdx = -1
 				m.selectedNISDDeviceIdx = -1
 				m.selectedNISDPartitionIdx = -1
+				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
 				return m, nil
 			case 1: // Start NISD
@@ -5609,23 +5616,50 @@ func (m model) updateNISDPartitionSelection(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDDeviceIdx = -1
 				m.selectedNISDPartitionIdx = -1
 			}
-		case "enter", " ":
+		case " ":
+			// Toggle selection of current partition
 			partitions := m.config.GetAllPartitionsForNISD()
 			if m.selectedNISDHypervisorIdx >= 0 && m.selectedNISDHypervisorIdx < len(partitions) {
-				selectedPartition := partitions[m.selectedNISDHypervisorIdx]
-				m.selectedPartitionForNISD = selectedPartition.Partition
-				m.selectedHvForNISD = ctlplfl.Hypervisor{ID: selectedPartition.HvUUID, Name: selectedPartition.HvName}
-				m.selectedDeviceForNISD = selectedPartition.Device
-
-				m.state = stateNISDInitialize
-				m.message = ""
+				if m.selectedNISDPartitions[m.selectedNISDHypervisorIdx] {
+					delete(m.selectedNISDPartitions, m.selectedNISDHypervisorIdx)
+				} else {
+					m.selectedNISDPartitions[m.selectedNISDHypervisorIdx] = true
+				}
+			}
+			return m, nil
+		case "a", "A":
+			// Select all partitions
+			partitions := m.config.GetAllPartitionsForNISD()
+			m.selectedNISDPartitions = make(map[int]bool)
+			for i := range partitions {
+				m.selectedNISDPartitions[i] = true
+			}
+			return m, nil
+		case "d", "D":
+			// Deselect all partitions
+			m.selectedNISDPartitions = make(map[int]bool)
+			return m, nil
+		case "enter":
+			// Proceed to confirmation if at least one partition is selected
+			selectedCount := 0
+			for _, selected := range m.selectedNISDPartitions {
+				if selected {
+					selectedCount++
+				}
+			}
+			if selectedCount == 0 {
+				m.message = "Please select at least one partition"
 				return m, nil
 			}
+			m.state = stateNISDInitialize
+			m.message = ""
+			return m, nil
 		case "esc":
 			m.state = stateNISDManagement
 			m.selectedNISDHypervisorIdx = -1
 			m.selectedNISDDeviceIdx = -1
 			m.selectedNISDPartitionIdx = -1
+			m.selectedNISDPartitions = make(map[int]bool)
 			m.message = ""
 			return m, nil
 		}
@@ -5656,7 +5690,7 @@ func (m model) viewNISDPartitionSelection() string {
 		return s.String()
 	}
 
-	s.WriteString("Select partition to initialize as NISD:\n\n")
+	s.WriteString("Select partitions to initialize as NISD:\n\n")
 
 	for i, partitionInfo := range partitions {
 		cursor := "  "
@@ -5664,11 +5698,18 @@ func (m model) viewNISDPartitionSelection() string {
 			cursor = "▶ "
 		}
 
+		// Show checkbox for selection state
+		checkbox := "[ ]"
+		if m.selectedNISDPartitions[i] {
+			checkbox = "[✓]"
+		}
+
 		// Display partition info
-		info := fmt.Sprintf("HV: %s | Device: %s | Partition: %s | Size: %d bytes",
+		info := fmt.Sprintf("%s HV: %s | Device: %s | Partition: %s | Size: %d bytes",
+			checkbox,
 			partitionInfo.HvName,
 			partitionInfo.Device.Name,
-			partitionInfo.Partition.NISDUUID,
+			partitionInfo.Partition.PartitionID,
 			partitionInfo.Partition.Size)
 
 		if i == m.selectedNISDHypervisorIdx {
@@ -5678,7 +5719,14 @@ func (m model) viewNISDPartitionSelection() string {
 		}
 	}
 
-	s.WriteString("\nControls: ↑/↓ navigate, enter select, esc back")
+	selectedCount := 0
+	for _, selected := range m.selectedNISDPartitions {
+		if selected {
+			selectedCount++
+		}
+	}
+	s.WriteString(fmt.Sprintf("\nSelected: %d partition(s)", selectedCount))
+	s.WriteString("\nControls: ↑/↓ navigate, space toggle, enter confirm, a select all, d deselect all, esc back")
 
 	return s.String()
 }
@@ -5688,15 +5736,21 @@ func (m model) updateNISDInitialize(msg tea.Msg) (model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter", " ":
-			// Initialize the NISD
-			err := (&m).initializeNISD()
+			// Initialize all selected NISDs
+			err := (&m).initializeSelectedNISDs()
 			if err != nil {
-				m.message = fmt.Sprintf("Failed to initialize NISD: %v", err)
+				m.message = fmt.Sprintf("Failed to initialize NISDs: %v", err)
 				return m, nil
 			}
 
 			m.state = stateShowInitializedNISD
-			m.message = "NISD initialized successfully!"
+			selectedCount := 0
+			for _, selected := range m.selectedNISDPartitions {
+				if selected {
+					selectedCount++
+				}
+			}
+			m.message = fmt.Sprintf("%d NISD(s) initialized successfully!", selectedCount)
 			return m, nil
 		case "esc":
 			m.state = stateNISDPartitionSelection
@@ -5721,20 +5775,32 @@ func (m model) viewNISDInitialize() string {
 		}
 	}
 
-	s.WriteString("Ready to initialize NISD with the following configuration:\n\n")
+	partitions := m.config.GetAllPartitionsForNISD()
+	selectedCount := 0
+	for _, selected := range m.selectedNISDPartitions {
+		if selected {
+			selectedCount++
+		}
+	}
+
+	s.WriteString(fmt.Sprintf("Ready to initialize NISD on %d selected partition(s):\n\n", selectedCount))
 
 	// Display selected partition details
-	s.WriteString(fmt.Sprintf("Hypervisor: %s\n", m.selectedHvForNISD.Name))
-	s.WriteString(fmt.Sprintf("Device: %s\n", m.selectedDeviceForNISD.Name))
-	s.WriteString(fmt.Sprintf("Partition ID: %s\n", m.selectedPartitionForNISD.PartitionID))
-	s.WriteString(fmt.Sprintf("NISD UUID: %s\n", m.selectedPartitionForNISD.NISDUUID))
-	s.WriteString(fmt.Sprintf("Partition Size: %d bytes\n", m.selectedPartitionForNISD.Size))
+	for i, partitionInfo := range partitions {
+		if m.selectedNISDPartitions[i] {
+			s.WriteString(fmt.Sprintf("• HV: %s | Device: %s | Partition: %s | Size: %d bytes\n",
+				partitionInfo.HvName,
+				partitionInfo.Device.Name,
+				partitionInfo.Partition.NISDUUID,
+				partitionInfo.Partition.Size))
+		}
+	}
 
-	s.WriteString("\nThis will initialize NISD using the partition's existing UUID and PartitionID.\n")
-	s.WriteString("The NISD will be registered with the control plane using:\n")
-	s.WriteString(fmt.Sprintf("- DevID: %s (partition ID)\n", m.selectedPartitionForNISD.PartitionID))
-	s.WriteString(fmt.Sprintf("- NISD ID: %s (from partition)\n\n", m.selectedPartitionForNISD.NISDUUID))
-	s.WriteString("Press ENTER to initialize NISD, or ESC to cancel")
+	s.WriteString("\nThis will initialize NISD instances using each partition's existing UUID and PartitionID.\n")
+	s.WriteString("Each NISD will be registered with the control plane using:\n")
+	s.WriteString("- DevID: partition ID\n")
+	s.WriteString("- NISD ID: partition UUID\n\n")
+	s.WriteString("Press ENTER to initialize all selected NISDs, or ESC to cancel")
 
 	return s.String()
 }
@@ -5748,6 +5814,7 @@ func (m model) updateShowInitializedNISD(msg tea.Msg) (model, tea.Cmd) {
 			m.selectedNISDHypervisorIdx = -1
 			m.selectedNISDDeviceIdx = -1
 			m.selectedNISDPartitionIdx = -1
+			m.selectedNISDPartitions = make(map[int]bool)
 			m.selectedNISDForStart = -1
 			m.message = ""
 			return m, nil
@@ -5831,6 +5898,78 @@ func (m *model) initializeNISD() error {
 
 	// Store the initialized NISD for display
 	m.currentNISD = *nisd
+
+	return nil
+}
+
+func (m *model) initializeSelectedNISDs() error {
+	if m.cpClient == nil {
+		return fmt.Errorf("control plane client is not initialized")
+	}
+
+	partitions := m.config.GetAllPartitionsForNISD()
+	var errors []string
+	successCount := 0
+
+	for i, partitionInfo := range partitions {
+		if !m.selectedNISDPartitions[i] {
+			continue // Skip unselected partitions
+		}
+
+		// Get hypervisor info
+		hv, found := m.config.GetHypervisor(partitionInfo.HvUUID)
+		if !found {
+			errors = append(errors, fmt.Sprintf("hypervisor %s not found for partition %s", partitionInfo.HvName, partitionInfo.Partition.NISDUUID))
+			continue
+		}
+
+		// Allocate ports for NISD
+		clientPort, serverPort, err := m.config.AllocatePortPair(partitionInfo.HvUUID, hv.PortRange)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("failed to allocate ports for NISD %s: %v", partitionInfo.Partition.NISDUUID, err))
+			continue
+		}
+
+		// Create NISD struct using DevicePartition data
+		nisd := &ctlplfl.Nisd{
+			ID:            partitionInfo.Partition.NISDUUID,    // Use NISD UUID from partition
+			DevID:         partitionInfo.Partition.PartitionID, // Use PartitionID as DevID
+			HyperVisorID:  partitionInfo.HvUUID,
+			ClientPort:    uint16(clientPort),
+			PeerPort:      uint16(serverPort),
+			FailureDomain: hv.RackID, // Use rack ID as failure domain
+			IPAddr:        hv.IPAddress,
+			InitDev:       true,
+			TotalSize:     partitionInfo.Partition.Size,
+			AvailableSize: partitionInfo.Partition.Size,
+		}
+
+		// Call PutNisdCfg
+		resp, err := m.cpClient.PutNisdCfg(nisd)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("failed to register NISD %s with control plane: %v", partitionInfo.Partition.NISDUUID, err))
+			continue
+		}
+
+		log.Info("PutNisdCfg: ", nisd)
+
+		if resp == nil {
+			errors = append(errors, fmt.Sprintf("received nil response from control plane for NISD %s", partitionInfo.Partition.NISDUUID))
+			continue
+		}
+
+		successCount++
+		// Store the last successfully initialized NISD for display (could be enhanced to store multiple)
+		m.currentNISD = *nisd
+	}
+
+	if len(errors) > 0 {
+		if successCount == 0 {
+			return fmt.Errorf("all NISD initializations failed: %s", strings.Join(errors, "; "))
+		} else {
+			log.Warnf("Some NISD initializations failed: %s", strings.Join(errors, "; "))
+		}
+	}
 
 	return nil
 }
