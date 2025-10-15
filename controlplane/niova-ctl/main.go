@@ -415,7 +415,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deviceCursor = 0
 			m.devicePage = 0
 			m.state = stateDeviceSelection
-			m.updateDeviceList()
+			m = m.updateDeviceList()
 		}
 		return m, nil
 	}
@@ -587,7 +587,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				} else {
 					m.message = fmt.Sprintf("Failed to load config: %v", err)
 				}
-				m.updateConfigView()
+				m = m.updateConfigView()
 				return m, nil
 			case 6: // Save & Exit
 				if err := m.config.SaveToFile(m.configPath); err != nil {
@@ -830,7 +830,7 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 
 				m.state = stateHypervisorForm
 				m.editingUUID = "" // Clear editing UUID for new hypervisor
-				m.resetInputs()
+				m = m.resetInputs()
 				m.message = ""
 				return m, textinput.Blink
 			case 1: // View Hypervisor
@@ -1216,7 +1216,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 						m.message += " and synced to control plane"
 					}
 				} else {
-					log.Info("Put Device is not getting written!!!")
+					log.Error("Failed to write DeviceInfo in CP")
 				}
 			}
 
@@ -1516,7 +1516,7 @@ func (m model) discoverDevices() tea.Cmd {
 	}
 }
 
-func (m model) resetInputs() {
+func (m model) resetInputs() model {
 	for i := range m.inputs {
 		m.inputs[i].SetValue("")
 		if i == 0 {
@@ -1526,6 +1526,7 @@ func (m model) resetInputs() {
 		}
 	}
 	m.focusedInput = inputName
+	return m
 }
 
 func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
@@ -1540,7 +1541,7 @@ func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	return m
 }
 
-func (m model) updateDeviceList() {
+func (m model) updateDeviceList() model {
 	items := make([]list.Item, len(m.discoveredDevs))
 	for i, dev := range m.discoveredDevs {
 		items[i] = deviceItem{
@@ -1550,9 +1551,10 @@ func (m model) updateDeviceList() {
 		}
 	}
 	m.deviceList.SetItems(items)
+	return m
 }
 
-func (m model) updateConfigView() {
+func (m model) updateConfigView() model {
 	var content strings.Builder
 
 	content.WriteString(fmt.Sprintf("Configuration file: %s\n", m.configPath))
@@ -1675,6 +1677,7 @@ func (m model) updateConfigView() {
 	}
 
 	m.configViewport.SetContent(content.String())
+	return m
 }
 
 func (m model) View() string {
@@ -3631,7 +3634,6 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 				}
 
 				// Call PutPartition to create the partition key
-				log.Info("PutPartition: ", partition)
 				_, err := m.cpClient.PutPartition(&partition)
 				if err != nil {
 					log.Info("Failed to add partition to pumiceDB: %v", err)
@@ -3857,14 +3859,14 @@ func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 	}
 
 	// Try to call PutPartition if control plane is enabled
-	if m.cpEnabled && m.cpClient != nil {
+	if m.cpClient != nil {
 		log.Info("PutPartition for whole device: ", devicePartition)
 		_, err := m.cpClient.PutPartition(&devicePartition)
 		if err != nil {
 			return DevicePartition{}, fmt.Errorf("failed to call PutPartition for whole device: %v", err)
 		}
 	} else {
-		log.Info("Error PutPartition for whole device not geting written !!")
+		log.Error("Failed to write partition key in CP: ", devicePartition)
 	}
 
 	// Add partition to configuration
