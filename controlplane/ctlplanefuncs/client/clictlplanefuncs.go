@@ -217,6 +217,17 @@ func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
 	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
 }
 
+func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
+	vdevs := make([]ctlplfl.Vdev, 0)
+	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return nil, err
+	}
+
+	return vdevs, nil
+}
+
 func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(devp, resp, ctlplfl.PUT_PARTITION)

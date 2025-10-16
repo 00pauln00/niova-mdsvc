@@ -16,6 +16,7 @@ const (
 	GET_NISD       = "GetNisdCfg"
 	GET_NISD_LIST  = "GetAllNisd"
 	CREATE_VDEV    = "CreateVdev"
+	GET_VDEV       = "GetVdev"
 	CREATE_SNAP    = "CreateSnap"
 	READ_SNAP_NAME = "ReadSnapByName"
 	READ_SNAP_VDEV = "ReadSnapForVdev"

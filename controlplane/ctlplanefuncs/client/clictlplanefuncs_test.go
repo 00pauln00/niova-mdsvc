@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var VDEV_ID string
+
 func newClient(t *testing.T) *CliCFuncs {
 
 	clusterID := os.Getenv("RAFT_ID")
@@ -185,23 +187,50 @@ func TestPutAndGetHypervisor(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestCreateVdev(t *testing.T) {
+func TestMultiCreateVdev(t *testing.T) {
 	c := newClient(t)
-	vdev := &cpLib.Vdev{
-		Size: 105 * 1024 * 1024 * 1024}
-	err := c.CreateVdev(vdev)
-	log.Info("CreateVdev Result: ", vdev)
+	vdev1 := &cpLib.Vdev{
+		Size: 700 * 1024 * 1024 * 1024}
+	err := c.CreateVdev(vdev1)
+	log.Info("CreateMultiVdev Result 1: ", vdev1)
+	assert.NoError(t, err)
+
+	vdev2 := &cpLib.Vdev{
+		Size: 400 * 1024 * 1024 * 1024}
+	err = c.CreateVdev(vdev2)
+	log.Info("CreateMultiVdev Result 2: ", vdev2)
 	assert.NoError(t, err)
 }
+
+func TestGetAllVdev(t *testing.T) {
+	c := newClient(t)
+	req := &cpLib.GetReq{
+		GetAll: true,
+	}
+	resp, err := c.GetVdevs(req)
+	log.Info("fetch all vdevs response: ", resp)
+	assert.NoError(t, err)
+}
+
+// func TestGetSpecificVdev(t *testing.T) {
+// 	c := newClient(t)
+// 	req := &cpLib.GetReq{
+// 		ID:     VDEV_ID,
+// 		GetAll: false,
+// 	}
+// 	resp, err := c.GetVdevs(req)
+// 	log.Info("vdevs response: ", resp)
+// 	assert.NoError(t, err)
+// }
 
 func TestPutPartition(t *testing.T) {
 	c := newClient(t)
 	pt := &cpLib.DevicePartition{
 		PartitionUUID: "96ea4c60-a5df-11f0-a315-fb09c06e6471",
-		DevID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
-		Size: 10 * 1024 * 1024 * 1024,
+		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
+		Size:          10 * 1024 * 1024 * 1024,
 	}
-	resp,err := c.PutPartition(pt)
+	resp, err := c.PutPartition(pt)
 	log.Info("created partition: ", resp)
 	assert.NoError(t, err)
 	resp1, err := c.GetPartition(cpLib.GetReq{ID: "96ea4c60-a5df-11f0-a315-fb09c06e6471"})

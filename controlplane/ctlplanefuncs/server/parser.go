@@ -49,6 +49,27 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 	return result
 }
 
+func ParseEntitiesMap(readResult map[string][]byte, pe ParseEntity) map[string]Entity {
+	entityMap := make(map[string]Entity)
+
+	for k, v := range readResult {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		// require at least ELEMENT_KEY to be present and that base key matches parser root
+		if len(parts) <= ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+			continue
+		}
+
+		id := parts[BASE_UUID_PREFIX]
+		entity, exists := entityMap[id]
+		if !exists {
+			entity = pe.NewEntity(id)
+			entityMap[id] = entity
+		}
+		pe.ParseField(entity, parts, v)
+	}
+	return entityMap
+}
+
 // Rack parser
 type rackParser struct{}
 
@@ -175,14 +196,13 @@ func (ptParser) NewEntity(id string) Entity {
 func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 	pt := entity.(*ctlplfl.DevicePartition)
 	if len(parts) == KEY_LEN {
-        switch parts[ELEMENT_KEY] {
-        case DEVICE_NAME:
-            pt.DevID = string(value)
-        case SIZE:
+		switch parts[ELEMENT_KEY] {
+		case DEVICE_NAME:
+			pt.DevID = string(value)
+		case SIZE:
 			s, _ := strconv.Atoi(string(value))
-            pt.Size = int64(s)
-        }
-    }
+			pt.Size = int64(s)
+		}
+	}
 }
 func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
-
