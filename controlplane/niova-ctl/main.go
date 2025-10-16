@@ -75,6 +75,7 @@ const (
 	stateNISDStart
 	stateNISDSelection
 	stateShowStartedNISD
+	stateViewAllNISDs
 	// Configuration View
 	stateViewConfig
 )
@@ -515,6 +516,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateNISDSelection(msg)
 	case stateShowStartedNISD:
 		m, cmd = m.updateShowStartedNISD(msg)
+	case stateViewAllNISDs:
+		m, cmd = m.updateViewAllNISDs(msg)
 	// Control Plane
 	// Configuration View
 	case stateViewConfig:
@@ -1783,6 +1786,8 @@ func (m model) View() string {
 		return m.viewNISDSelection()
 	case stateShowStartedNISD:
 		return m.viewShowStartedNISD()
+	case stateViewAllNISDs:
+		return m.viewAllNISDs()
 	// Control Plane Views
 	// Configuration View
 	case stateViewConfig:
@@ -5536,7 +5541,7 @@ func (m model) updateNISDManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.nisdMgmtCursor--
 			}
 		case "down", "j":
-			maxItems := 2 // Initialize NISD, Start NISD
+			maxItems := 3 // Initialize NISD, Start NISD, View All NISDs
 			if m.nisdMgmtCursor < maxItems-1 {
 				m.nisdMgmtCursor++
 			}
@@ -5553,6 +5558,10 @@ func (m model) updateNISDManagement(msg tea.Msg) (model, tea.Cmd) {
 			case 1: // Start NISD
 				m.state = stateNISDSelection
 				m.selectedNISDForStart = -1
+				m.message = ""
+				return m, nil
+			case 2: // View All NISDs
+				m.state = stateViewAllNISDs
 				m.message = ""
 				return m, nil
 			}
@@ -5584,6 +5593,7 @@ func (m model) viewNISDManagement() string {
 	managementItems := []string{
 		"Initialize NISD - Initialize a NISD instance on a device partition",
 		"Start NISD - Start an existing NISD process",
+		"View All NISDs - Query and display all NISD details from control plane",
 	}
 
 	for i, item := range managementItems {
@@ -6188,6 +6198,102 @@ func (m model) startNISDProcess() error {
 	// 4. Return error if failed
 
 	return nil
+}
+
+func (m model) updateViewAllNISDs(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", " ", "esc":
+			m.state = stateNISDManagement
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewAllNISDs() string {
+	title := titleStyle.Render("All NISDs - Control Plane View")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	// Query all NISDs from control plane
+	if m.cpClient == nil {
+		s.WriteString(errorStyle.Render("Control plane client is not initialized") + "\n\n")
+		s.WriteString("Please ensure the control plane is running and properly configured.\n\n")
+		s.WriteString("Press any key to return to NISD management")
+		return s.String()
+	}
+
+	// Create request to get all NISDs (empty ID means get all)
+	req := ctlplfl.GetReq{ID: ""}
+
+	nisds, err := m.cpClient.GetNisdCfg(req)
+	if err != nil {
+		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query NISDs from control plane: %v", err)) + "\n\n")
+		s.WriteString("Please check:\n")
+		s.WriteString("• Control plane is running and accessible\n")
+		s.WriteString("• Network connectivity to control plane\n")
+		s.WriteString("• Control plane configuration is correct\n\n")
+		s.WriteString("Press any key to return to NISD management")
+		return s.String()
+	}
+
+	if len(nisds) == 0 {
+		s.WriteString("No NISDs found in the control plane.\n\n")
+		s.WriteString("NISDs will appear here after they are:\n")
+		s.WriteString("• Initialized on device partitions\n")
+		s.WriteString("• Registered with the control plane\n")
+		s.WriteString("• Started and running\n\n")
+		s.WriteString("Use 'Initialize NISD' to create new NISD instances.\n\n")
+	} else {
+		s.WriteString(fmt.Sprintf("Found %d NISD instance(s) in the control plane:\n\n", len(nisds)))
+
+		for i, nisd := range nisds {
+			s.WriteString(fmt.Sprintf("NISD %d:\n", i+1))
+			s.WriteString(fmt.Sprintf("  UUID: %s\n", nisd.ID))
+			s.WriteString(fmt.Sprintf("  Device ID: %s\n", nisd.DevID))
+			s.WriteString(fmt.Sprintf("  Hypervisor: %s\n", nisd.HyperVisorID))
+			s.WriteString(fmt.Sprintf("  IP Address: %s\n", nisd.IPAddr))
+			s.WriteString(fmt.Sprintf("  Client Port: %d\n", nisd.ClientPort))
+			s.WriteString(fmt.Sprintf("  Server Port: %d\n", nisd.PeerPort))
+			s.WriteString(fmt.Sprintf("  Failure Domain: %s\n", nisd.FailureDomain))
+			s.WriteString(fmt.Sprintf("  Total Size: %d bytes", nisd.TotalSize))
+			if nisd.TotalSize > 0 {
+				s.WriteString(fmt.Sprintf(" (%s)", formatBytes(nisd.TotalSize)))
+			}
+			s.WriteString("\n")
+			s.WriteString(fmt.Sprintf("  Available Size: %d bytes", nisd.AvailableSize))
+			if nisd.AvailableSize > 0 {
+				s.WriteString(fmt.Sprintf(" (%s)", formatBytes(nisd.AvailableSize)))
+			}
+			s.WriteString("\n")
+
+			if nisd.InitDev {
+				s.WriteString("  Status: ✓ Initialized\n")
+			} else {
+				s.WriteString("  Status: ⚠ Not initialized\n")
+			}
+
+			if i < len(nisds)-1 {
+				s.WriteString("\n" + strings.Repeat("─", 50) + "\n\n")
+			}
+		}
+	}
+
+	s.WriteString("\n\nPress any key to return to NISD management")
+
+	return s.String()
 }
 
 func main() {
