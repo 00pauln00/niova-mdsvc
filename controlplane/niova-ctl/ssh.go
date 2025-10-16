@@ -228,13 +228,6 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 			sizeStr := matches[2] // Size string like "1T", "500G", "1.2G", etc.
 			serialNum := matches[3]
 
-			log.Info("Device name in parseLsblkDevices: ", name)
-			// Additional check: ensure this is really a physical device, not a partition
-			//if regexp.MustCompile(`p\d+$|[a-z]\d+$`).MatchString(name) {
-			//	log.Info("Skipping devices: ", name)
-			//	continue
-			//}
-
 			// Convert size string to bytes
 			sizeBytes := parseSizeToBytes(sizeStr)
 			log.Info("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)

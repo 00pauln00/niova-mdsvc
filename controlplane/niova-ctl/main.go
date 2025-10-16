@@ -190,10 +190,12 @@ type model struct {
 	cpRaftUUID    string
 	cpGossipPath  string
 	cpConnected   bool
-	cpPDUs        []ctlplfl.PDU  // PDU data from Control Plane
-	cpPDURefresh  bool           // Flag to trigger PDU refresh from CP
-	cpRacks       []ctlplfl.Rack // Rack data from Control Plane
-	cpRackRefresh bool           // Flag to trigger Rack refresh from CP
+	cpPDUs            []ctlplfl.PDU        // PDU data from Control Plane
+	cpPDURefresh      bool                 // Flag to trigger PDU refresh from CP
+	cpRacks           []ctlplfl.Rack       // Rack data from Control Plane
+	cpRackRefresh     bool                 // Flag to trigger Rack refresh from CP
+	cpHypervisors     []ctlplfl.Hypervisor // Hypervisor data from Control Plane
+	cpHypervisorRefresh bool               // Flag to trigger Hypervisor refresh from CP
 
 	// General
 	message  string
@@ -680,6 +682,7 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 			// Store hypervisor data but don't add to config/PumiceDB yet
 			// Device discovery and selection will happen first
 			m.currentHv = hypervisor
+			log.Info("m.currentHv: ", m.currentHv)
 			m.state = stateDeviceDiscovery
 			m.loading = true
 			m.message = ""
@@ -841,13 +844,12 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.message = ""
 				return m, textinput.Blink
 			case 1: // View Hypervisor
-				allHypervisors := m.getAllHypervisors()
-				if len(allHypervisors) > 0 {
-					m.state = stateViewHypervisor
-					m.hvListCursor = 0
-					m.message = ""
-					return m, nil
-				}
+				// Trigger hypervisor refresh from Control Plane when entering view
+				m.cpHypervisorRefresh = true
+				m.state = stateViewHypervisor
+				m.hvListCursor = 0
+				m.message = ""
+				return m, nil
 			case 2: // Edit Hypervisor
 				allHypervisors := m.getAllHypervisors()
 				if len(allHypervisors) > 0 {
@@ -2421,7 +2423,33 @@ func (m model) viewHypervisorManagement() string {
 }
 
 func (m model) updateViewHypervisor(msg tea.Msg) (model, tea.Cmd) {
-	allHypervisors := m.getAllHypervisors()
+	// Query CP for hypervisor data on first load or refresh
+	if m.cpClient != nil && m.cpHypervisorRefresh {
+		log.Info("  cpRaftUUID: ", m.cpRaftUUID)
+		log.Info("  cpGossipPath: ", m.cpGossipPath)
+
+		if m.cpClient != nil {
+			log.Info("Calling GetHypervisor with GetAll=true")
+			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
+			if err != nil {
+				// Log error and show empty list
+				log.Error("Failed to query Hypervisors from Control Plane: ", err)
+				m.message = "Error: Could not fetch Hypervisor data from Control Plane: " + err.Error()
+				m.cpHypervisors = []ctlplfl.Hypervisor{} // Show empty list on error
+			} else {
+				// Show only CP data, no merging with config file
+				m.cpHypervisors = cpHypervisors
+				log.Info("Hypervisor data from CP: ", m.cpHypervisors)
+				m.message = fmt.Sprintf("Hypervisor data loaded from Control Plane (%d Hypervisors)", len(cpHypervisors))
+				log.Info("Successfully retrieved ", len(cpHypervisors), " Hypervisors from Control Plane")
+				log.Info(m.cpHypervisors)
+			}
+			m.cpHypervisorRefresh = false
+		} else {
+			m.cpHypervisors = []ctlplfl.Hypervisor{} // Show empty list when no CP client
+			log.Warn("cpClient is nil, cannot query Control Plane")
+		}
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -2431,7 +2459,7 @@ func (m model) updateViewHypervisor(msg tea.Msg) (model, tea.Cmd) {
 				m.hvListCursor--
 			}
 		case "down", "j":
-			if m.hvListCursor < len(allHypervisors)-1 {
+			if m.hvListCursor < len(m.cpHypervisors)-1 {
 				m.hvListCursor++
 			}
 		case "enter", " ":
@@ -2455,79 +2483,145 @@ func (m model) viewViewHypervisor() string {
 		s.WriteString(errorStyle.Render(m.message) + "\n\n")
 	}
 
-	allHypervisors := m.getAllHypervisors()
-	if len(allHypervisors) == 0 {
-		s.WriteString(errorStyle.Render("No hypervisors found") + "\n\n")
+	// Get hypervisors from Control Plane
+	hypervisors := m.cpHypervisors
+	log.Info("m.cpHypervisors in viewViewHypervisor: ", m.cpHypervisors)
+
+	// Show data source indicator
+	if m.cpClient != nil && len(m.cpHypervisors) > 0 {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("📡 Data from Control Plane") + "\n")
+	} else if m.cpClient != nil {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("⚠️  Control Plane connected, no Hypervisor data available") + "\n")
+	} else if m.cpEnabled {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render("❌ Control Plane not connected") + "\n")
+	} else {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("ℹ️  Control Plane disabled - using config file data") + "\n")
+		// Fall back to config file data when CP is disabled
+		allHypervisors := m.getAllHypervisors()
+		if len(allHypervisors) == 0 {
+			s.WriteString(errorStyle.Render("No hypervisors found") + "\n\n")
+			s.WriteString("Controls: esc back")
+			return s.String()
+		}
+
+		// Show hypervisor list from config
+		s.WriteString("Select a hypervisor to view details:\n\n")
+		for i, hvInfo := range allHypervisors {
+			cursor := "  "
+			if i == m.hvListCursor {
+				cursor = "▶ "
+			}
+
+			hvName := hvInfo.Hypervisor.Name
+			if hvName == "" {
+				hvName = "Unnamed"
+			}
+
+			line := fmt.Sprintf("%s%s (%s)", cursor, hvName, hvInfo.Hypervisor.IPAddress)
+			if i == m.hvListCursor {
+				s.WriteString(selectedItemStyle.Render(line))
+			} else {
+				s.WriteString(line)
+			}
+			s.WriteString(fmt.Sprintf(" - %s\n", hvInfo.Location))
+		}
+
+		// Show detailed info for selected hypervisor from config
+		if m.hvListCursor < len(allHypervisors) {
+			selectedHv := allHypervisors[m.hvListCursor]
+			hv := selectedHv.Hypervisor
+
+			s.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("═══════════════════") + "\n")
+			s.WriteString(fmt.Sprintf("📋 Hypervisor Details:\n\n"))
+			s.WriteString(fmt.Sprintf("Name: %s\n", hv.Name))
+			s.WriteString(fmt.Sprintf("UUID: %s\n", hv.ID))
+			s.WriteString(fmt.Sprintf("IP Address: %s\n", hv.IPAddress))
+			s.WriteString(fmt.Sprintf("SSH Port: %s\n", hv.SSHPort))
+			s.WriteString(fmt.Sprintf("Port Range: %s\n", hv.PortRange))
+			if hv.RackID != "" {
+				s.WriteString(fmt.Sprintf("Rack ID: %s\n", hv.RackID))
+			}
+			s.WriteString(fmt.Sprintf("Location: %s\n", selectedHv.Location))
+
+			if selectedHv.RackInfo != nil {
+				s.WriteString(fmt.Sprintf("PDU: %s\n", selectedHv.RackInfo.PDUName))
+			}
+
+			s.WriteString(fmt.Sprintf("\nDevices (%d):\n", len(hv.Dev)))
+			if len(hv.Dev) == 0 {
+				s.WriteString("  No devices configured\n")
+			} else {
+				for i, device := range hv.Dev {
+					s.WriteString(fmt.Sprintf("  %d. %s", i+1, device.Name))
+					if device.DevicePath != "" {
+						s.WriteString(fmt.Sprintf(" (%s)", device.DevicePath))
+					}
+					if device.Initialized {
+						s.WriteString(" [Initialized]")
+					}
+					s.WriteString("\n")
+
+					if len(device.Partitions) > 0 {
+						s.WriteString(fmt.Sprintf("     Partitions (%d):\n", len(device.Partitions)))
+						for j, partition := range device.Partitions {
+							s.WriteString(fmt.Sprintf("       %d. %s (Size: %s)\n",
+								j+1, partition.PartitionID, formatBytes(partition.Size)))
+						}
+					}
+				}
+			}
+		}
+
+		s.WriteString("\n\nControls: ↑/↓ navigate hypervisors, esc back to menu")
+		return s.String()
+	}
+
+	if len(hypervisors) == 0 {
+		s.WriteString(errorStyle.Render("No hypervisors found in Control Plane") + "\n\n")
 		s.WriteString("Controls: esc back")
 		return s.String()
 	}
 
-	// Show hypervisor list
+	// Show hypervisor list from Control Plane
 	s.WriteString("Select a hypervisor to view details:\n\n")
-	for i, hvInfo := range allHypervisors {
+	for i, hv := range hypervisors {
 		cursor := "  "
 		if i == m.hvListCursor {
 			cursor = "▶ "
 		}
 
-		hvName := hvInfo.Hypervisor.Name
+		hvName := hv.Name
 		if hvName == "" {
 			hvName = "Unnamed"
 		}
 
-		line := fmt.Sprintf("%s%s (%s)", cursor, hvName, hvInfo.Hypervisor.IPAddress)
+		line := fmt.Sprintf("%s%s (%s)", cursor, hvName, hv.IPAddress)
 		if i == m.hvListCursor {
 			s.WriteString(selectedItemStyle.Render(line))
 		} else {
 			s.WriteString(line)
 		}
-		s.WriteString(fmt.Sprintf(" - %s\n", hvInfo.Location))
+		if hv.RackID != "" {
+			s.WriteString(fmt.Sprintf(" - Rack: %s\n", hv.RackID))
+		} else {
+			s.WriteString("\n")
+		}
 	}
 
-	// Show detailed info for selected hypervisor
-	if m.hvListCursor < len(allHypervisors) {
-		selectedHv := allHypervisors[m.hvListCursor]
-		hv := selectedHv.Hypervisor
+	// Show detailed info for selected hypervisor from Control Plane
+	if m.hvListCursor < len(hypervisors) {
+		hv := hypervisors[m.hvListCursor]
 
 		s.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("═══════════════════") + "\n")
-		s.WriteString(fmt.Sprintf("📋 Hypervisor Details:\n\n"))
+		s.WriteString(fmt.Sprintf("📋 Hypervisor Details (from Control Plane):\n\n"))
 		s.WriteString(fmt.Sprintf("Name: %s\n", hv.Name))
 		s.WriteString(fmt.Sprintf("UUID: %s\n", hv.ID))
 		s.WriteString(fmt.Sprintf("IP Address: %s\n", hv.IPAddress))
-		s.WriteString(fmt.Sprintf("SSH Port: %s\n", hv.SSHPort))
-		s.WriteString(fmt.Sprintf("Port Range: %s\n", hv.PortRange))
 		if hv.RackID != "" {
 			s.WriteString(fmt.Sprintf("Rack ID: %s\n", hv.RackID))
 		}
-		s.WriteString(fmt.Sprintf("Location: %s\n", selectedHv.Location))
-
-		if selectedHv.RackInfo != nil {
-			s.WriteString(fmt.Sprintf("PDU: %s\n", selectedHv.RackInfo.PDUName))
-		}
-
-		s.WriteString(fmt.Sprintf("\nDevices (%d):\n", len(hv.Dev)))
-		if len(hv.Dev) == 0 {
-			s.WriteString("  No devices configured\n")
-		} else {
-			for i, device := range hv.Dev {
-				s.WriteString(fmt.Sprintf("  %d. %s", i+1, device.Name))
-				if device.DevicePath != "" {
-					s.WriteString(fmt.Sprintf(" (%s)", device.DevicePath))
-				}
-				if device.Initialized {
-					s.WriteString(" [Initialized]")
-				}
-				s.WriteString("\n")
-
-				if len(device.Partitions) > 0 {
-					s.WriteString(fmt.Sprintf("     Partitions (%d):\n", len(device.Partitions)))
-					for j, partition := range device.Partitions {
-						s.WriteString(fmt.Sprintf("       %d. %s (Size: %s)\n",
-							j+1, partition.PartitionID, formatBytes(partition.Size)))
-					}
-				}
-			}
-		}
+		// Note: Control plane hypervisor data may have different fields than config file hypervisors
+		// Only show the fields available in the ctlplfl.Hypervisor struct
 	}
 
 	s.WriteString("\n\nControls: ↑/↓ navigate hypervisors, esc back to menu")
