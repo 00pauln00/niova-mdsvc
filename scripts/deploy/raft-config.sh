@@ -29,7 +29,7 @@ RAFT         ${RAFT_UUID}
 IPADDR       ${PEER_IP}
 PORT         ${PEER_PORT}
 CLIENT_PORT  ${CLIENT_PORT}
-STORE        /mnt/ctlplane/${PEER_UUID}.raftdb
+STORE        /var/ctlplane/${PEER_UUID}.raftdb
 EOF
 
     echo "Generated $PEER_FILE for $PEER_IP"
