@@ -185,13 +185,15 @@ type model struct {
 	selectedNISDToStart       ctlplfl.Nisd
 
 	// Control Plane
-	cpClient     *ctlplcl.CliCFuncs
-	cpEnabled    bool
-	cpRaftUUID   string
-	cpGossipPath string
-	cpConnected  bool
-	cpPDUs       []ctlplfl.PDU // PDU data from Control Plane
-	cpPDURefresh bool          // Flag to trigger PDU refresh from CP
+	cpClient      *ctlplcl.CliCFuncs
+	cpEnabled     bool
+	cpRaftUUID    string
+	cpGossipPath  string
+	cpConnected   bool
+	cpPDUs        []ctlplfl.PDU  // PDU data from Control Plane
+	cpPDURefresh  bool           // Flag to trigger PDU refresh from CP
+	cpRacks       []ctlplfl.Rack // Rack data from Control Plane
+	cpRackRefresh bool           // Flag to trigger Rack refresh from CP
 
 	// General
 	message  string
@@ -4188,16 +4190,12 @@ func (m model) updateRackManagement(msg tea.Msg) (model, tea.Cmd) {
 					m.message = "No PDUs configured. Please add a PDU first."
 				}
 			case 1: // View Rack
-				totalRacks := 0
-				for _, pdu := range m.config.PDUs {
-					totalRacks += len(pdu.Racks)
-				}
-				if totalRacks > 0 {
-					m.state = stateViewRack
-					m.rackListCursor = 0
-					m.message = ""
-					return m, nil
-				}
+				m.state = stateViewRack
+				m.rackListCursor = 0
+				m.message = ""
+				// Trigger initial CP refresh when entering View Rack
+				m.cpRackRefresh = true
+				return m, nil
 			case 2: // Edit Rack
 				totalRacks := 0
 				for _, pdu := range m.config.PDUs {
@@ -4394,7 +4392,34 @@ func (m model) updateDeleteRack(msg tea.Msg) (model, tea.Cmd) {
 }
 
 func (m model) updateViewRack(msg tea.Msg) (model, tea.Cmd) {
-	allRacks := m.getAllRacks()
+	// Query CP for rack data if needed
+	if m.cpClient != nil && m.cpRackRefresh {
+		log.Info("  cpRaftUUID: ", m.cpRaftUUID)
+		log.Info("  cpGossipPath: ", m.cpGossipPath)
+
+		// If control plane client is available, fetch Rack data from CP
+		if m.cpClient != nil {
+			log.Info("Calling GetRacks with GetAll=true")
+			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
+			if err != nil {
+				// Log error and show empty list
+				log.Error("Failed to query Racks from Control Plane: ", err)
+				m.message = "Error: Could not fetch Rack data from Control Plane: " + err.Error()
+				m.cpRacks = []ctlplfl.Rack{} // Show empty list on error
+			} else {
+				// Show only CP data, no merging with config file
+				m.cpRacks = cpRacks
+				m.message = fmt.Sprintf("Rack data loaded from Control Plane (%d Racks)", len(cpRacks))
+				log.Info("Successfully retrieved ", len(cpRacks), " Racks from Control Plane")
+			}
+		} else {
+			m.message = "Control Plane client not initialized"
+			m.cpRacks = []ctlplfl.Rack{} // Show empty list when no CP client
+			log.Warn("cpClient is nil, cannot query Control Plane")
+		}
+
+		m.cpRackRefresh = false
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -4404,9 +4429,13 @@ func (m model) updateViewRack(msg tea.Msg) (model, tea.Cmd) {
 				m.rackListCursor--
 			}
 		case "down", "j":
-			if m.rackListCursor < len(allRacks)-1 {
+			if m.rackListCursor < len(m.cpRacks)-1 {
 				m.rackListCursor++
 			}
+		case "r":
+			// Refresh rack data from Control Plane
+			m.cpRackRefresh = true
+			m.message = "Refreshing rack data from Control Plane..."
 		case "enter", " ":
 			// Just navigate through racks, no action needed
 			return m, nil
@@ -4617,7 +4646,6 @@ func (m model) viewDeletePDU() string {
 
 	return s.String()
 }
-
 
 func (m model) viewViewPDU() string {
 	title := titleStyle.Render("View PDU Details")
@@ -4955,36 +4983,51 @@ func (m model) viewViewRack() string {
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
 
-	allRacks := m.getAllRacks()
+	// Always use only CP Racks - no fallback to config file
+	racks := m.cpRacks
+	log.Info("m.cpRacks in viewViewRack: ", m.cpRacks)
 
-	if len(allRacks) == 0 {
-		s.WriteString("No racks configured.\n\n")
-		s.WriteString("Press esc to go back")
+	// Show data source indicator and CP status
+	if m.cpClient != nil && len(m.cpRacks) > 0 {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("📡 Data from Control Plane") + "\n")
+	} else if m.cpClient != nil {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("⚠️  Control Plane connected, no Rack data available") + "\n")
+	} else if m.cpEnabled {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render("❌ Control Plane enabled but client not initialized") + "\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(fmt.Sprintf("    RaftUUID: %s", m.cpRaftUUID)) + "\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(fmt.Sprintf("    GossipPath: %s", m.cpGossipPath)) + "\n")
+	} else {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render("❌ Control Plane not enabled") + "\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("    Use: ./niova-ctl -cp -raft-uuid <uuid> -gossip-path <path>") + "\n")
+	}
+
+	if len(racks) == 0 {
+		s.WriteString("\nNo Racks available from Control Plane.\n\n")
+		s.WriteString("Press r to refresh, esc to go back")
 		return s.String()
 	}
 
 	s.WriteString("Rack Details:\n\n")
 
-	for i, rackInfo := range allRacks {
+	for i, rack := range racks {
 		cursor := "  "
 		if i == m.rackListCursor {
 			cursor = "▶ "
 		}
 
 		// Rack header
-		headerLine := fmt.Sprintf("%s%d. %s", cursor, i+1, rackInfo.Rack.Name)
-		if rackInfo.Rack.Location != "" {
-			headerLine += fmt.Sprintf(" (%s)", rackInfo.Rack.Location)
+		headerLine := fmt.Sprintf("%s%d. %s", cursor, i+1, rack.Name)
+		if rack.Location != "" {
+			headerLine += fmt.Sprintf(" (%s)", rack.Location)
 		}
-		headerLine += fmt.Sprintf(" [PDU: %s]", rackInfo.PDUName)
+		headerLine += fmt.Sprintf(" [ID: %s]", rack.ID)
 
 		if i == m.rackListCursor {
 			s.WriteString(selectedItemStyle.Render(headerLine) + "\n")
 
 			// Detailed view for selected rack
-			rack := rackInfo.Rack
 			s.WriteString(fmt.Sprintf("    UUID: %s\n", rack.ID))
-			s.WriteString(fmt.Sprintf("    PDU: %s\n", rackInfo.PDUName))
+			s.WriteString(fmt.Sprintf("    Name: %s\n", rack.Name))
 			if rack.Specification != "" {
 				s.WriteString(fmt.Sprintf("    Description: %s\n", rack.Specification))
 			}
@@ -5016,16 +5059,16 @@ func (m model) viewViewRack() string {
 		} else {
 			s.WriteString(headerLine + "\n")
 			// Show summary when not selected
-			summary := fmt.Sprintf("    %d hypervisors", len(rackInfo.Rack.Hypervisors))
-			if rackInfo.Rack.Specification != "" {
-				summary += fmt.Sprintf(" | %s", rackInfo.Rack.Specification)
+			summary := fmt.Sprintf("    %d hypervisors", len(rack.Hypervisors))
+			if rack.Specification != "" {
+				summary += fmt.Sprintf(" | %s", rack.Specification)
 			}
 			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(summary) + "\n")
 		}
 		s.WriteString("\n")
 	}
 
-	s.WriteString("Controls: ↑/↓ navigate racks, esc back to rack management")
+	s.WriteString("Controls: ↑/↓ navigate racks, r refresh, esc back to rack management")
 
 	return s.String()
 }

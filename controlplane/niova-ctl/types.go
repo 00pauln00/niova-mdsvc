@@ -406,13 +406,13 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 	// NISD uses server_port and client_port + 1 internally
 	// So allocation: server=X, client=X+2 → NISD uses X and X+3, next NISD starts at X+4
 	for port := startPort; port < endPort-3; port += 4 {
-		serverPort := port      // Server port for NISD (NISD uses this)
-		gapPort1 := port + 1    // Gap port (reserved for spacing)
-		clientPort := port + 2  // Client port for NISD
-		gapPort2 := port + 3    // Gap port (NISD uses client_port + 1 = this port)
+		serverPort := port     // Server port for NISD (NISD uses this)
+		gapPort1 := port + 1   // Gap port (reserved for spacing)
+		clientPort := port + 2 // Client port for NISD
+		gapPort2 := port + 3   // Gap port (NISD uses client_port + 1 = this port)
 
 		if !allocatedPorts[serverPort] && !allocatedPorts[gapPort1] &&
-		   !allocatedPorts[clientPort] && !allocatedPorts[gapPort2] {
+			!allocatedPorts[clientPort] && !allocatedPorts[gapPort2] {
 			return clientPort, serverPort, nil
 		}
 	}
