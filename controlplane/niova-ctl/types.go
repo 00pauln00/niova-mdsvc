@@ -361,8 +361,8 @@ func (c *Config) GetHypervisorFailureDomain(hvUUID string) string {
 }
 
 // AllocatePortPair allocates a client and server port pair from the given range,
-// avoiding already allocated ports
-func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int, int, error) {
+// avoiding already allocated ports by querying existing NISDs from the control plane
+func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpClient interface{}) (int, int, error) {
 	startPort, endPort, err := ParsePortRange(portRange)
 	if err != nil {
 		return 0, 0, err
@@ -371,19 +371,47 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string) (int,
 	// Collect all allocated ports for this hypervisor
 	allocatedPorts := make(map[int]bool)
 
-	// TODO: In a full implementation, this would check existing NISD instances
-	// from the control plane to get their allocated ports.
-	// For now, we'll use a simple port allocation starting from the range start.
-	//
-	// Note: NISD ports are managed at the NISD level, not partition level.
-	// DevicePartition struct doesn't have ClientPort/ServerPort fields.
+	// Query existing NISDs from control plane to get allocated ports
+	if cpClient != nil {
+		// Type assert to get the actual client interface
+		if client, ok := cpClient.(interface {
+			GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
+		}); ok {
+			// Create a request to get all NISDs
+			// Get all NISDs and filter by hypervisor UUID locally
+			req := ctlplfl.GetReq{ID: ""} // Empty ID to get all NISDs
 
-	// Find two consecutive available ports
-	for port := startPort; port < endPort-1; port += 2 {
-		clientPort := port
-		serverPort := port + 1
+			nisds, err := client.GetNisdCfg(req)
+			if err == nil {
+				// Process the NISDs to extract allocated ports for this hypervisor
+				for _, nisd := range nisds {
+					if nisd.HyperVisorID == hypervisorUUID {
+						// Mark the server port as allocated (NISD uses this)
+						allocatedPorts[int(nisd.PeerPort)] = true
+						// Mark the client port as allocated
+						allocatedPorts[int(nisd.ClientPort)] = true
+						// Mark client port + 1 as allocated (NISD uses this internally)
+						allocatedPorts[int(nisd.ClientPort)+1] = true
+						// Mark the gap port after client port + 1 as allocated for spacing
+						allocatedPorts[int(nisd.ClientPort)+2] = true
+					}
+				}
+			}
+		}
+	}
 
-		if !allocatedPorts[clientPort] && !allocatedPorts[serverPort] {
+	// Find available port pair with proper spacing
+	// Pattern: server_port, gap, client_port, gap for each NISD
+	// NISD uses server_port and client_port + 1 internally
+	// So allocation: server=X, client=X+2 → NISD uses X and X+3, next NISD starts at X+4
+	for port := startPort; port < endPort-3; port += 4 {
+		serverPort := port      // Server port for NISD (NISD uses this)
+		gapPort1 := port + 1    // Gap port (reserved for spacing)
+		clientPort := port + 2  // Client port for NISD
+		gapPort2 := port + 3    // Gap port (NISD uses client_port + 1 = this port)
+
+		if !allocatedPorts[serverPort] && !allocatedPorts[gapPort1] &&
+		   !allocatedPorts[clientPort] && !allocatedPorts[gapPort2] {
 			return clientPort, serverPort, nil
 		}
 	}

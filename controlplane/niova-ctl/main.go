@@ -5867,7 +5867,7 @@ func (m *model) initializeNISD() error {
 	}
 
 	// Allocate ports for NISD
-	clientPort, serverPort, err := m.config.AllocatePortPair(m.selectedHvForNISD.ID, hv.PortRange)
+	clientPort, serverPort, err := m.config.AllocatePortPair(m.selectedHvForNISD.ID, hv.PortRange, m.cpClient)
 	if err != nil {
 		return fmt.Errorf("failed to allocate ports for NISD: %v", err)
 	}
@@ -5926,7 +5926,7 @@ func (m *model) initializeSelectedNISDs() error {
 		}
 
 		// Allocate ports for NISD
-		clientPort, serverPort, err := m.config.AllocatePortPair(partitionInfo.HvUUID, hv.PortRange)
+		clientPort, serverPort, err := m.config.AllocatePortPair(partitionInfo.HvUUID, hv.PortRange, m.cpClient)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("failed to allocate ports for NISD %s: %v", partitionInfo.Partition.NISDUUID, err))
 			continue
