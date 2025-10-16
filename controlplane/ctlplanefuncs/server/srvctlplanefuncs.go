@@ -45,6 +45,8 @@ const (
 	chunkKey     = "c"
 	hvKey        = "hv"
 	ptKey        = "pt"
+
+	ENC_TYPE = pmCmn.GOB
 )
 
 func SetClmFamily(cf string) {
@@ -154,7 +156,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
 	for _, chg := range chgs {
-		log.Trace("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+		log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
 		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
 			string(chg.Key),
 			int64(len(chg.Key)), string(chg.Value),
@@ -532,4 +534,128 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
 
 	return pmCmn.Encoder(pmCmn.GOB, hvList)
+}
+
+func ReadVdevCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+
+	key := vdevKey
+	if !req.GetAll {
+		key = getConfKey(vdevKey, req.ID)
+	}
+
+	nisdResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	// ParseEntitiesMap now returns map[string]Entity
+	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, nisdParser{})
+
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+
+	vdevMap := make(map[string]*ctlplfl.Vdev)
+	// top-level map: vdevID -> (nisdID -> *NisdChunk)
+	vdevNisdChunkMap := make(map[string]map[string]*ctlplfl.NisdChunk)
+
+	for k, value := range readResult.ResultMap {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		if len(parts) < 3 { // minimal expected parts to include vdev id, base key and an index/element
+			continue
+		}
+		vdevID := parts[BASE_UUID_PREFIX]
+		if _, ok := vdevMap[vdevID]; !ok {
+			vdevMap[vdevID] = &ctlplfl.Vdev{
+				VdevID: vdevID,
+			}
+		}
+		vdev := vdevMap[vdevID]
+
+		switch parts[BASE_KEY] {
+		case vdevCfgKey:
+			// Ensure parts has ELEMENT_KEY index reachable
+			if len(parts) <= ELEMENT_KEY {
+				continue
+			}
+			switch parts[ELEMENT_KEY] {
+			case SIZE:
+				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+					vdev.Size = sz
+				}
+			case NUM_CHUNKS:
+				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+					vdev.NumChunks = uint32(nc)
+				}
+			case NUM_REPLICAS:
+				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+					vdev.NumReplica = uint8(nr)
+				}
+			}
+		case vdevKey:
+			// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
+			if len(parts) < 4 {
+				continue
+			}
+			nisdID := string(value)
+
+			// ensure per-vdev map exists
+			if _, ok := vdevNisdChunkMap[vdevID]; !ok {
+				vdevNisdChunkMap[vdevID] = make(map[string]*ctlplfl.NisdChunk)
+			}
+			perVdevMap := vdevNisdChunkMap[vdevID]
+
+			// if chunk index is stored in parts[3] (original code used parts[3])
+			chunkIdx := -1
+			if idx, err := strconv.Atoi(parts[3]); err == nil {
+				chunkIdx = idx
+			}
+
+			// create nisd chunk entry for this vdev if not present
+			if _, ok := perVdevMap[nisdID]; !ok {
+				// lookup nisd entity from parsed nisd map
+				if ent, ok := nisdEntityMap[nisdID]; ok {
+					// ent is Entity (interface) created by nisdParser (pointer to ctlplfl.Nisd)
+					if nisdPtr, ok := ent.(*ctlplfl.Nisd); ok {
+						perVdevMap[nisdID] = &ctlplfl.NisdChunk{
+							Nisd:  *nisdPtr,
+							Chunk: make([]int, 0),
+						}
+					} else {
+						// fallback: create minimal Nisd with ID only
+						perVdevMap[nisdID] = &ctlplfl.NisdChunk{
+							Nisd:  ctlplfl.Nisd{ID: nisdID},
+							Chunk: make([]int, 0),
+						}
+					}
+				} else {
+					// fallback: create minimal Nisd with ID only
+					perVdevMap[nisdID] = &ctlplfl.NisdChunk{
+						Nisd:  ctlplfl.Nisd{ID: nisdID},
+						Chunk: make([]int, 0),
+					}
+				}
+			}
+			if chunkIdx >= 0 {
+				perVdevMap[nisdID].Chunk = append(perVdevMap[nisdID].Chunk, chunkIdx)
+			}
+		}
+	}
+
+	vdevList := make([]*ctlplfl.Vdev, 0, len(vdevMap))
+	// attach only the nisd chunks that belong to each vdev
+	for vid, v := range vdevMap {
+		if perVdevMap, ok := vdevNisdChunkMap[vid]; ok {
+			for _, nc := range perVdevMap {
+				v.NisdToChkMap = append(v.NisdToChkMap, *nc)
+			}
+		}
+		vdevList = append(vdevList, v)
+	}
+
+	return pmCmn.Encoder(ENC_TYPE, vdevList)
 }
