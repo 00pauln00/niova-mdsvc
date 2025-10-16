@@ -35,7 +35,8 @@ func (c *Config) AddPDU(pdu *ctlplfl.PDU) {
 		pdu.ID = uuid.New().String()
 	}
 
-	//TODO query control plane to get existing PDUs
+	// Query control plane to get existing PDUs if client is available
+	// This is handled in the UI layer where cpClient is available
 	// Check if PDU exists by name
 	for i, existing := range c.PDUs {
 		if existing.Name == pdu.Name {

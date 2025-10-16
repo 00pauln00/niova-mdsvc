@@ -190,6 +190,8 @@ type model struct {
 	cpRaftUUID   string
 	cpGossipPath string
 	cpConnected  bool
+	cpPDUs       []ctlplfl.PDU // PDU data from Control Plane
+	cpPDURefresh bool          // Flag to trigger PDU refresh from CP
 
 	// General
 	message  string
@@ -3910,12 +3912,11 @@ func (m model) updatePDUManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.message = ""
 				return m, textinput.Blink
 			case 1: // View PDU
-				if len(m.config.PDUs) > 0 {
-					m.state = stateViewPDU
-					m.pduListCursor = 0
-					m.message = ""
-					return m, nil
-				}
+				m.state = stateViewPDU
+				m.pduListCursor = 0
+				m.cpPDURefresh = true // Trigger CP query
+				m.message = "Loading PDU details from Control Plane..."
+				return m, nil
 			case 2: // Edit PDU
 				if len(m.config.PDUs) > 0 {
 					m.state = stateEditPDU
@@ -4080,6 +4081,41 @@ func (m model) updateDeletePDU(msg tea.Msg) (model, tea.Cmd) {
 }
 
 func (m model) updateViewPDU(msg tea.Msg) (model, tea.Cmd) {
+	// Query Control Plane for PDU data when refresh is needed
+	if m.cpPDURefresh {
+		log.Info("Refreshing PDUs from Control Plane...")
+		log.Info("  cpEnabled: ", m.cpEnabled)
+		log.Info("  cpClient is nil: ", m.cpClient == nil)
+		log.Info("  cpRaftUUID: ", m.cpRaftUUID)
+		log.Info("  cpGossipPath: ", m.cpGossipPath)
+
+		// If control plane client is available, fetch PDU data from CP
+		if m.cpClient != nil {
+			log.Info("Calling GetPDUs with GetAll=true")
+			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
+			if err != nil {
+				// Log error and show empty list
+				log.Error("Failed to query PDUs from Control Plane: ", err)
+				m.message = "Error: Could not fetch PDU data from Control Plane: " + err.Error()
+				m.cpPDUs = []ctlplfl.PDU{} // Show empty list on error
+			} else {
+				// Show only CP data, no merging with config file
+				m.cpPDUs = cpPDUs
+				m.message = fmt.Sprintf("PDU data loaded from Control Plane (%d PDUs)", len(cpPDUs))
+				log.Info("Successfully retrieved ", len(cpPDUs), " PDUs from Control Plane")
+			}
+		} else {
+			m.message = "Control Plane client not initialized"
+			m.cpPDUs = []ctlplfl.PDU{} // Show empty list when no CP client
+			log.Warn("cpClient is nil, cannot query Control Plane")
+		}
+
+		m.cpPDURefresh = false
+	}
+
+	// Always use CP PDUs (empty if CP unavailable)
+	pdus := m.cpPDUs
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -4088,9 +4124,14 @@ func (m model) updateViewPDU(msg tea.Msg) (model, tea.Cmd) {
 				m.pduListCursor--
 			}
 		case "down", "j":
-			if m.pduListCursor < len(m.config.PDUs)-1 {
+			if m.pduListCursor < len(pdus)-1 {
 				m.pduListCursor++
 			}
+		case "r":
+			// Refresh PDU data from Control Plane
+			m.cpPDURefresh = true
+			m.message = "Refreshing PDU data from Control Plane..."
+			return m, nil
 		case "enter", " ":
 			// Just navigate through PDUs, no action needed
 			return m, nil
@@ -4577,21 +4618,41 @@ func (m model) viewDeletePDU() string {
 	return s.String()
 }
 
+
 func (m model) viewViewPDU() string {
 	title := titleStyle.Render("View PDU Details")
 
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
 
-	if len(m.config.PDUs) == 0 {
-		s.WriteString("No PDUs configured.\n\n")
-		s.WriteString("Press esc to go back")
+	// Always use only CP PDUs - no fallback to config file
+	pdus := m.cpPDUs
+	log.Info("m.cpPDUs in viewViewPDU: ", m.cpPDUs)
+
+	// Show data source indicator and CP status
+	if m.cpClient != nil && len(m.cpPDUs) > 0 {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("📡 Data from Control Plane") + "\n")
+	} else if m.cpClient != nil {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("⚠️  Control Plane connected, no PDU data available") + "\n")
+	} else if m.cpEnabled {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render("❌ Control Plane enabled but client not initialized") + "\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(fmt.Sprintf("    RaftUUID: %s", m.cpRaftUUID)) + "\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(fmt.Sprintf("    GossipPath: %s", m.cpGossipPath)) + "\n")
+	} else {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render("❌ Control Plane not enabled") + "\n")
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("    Use: ./niova-ctl -cp -raft-uuid <uuid> -gossip-path <path>") + "\n")
+	}
+
+	if len(pdus) == 0 {
+		s.WriteString("\nNo PDUs available from Control Plane.\n\n")
+		s.WriteString("Press r to refresh, esc to go back")
 		return s.String()
 	}
+	s.WriteString("\n")
 
 	s.WriteString("PDU Details:\n\n")
 
-	for i, pdu := range m.config.PDUs {
+	for i, pdu := range pdus {
 		cursor := "  "
 		if i == m.pduListCursor {
 			cursor = "▶ "
@@ -4607,6 +4668,7 @@ func (m model) viewViewPDU() string {
 			s.WriteString(selectedItemStyle.Render(headerLine) + "\n")
 
 			// Detailed view for selected PDU
+			s.WriteString(fmt.Sprintf("    Name: %s\n", pdu.Name))
 			s.WriteString(fmt.Sprintf("    UUID: %s\n", pdu.ID))
 			if pdu.Specification != "" {
 				s.WriteString(fmt.Sprintf("    Description: %s\n", pdu.Specification))
@@ -4661,7 +4723,7 @@ func (m model) viewViewPDU() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString("Controls: ↑/↓ navigate PDUs, esc back to PDU management")
+	s.WriteString("Controls: ↑/↓ navigate PDUs, r refresh from Control Plane, esc back to PDU management")
 
 	return s.String()
 }
