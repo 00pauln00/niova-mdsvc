@@ -5028,6 +5028,7 @@ func (m model) viewViewRack() string {
 			// Detailed view for selected rack
 			s.WriteString(fmt.Sprintf("    UUID: %s\n", rack.ID))
 			s.WriteString(fmt.Sprintf("    Name: %s\n", rack.Name))
+			s.WriteString(fmt.Sprintf("    PDUID: %s\n", rack.PDUID))
 			if rack.Specification != "" {
 				s.WriteString(fmt.Sprintf("    Description: %s\n", rack.Specification))
 			}
