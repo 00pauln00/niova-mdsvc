@@ -193,6 +193,7 @@ func TestMultiCreateVdev(t *testing.T) {
 		Size: 700 * 1024 * 1024 * 1024}
 	err := c.CreateVdev(vdev1)
 	log.Info("CreateMultiVdev Result 1: ", vdev1)
+	VDEV_ID = vdev1.VdevID
 	assert.NoError(t, err)
 
 	vdev2 := &cpLib.Vdev{
@@ -212,23 +213,23 @@ func TestGetAllVdev(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// func TestGetSpecificVdev(t *testing.T) {
-// 	c := newClient(t)
-// 	req := &cpLib.GetReq{
-// 		ID:     VDEV_ID,
-// 		GetAll: false,
-// 	}
-// 	resp, err := c.GetVdevs(req)
-// 	log.Info("vdevs response: ", resp)
-// 	assert.NoError(t, err)
-// }
+func TestGetSpecificVdev(t *testing.T) {
+	c := newClient(t)
+	req := &cpLib.GetReq{
+		ID:     VDEV_ID,
+		GetAll: false,
+	}
+	resp, err := c.GetVdevs(req)
+	log.Info("vdevs response: ", resp)
+	assert.NoError(t, err)
+}
 
 func TestPutPartition(t *testing.T) {
 	c := newClient(t)
 	pt := &cpLib.DevicePartition{
-		PartitionUUID: "96ea4c60-a5df-11f0-a315-fb09c06e6471",
-		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
-		Size:          10 * 1024 * 1024 * 1024,
+		PartitionID: "96ea4c60-a5df-11f0-a315-fb09c06e6471",
+		DevID:       "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
+		Size:        10 * 1024 * 1024 * 1024,
 	}
 	resp, err := c.PutPartition(pt)
 	log.Info("created partition: ", resp)

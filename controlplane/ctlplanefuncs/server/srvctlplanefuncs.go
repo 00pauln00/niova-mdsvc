@@ -33,8 +33,9 @@ const (
 	NUM_REPLICAS   = "nr"
 	ERASURE_CODE   = "e"
 
-	nisdCfgKey   = "n_cfg"
-	vdevCfgKey   = "v_cfg"
+	nisdCfgKey = "n_cfg"
+	//vdevCfgKey   = "v_cfg"
+	cfgkey       = "cfg"
 	deviceCfgKey = "d_cfg"
 	sdeviceKey   = "sd"
 	parentInfo   = "pi"
@@ -296,7 +297,7 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	key := getConfKey(vdevCfgKey, vdev.VdevID)
+	key := getConfKey(vdevKey, vdev.VdevID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
@@ -310,7 +311,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 			continue
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, cfgkey, field)),
 			Value: []byte(value),
 		})
 	}
@@ -576,13 +577,9 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 		}
 		vdev := vdevMap[vdevID]
 
-		switch parts[BASE_KEY] {
-		case vdevCfgKey:
-			// Ensure parts has ELEMENT_KEY index reachable
-			if len(parts) <= ELEMENT_KEY {
-				continue
-			}
-			switch parts[ELEMENT_KEY] {
+		switch parts[VDEV_CFG_C_KEY] {
+		case cfgkey:
+			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
 				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
 					vdev.Size = sz
@@ -596,7 +593,7 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 					vdev.NumReplica = uint8(nr)
 				}
 			}
-		case vdevKey:
+		case chunkKey:
 			// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
 			if len(parts) < 4 {
 				continue

@@ -12,6 +12,8 @@ const ( // Key Prefixes
 	BASE_UUID_PREFIX = 1
 	ELEMENT_KEY      = 2
 	KEY_LEN          = 3
+	VDEV_CFG_C_KEY   = 2
+	VDEV_ELEMENT_KEY = 3
 )
 
 type Entity interface{}
