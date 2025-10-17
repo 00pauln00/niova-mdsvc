@@ -67,26 +67,25 @@ func main() {
 			ID:     nisd.DevID,
 			GetAll: false,
 		}
-		devInfo, err := c.GetDeviceInfo(req)
+		pt, err := c.GetPartition(req)
 		if err != nil {
 			log.Error("failed to get device uuid: ", err)
 			os.Exit(-1)
 		}
-		log.Info("fetched device info from control plane: ", devInfo[ZERO_INDEX].Partitions[ZERO_INDEX].NISDUUID)
-		for _, pt := range devInfo[ZERO_INDEX].Partitions {
-			log.Info("setting nisd id: ", pt.NISDUUID)
-			req.ID = pt.NISDUUID
-			nisdInfo, err := c.GetNisdCfg(req)
-			if err != nil {
-				log.Error("failed to get nisd details: ", err)
-				os.Exit(-1)
-			}
-			conf.NisdConfig[i].ID = nisdInfo[ZERO_INDEX].ID
-			conf.NisdConfig[i].ClientPort = nisdInfo[ZERO_INDEX].ClientPort
-			conf.NisdConfig[i].PeerPort = nisdInfo[ZERO_INDEX].PeerPort
-			conf.NisdConfig[i].DevID = nisdInfo[ZERO_INDEX].DevID
-			log.Info("fetched nisd info from control plane: ", nisdInfo[ZERO_INDEX])
+		log.Info("fetched device info from control plane: ", pt[ZERO_INDEX].NISDUUID)
+
+		log.Info("setting nisd id: ", pt[ZERO_INDEX].NISDUUID)
+		req.ID = pt[ZERO_INDEX].NISDUUID
+		nisdInfo, err := c.GetNisdCfg(req)
+		if err != nil {
+			log.Error("failed to get nisd details: ", err)
+			os.Exit(-1)
 		}
+		conf.NisdConfig[i].ID = nisdInfo[ZERO_INDEX].ID
+		conf.NisdConfig[i].ClientPort = nisdInfo[ZERO_INDEX].ClientPort
+		conf.NisdConfig[i].PeerPort = nisdInfo[ZERO_INDEX].PeerPort
+		conf.NisdConfig[i].DevID = nisdInfo[ZERO_INDEX].DevID
+		log.Info("fetched nisd info from control plane: ", nisdInfo[ZERO_INDEX])
 
 	}
 
