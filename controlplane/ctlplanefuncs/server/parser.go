@@ -139,15 +139,20 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 		switch parts[ELEMENT_KEY] {
 		case hvKey:
 			dev.HypervisorID = string(value)
-		case NISD_ID:
-			dev.NisdID = string(value)
 		case SERIAL_NUM:
 			dev.SerialNumber = string(value)
-		case STATUS:
-			status, _ := strconv.Atoi(string(value))
-			dev.Status = uint16(status)
+		case STATE:
+			state, _ := strconv.Atoi(string(value))
+			dev.State = uint16(state)
 		case FAILURE_DOMAIN:
 			dev.FailureDomain = string(value)
+		case DEVICE_PATH:
+			dev.DevicePath = string(value)
+		case NAME:
+			dev.Name = string(value)
+		case SIZE:
+			sz, _ := strconv.Atoi(string(value))
+			dev.Size = int64(sz)
 		}
 	}
 }
@@ -166,7 +171,7 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	nisd := entity.(*ctlplfl.Nisd)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
-		case DEVICE_NAME:
+		case DEVICE_ID:
 			nisd.DevID = string(value)
 		case CLIENT_PORT:
 			p, _ := strconv.Atoi(string(value))
@@ -225,11 +230,16 @@ func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 	pt := entity.(*ctlplfl.DevicePartition)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
-		case DEVICE_NAME:
+		case DEVICE_ID:
 			pt.DevID = string(value)
 		case SIZE:
 			s, _ := strconv.Atoi(string(value))
 			pt.Size = int64(s)
+		case PARTITION_PATH:
+			pt.PartitionPath = string(value)
+		case nisdKey:
+			pt.NISDUUID = string(value)
+
 		}
 	}
 }

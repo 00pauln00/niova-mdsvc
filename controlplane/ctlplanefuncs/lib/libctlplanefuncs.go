@@ -63,14 +63,13 @@ type Device struct {
 	Name         string `xml:"Name" json:"Name"` // For display purposes
 	DevicePath   string `xml:"device_path,omitempty" json:"DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
-	Status       uint16 `xml:"Status" json:"Status"`
+	State        uint16 `xml:"State" json:"State"`
 	Size         int64  `xml:"Size" json:"Size"`
 	Initialized  bool   `xml:"Initialized" json:"initialized"`
 	//Parent info
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
 	//Child info
-	NisdID     string            `xml:"NisdID" json:"NisdID"`
 	Partitions []DevicePartition `json:"partitions,omitempty"`
 }
 

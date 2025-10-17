@@ -50,18 +50,26 @@ type partitionPopulator struct{}
 
 func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	pt := entity.(*cpLib.DevicePartition)
-	*commitChgs = append(*commitChgs,
-		funclib.CommitChg{
-			Key: []byte(getConfKey(entityKey, pt.PartitionID)),
-		},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(entityKey, pt.PartitionID), DEVICE_NAME)),
-			Value: []byte(pt.DevID),
-		}, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(entityKey, pt.PartitionID), SIZE)),
-			Value: []byte(strconv.Itoa(int(pt.Size))),
-		},
-	)
+	key := getConfKey(entityKey, pt.PartitionID)
+	for _, field := range []string{PARTITION_PATH, nisdKey, DEVICE_ID, SIZE} {
+		var value string
+		switch field {
+		case PARTITION_PATH:
+			value = pt.PartitionPath
+		case nisdKey:
+			value = pt.NISDUUID
+		case DEVICE_ID:
+			value = pt.DevID
+		case SIZE:
+			value = strconv.Itoa(int(pt.Size))
+		default:
+			continue
+		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Value: []byte(value),
+		})
+	}
 }
 
 type nisdPopulator struct{}
@@ -71,7 +79,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	key := getConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
+	for _, field := range []string{DEVICE_ID, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
 		var value string
 		switch field {
 		case CLIENT_PORT:
@@ -88,7 +96,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 			value = strconv.Itoa(int(nisd.TotalSize))
 		case AVAIL_SPACE:
 			value = strconv.Itoa(int(nisd.AvailableSize))
-		case DEVICE_NAME:
+		case DEVICE_ID:
 			value = nisd.DevID
 		default:
 			continue
@@ -110,19 +118,24 @@ func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, 
 		Key: []byte(fmt.Sprintf("%s", k)),
 	})
 	//Schema : /d/{devID}/{field} : {value}
-	for _, field := range []string{NISD_ID, SERIAL_NUM, STATUS, hvKey, FAILURE_DOMAIN} {
+	for _, field := range []string{NAME, DEVICE_PATH, STATE, SIZE, SERIAL_NUM, hvKey, FAILURE_DOMAIN} {
 		var value string
 		switch field {
 		case SERIAL_NUM:
 			value = dev.SerialNumber
-		case STATUS:
-			value = strconv.Itoa(int(dev.Status))
+		case STATE:
+			value = strconv.Itoa(int(dev.State))
 		case hvKey:
 			value = dev.HypervisorID
 		case FAILURE_DOMAIN:
 			value = dev.FailureDomain
-		case NISD_ID:
-			value = dev.NisdID
+		case SIZE:
+			value = strconv.Itoa(int(dev.Size))
+		case DEVICE_PATH:
+			value = dev.DevicePath
+		case NAME:
+			value = dev.Name
+
 		default:
 			continue
 		}

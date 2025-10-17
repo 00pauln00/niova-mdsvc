@@ -18,10 +18,10 @@ import (
 var colmfamily string
 
 const (
-	DEVICE_NAME    = "d"
+	DEVICE_ID      = "d"
 	NISD_ID        = "n"
 	SERIAL_NUM     = "sn"
-	STATUS         = "s"
+	STATE          = "s"
 	FAILURE_DOMAIN = "fd"
 	CLIENT_PORT    = "cp"
 	PEER_PORT      = "pp"
@@ -38,9 +38,10 @@ const (
 	NAME           = "nm"
 	PORT_RANGE     = "pr"
 	SSH_PORT       = "ssh"
+	DEVICE_PATH    = "dp"
+	PARTITION_PATH = "ptp"
 
-	nisdCfgKey = "n_cfg"
-	//vdevCfgKey   = "v_cfg"
+	nisdCfgKey   = "n_cfg"
 	cfgkey       = "cfg"
 	deviceCfgKey = "d_cfg"
 	sdeviceKey   = "sd"
@@ -252,12 +253,8 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 }
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-	// Limited to update only
-	// DevID, SerialNumber, Status
-	// HypervisorID, FailureDomain (Parent Info)
 	dev := args[0].(ctlplfl.Device)
 
-	// TODO: use a common response struct for all the read functions
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    dev.ID,
 		Success: true,
@@ -269,6 +266,10 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
 	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{}, deviceCfgKey)
+	for _, pt := range dev.Partitions {
+		ptCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, dev.ID, ptKey))
+		commitChgs = append(commitChgs, ptCommits...)
+	}
 
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{

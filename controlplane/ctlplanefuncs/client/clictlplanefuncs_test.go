@@ -93,28 +93,55 @@ func TestPutAndGetDevice(t *testing.T) {
 
 	mockDevices := []cpLib.Device{
 		{
-			ID:            "dev-001",
+			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
 			SerialNumber:  "SN123456789",
-			Status:        1,
+			State:         1,
 			HypervisorID:  "hv-01",
 			FailureDomain: "fd-01",
-			NisdID:        "nisd-001",
+			DevicePath:    "/temp/path1",
+			Name:          "dev-1",
 		},
 		{
-			ID:            "dev-002",
+			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
 			SerialNumber:  "SN987654321",
-			Status:        0,
+			State:         0,
 			HypervisorID:  "hv-02",
 			FailureDomain: "fd-01",
-			NisdID:        "nisd-002",
+			DevicePath:    "/temp/path2",
+			Name:          "dev-2",
+			Size:          12345689,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c34qwe-9775558a141a",
+				PartitionPath: "/part/path1",
+				NISDUUID:      "1",
+				DevID:         "60447cdsad0-ab3e-1342340dd976538",
+				Size:          123467,
+			}, cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
+				PartitionPath: "/part/path2",
+				NISDUUID:      "1",
+				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
+				Size:          123467,
+			},
+			},
 		},
 		{
-			ID:            "dev-003",
+			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
 			SerialNumber:  "SN112233445",
-			Status:        2,
+			State:         2,
 			HypervisorID:  "hv-01",
 			FailureDomain: "fd-02",
-			NisdID:        "nisd-003",
+			DevicePath:    "/temp/path3",
+			Name:          "dev-3",
+			Size:          9999999,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+				PartitionPath: "/part/path3",
+				NISDUUID:      "1",
+				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				Size:          123467,
+			},
+			},
 		},
 	}
 
@@ -124,8 +151,12 @@ func TestPutAndGetDevice(t *testing.T) {
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: "dev-002"})
-	log.Infof("device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
+	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+	assert.NoError(t, err)
+
+	res, err = c.GetDeviceInfo(cpLib.GetReq{GetAll: true})
+	log.Infof("fetech all device list: %v", res)
 	assert.NoError(t, err)
 
 }
@@ -234,12 +265,14 @@ func TestGetSpecificVdev(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestPutPartition(t *testing.T) {
+func TestPutAndGetPartition(t *testing.T) {
 	c := newClient(t)
 	pt := &cpLib.DevicePartition{
-		PartitionID: "96ea4c60-a5df-11f0-a315-fb09c06e6471",
-		DevID:       "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
-		Size:        10 * 1024 * 1024 * 1024,
+		PartitionID:   "96ea4c60-a5df-11f0-a315-fb09c06e6471",
+		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
+		Size:          10 * 1024 * 1024 * 1024,
+		PartitionPath: "some path",
+		NISDUUID:      "b962cea8-ab42-11f0-a0ad-1bd216770b60",
 	}
 	resp, err := c.PutPartition(pt)
 	log.Info("created partition: ", resp)
