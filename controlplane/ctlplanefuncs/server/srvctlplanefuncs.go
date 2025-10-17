@@ -248,7 +248,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceParser{})
+	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceWithPartitionParser{})
 	return pmCmn.Encoder(pmCmn.GOB, deviceList)
 }
 
@@ -399,6 +399,8 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to encode pt response: %v", err)
 	}
 	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, ptKey)
+	devPTCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, pt.DevID, ptKey))
+	commitChgs = append(commitChgs, devPTCommits...)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,

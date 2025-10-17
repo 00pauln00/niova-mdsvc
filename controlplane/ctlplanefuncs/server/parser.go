@@ -244,3 +244,74 @@ func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
+
+type deviceWithPartitionParser struct{}
+
+func (deviceWithPartitionParser) GetRootKey() string { return deviceCfgKey }
+
+func (deviceWithPartitionParser) NewEntity(id string) Entity {
+	return &ctlplfl.Device{ID: id, Partitions: make([]ctlplfl.DevicePartition, 0)}
+}
+
+func (deviceWithPartitionParser) ParseField(entity Entity, parts []string, value []byte) {
+	dev := entity.(*ctlplfl.Device)
+
+	// d_cfg/<dev-id>/field
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
+		case hvKey:
+			dev.HypervisorID = string(value)
+		case SERIAL_NUM:
+			dev.SerialNumber = string(value)
+		case STATE:
+			state, _ := strconv.Atoi(string(value))
+			dev.State = uint16(state)
+		case FAILURE_DOMAIN:
+			dev.FailureDomain = string(value)
+		case DEVICE_PATH:
+			dev.DevicePath = string(value)
+		case NAME:
+			dev.Name = string(value)
+		case SIZE:
+			sz, _ := strconv.Atoi(string(value))
+			dev.Size = int64(sz)
+		}
+		return
+	}
+
+	// d_cfg/<dev-id>/pt/<pt-id>/<pt-field>
+	if len(parts) > ELEMENT_KEY && parts[ELEMENT_KEY] == ptKey && len(parts) >= (ELEMENT_KEY+2) {
+		ptID := parts[ELEMENT_KEY+1]
+
+		// find or create partition
+		var pt *ctlplfl.DevicePartition
+		for i := range dev.Partitions {
+			if dev.Partitions[i].PartitionID == ptID {
+				pt = &dev.Partitions[i]
+				break
+			}
+		}
+		if pt == nil {
+			dev.Partitions = append(dev.Partitions, ctlplfl.DevicePartition{PartitionID: ptID})
+			pt = &dev.Partitions[len(dev.Partitions)-1]
+		}
+
+		// assign partition field
+		field := parts[ELEMENT_KEY+2]
+		switch field {
+		case DEVICE_ID:
+			pt.DevID = string(value)
+		case SIZE:
+			s, _ := strconv.Atoi(string(value))
+			pt.Size = int64(s)
+		case PARTITION_PATH:
+			pt.PartitionPath = string(value)
+		case nisdKey:
+			pt.NISDUUID = string(value)
+		}
+	}
+}
+
+func (deviceWithPartitionParser) GetEntity(entity Entity) Entity {
+	return *entity.(*ctlplfl.Device)
+}

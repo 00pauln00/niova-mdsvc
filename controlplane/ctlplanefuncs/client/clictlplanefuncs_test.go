@@ -156,7 +156,7 @@ func TestPutAndGetDevice(t *testing.T) {
 	assert.NoError(t, err)
 
 	res, err = c.GetDeviceInfo(cpLib.GetReq{GetAll: true})
-	log.Infof("fetech all device list: %v", res)
+	log.Infof("fetech all device list: %s,%v", res[0].ID, res[0].Partitions)
 	assert.NoError(t, err)
 
 }
