@@ -221,7 +221,7 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	nisd := args[0].(ctlplfl.Nisd)
-	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, nisdCfgKey)
 
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    nisd.ID,
@@ -268,7 +268,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal nisd response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{}, deviceCfgKey)
 
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
@@ -397,7 +397,7 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode pt response: %v", err)
 	}
-	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, ptKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -431,7 +431,7 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to  encode pdu response: %v", err)
 	}
-	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{}, pduKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
@@ -465,7 +465,7 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		Name:    rack.ID,
 		Success: true,
 	}
-	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
 	if err != nil {
 		return nil, err
@@ -512,7 +512,7 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
-	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{})
+	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{}, hvKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,

@@ -10,20 +10,20 @@ import (
 
 // Population strategy
 type PopulateInfra interface {
-	Populate(entity Entity, commitChgs *[]funclib.CommitChg)
+	Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string)
 }
 
-func PopulateEntities[T Entity](entity T, infra PopulateInfra) []funclib.CommitChg {
+func PopulateEntities[T Entity](entity T, infra PopulateInfra, entityKey string) []funclib.CommitChg {
 	commitChgs := make([]funclib.CommitChg, 0)
-	infra.Populate(entity, &commitChgs)
+	infra.Populate(entity, &commitChgs, entityKey)
 	return commitChgs
 }
 
 type rackPopulator struct{}
 
-func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	rack := entity.(*cpLib.Rack)
-	key := getConfKey(rackKey, rack.ID)
+	key := getConfKey(entityKey, rack.ID)
 	for _, field := range []string{NAME, LOCATION, SPEC, pduKey} {
 		var value string
 		switch field {
@@ -48,17 +48,17 @@ func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 
 type partitionPopulator struct{}
 
-func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	pt := entity.(*cpLib.DevicePartition)
 	*commitChgs = append(*commitChgs,
 		funclib.CommitChg{
-			Key: []byte(getConfKey(ptKey, pt.PartitionID)),
+			Key: []byte(getConfKey(entityKey, pt.PartitionID)),
 		},
 		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(ptKey, pt.PartitionID), DEVICE_NAME)),
+			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(entityKey, pt.PartitionID), DEVICE_NAME)),
 			Value: []byte(pt.DevID),
 		}, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(ptKey, pt.PartitionID), SIZE)),
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(entityKey, pt.PartitionID), SIZE)),
 			Value: []byte(strconv.Itoa(int(pt.Size))),
 		},
 	)
@@ -66,9 +66,9 @@ func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitCh
 
 type nisdPopulator struct{}
 
-func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	nisd := entity.(*cpLib.Nisd)
-	key := getConfKey(nisdCfgKey, nisd.ID)
+	key := getConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
 	for _, field := range []string{DEVICE_NAME, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
@@ -102,10 +102,10 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 
 type devicePopulator struct{}
 
-func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	dev := entity.(*cpLib.Device)
 
-	k := getConfKey(deviceCfgKey, dev.ID)
+	k := getConfKey(entityKey, dev.ID)
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key: []byte(fmt.Sprintf("%s", k)),
 	})
@@ -155,9 +155,9 @@ func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) 
 
 type hvPopulator struct{}
 
-func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	hv := entity.(*cpLib.Hypervisor)
-	key := getConfKey(hvKey, hv.ID)
+	key := getConfKey(entityKey, hv.ID)
 	for _, field := range []string{rackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT} {
 		var value string
 		switch field {
@@ -184,9 +184,9 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 
 type pduPopulator struct{}
 
-func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
+func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	pdu := entity.(*cpLib.PDU)
-	key := getConfKey(pduKey, pdu.ID)
+	key := getConfKey(entityKey, pdu.ID)
 	*commitChgs = append(*commitChgs,
 		funclib.CommitChg{
 			Key: []byte(getConfKey(pduKey, pdu.ID)),
