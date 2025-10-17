@@ -30,6 +30,12 @@ const (
 	GET_PARTITION  = "GetPartition"
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	NAME           = "name"
+
+	UNINITIALIZED = 1
+	INITIALIZED   = 2
+	RUNNING       = 3
+	FAILED        = 4
+	STOPPED       = 5
 )
 
 // Define Snapshot XML structure
