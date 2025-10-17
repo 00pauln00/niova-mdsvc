@@ -182,8 +182,8 @@ func TestPutAndGetHypervisor(t *testing.T) {
 	c := newClient(t)
 
 	hypervisors := []cpLib.Hypervisor{
-		{RackID: "rack-1", ID: "hv-1", IPAddress: "127.0.0.1"},
-		{RackID: "rack-2", ID: "hv-2", IPAddress: "127.0.0.2"},
+		{RackID: "rack-1", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddress: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
+		{RackID: "rack-2", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
 	}
 
 	for _, hv := range hypervisors {

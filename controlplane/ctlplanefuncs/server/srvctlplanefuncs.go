@@ -36,6 +36,8 @@ const (
 	POWER_CAP      = "pw"
 	SPEC           = "sp"
 	NAME           = "nm"
+	PORT_RANGE     = "pr"
+	SSH_PORT       = "ssh"
 
 	nisdCfgKey = "n_cfg"
 	//vdevCfgKey   = "v_cfg"

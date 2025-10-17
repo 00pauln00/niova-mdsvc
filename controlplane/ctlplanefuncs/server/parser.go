@@ -114,6 +114,12 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 			hv.RackID = string(value)
 		case IP_ADDR:
 			hv.IPAddress = string(value)
+		case PORT_RANGE:
+			hv.PortRange = string(value)
+		case SSH_PORT:
+			hv.SSHPort = string(value)
+		case NAME:
+			hv.Name = string(value)
 		}
 	}
 }

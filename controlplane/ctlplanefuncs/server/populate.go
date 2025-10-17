@@ -157,17 +157,29 @@ type hvPopulator struct{}
 
 func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	hv := entity.(*cpLib.Hypervisor)
-	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key: []byte(getConfKey(hvKey, hv.ID)),
-	},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/", getConfKey(hvKey, hv.ID), rackKey)),
-			Value: []byte(hv.RackID),
-		}, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(hvKey, hv.ID), IP_ADDR)),
-			Value: []byte(hv.IPAddress),
-		},
-	)
+	key := getConfKey(hvKey, hv.ID)
+	for _, field := range []string{rackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT} {
+		var value string
+		switch field {
+		case NAME:
+			value = hv.Name
+		case IP_ADDR:
+			value = hv.IPAddress
+		case PORT_RANGE:
+			value = hv.PortRange
+		case SSH_PORT:
+			value = hv.SSHPort
+		case rackKey:
+			value = hv.RackID
+
+		default:
+			continue
+		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Value: []byte(value),
+		})
+	}
 }
 
 type pduPopulator struct{}
