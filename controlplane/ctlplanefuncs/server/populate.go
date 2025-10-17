@@ -23,15 +23,27 @@ type rackPopulator struct{}
 
 func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	rack := entity.(*cpLib.Rack)
-	*commitChgs = append(*commitChgs,
-		funclib.CommitChg{
-			Key: []byte(getConfKey(rackKey, rack.ID)),
-		},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(rackKey, rack.ID), pduKey)),
-			Value: []byte(rack.PDUID),
-		},
-	)
+	key := getConfKey(rackKey, rack.ID)
+	for _, field := range []string{NAME, LOCATION, SPEC, pduKey} {
+		var value string
+		switch field {
+		case NAME:
+			value = rack.Name
+		case LOCATION:
+			value = rack.Location
+		case SPEC:
+			value = rack.Specification
+		case pduKey:
+			value = rack.PDUID
+
+		default:
+			continue
+		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Value: []byte(value),
+		})
+	}
 }
 
 type partitionPopulator struct{}
@@ -162,21 +174,29 @@ type pduPopulator struct{}
 
 func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	pdu := entity.(*cpLib.PDU)
+	key := getConfKey(pduKey, pdu.ID)
 	*commitChgs = append(*commitChgs,
 		funclib.CommitChg{
 			Key: []byte(getConfKey(pduKey, pdu.ID)),
-		},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(pduKey, pdu.ID), LOCATION)),
-			Value: []byte(pdu.Location),
-		},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(pduKey, pdu.ID), POWER_CAP)),
-			Value: []byte(pdu.PowerCapacity),
-		},
-		funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(pduKey, pdu.ID), SPEC)),
-			Value: []byte(pdu.Specification),
-		},
-	)
+		})
+	for _, field := range []string{NAME, LOCATION, SPEC, POWER_CAP} {
+		var value string
+		switch field {
+		case NAME:
+			value = pdu.Name
+		case LOCATION:
+			value = pdu.Location
+		case SPEC:
+			value = pdu.Specification
+		case POWER_CAP:
+			value = pdu.PowerCapacity
+
+		default:
+			continue
+		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Value: []byte(value),
+		})
+	}
 }

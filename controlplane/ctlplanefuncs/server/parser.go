@@ -81,8 +81,19 @@ func (rackParser) NewEntity(id string) Entity {
 }
 func (rackParser) ParseField(entity Entity, parts []string, value []byte) {
 	r := entity.(*ctlplfl.Rack)
-	if len(parts) == KEY_LEN && parts[ELEMENT_KEY] == pduKey {
-		r.PDUID = string(value)
+
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
+		case LOCATION:
+			r.Location = string(value)
+		case pduKey:
+			r.PDUID = string(value)
+		case SPEC:
+			r.Specification = string(value)
+		case NAME:
+			r.Name = string(value)
+
+		}
 	}
 }
 
@@ -182,7 +193,6 @@ func (pduParser) NewEntity(id string) Entity {
 }
 func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
 	pdu := entity.(*ctlplfl.PDU)
-	pdu.ID = parts[BASE_UUID_PREFIX]
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case LOCATION:
@@ -191,6 +201,8 @@ func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
 			pdu.PowerCapacity = string(value)
 		case SPEC:
 			pdu.Specification = string(value)
+		case NAME:
+			pdu.Name = string(value)
 		}
 	}
 }

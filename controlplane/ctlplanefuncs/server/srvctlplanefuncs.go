@@ -35,6 +35,7 @@ const (
 	LOCATION       = "l"
 	POWER_CAP      = "pw"
 	SPEC           = "sp"
+	NAME           = "nm"
 
 	nisdCfgKey = "n_cfg"
 	//vdevCfgKey   = "v_cfg"
