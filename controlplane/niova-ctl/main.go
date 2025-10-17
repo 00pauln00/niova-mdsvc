@@ -76,6 +76,13 @@ const (
 	stateNISDSelection
 	stateShowStartedNISD
 	stateViewAllNISDs
+	// Vdev Management States
+	stateVdevManagement
+	stateVdevForm
+	stateVdevDeviceSelection
+	stateEditVdev
+	stateViewVdev
+	stateShowAddedVdev
 	// Configuration View
 	stateViewConfig
 )
@@ -96,6 +103,8 @@ const (
 	// Device partition specific
 	inputNISDInstance
 	inputPartitionSize
+	// Vdev specific
+	inputVdevSize
 )
 
 type model struct {
@@ -184,6 +193,12 @@ type model struct {
 	selectedDeviceForNISD     Device
 	selectedNISDToStart       ctlplfl.Nisd
 
+	// Vdev Management
+	vdevMgmtCursor         int
+	currentVdev            ctlplfl.Vdev
+	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
+	vdevSizeInput          textinput.Model
+
 	// Control Plane
 	cpClient      *ctlplcl.CliCFuncs
 	cpEnabled     bool
@@ -255,6 +270,13 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#01BE85")).
 				Bold(true)
+
+	helpStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666"))
+
+	selectedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#01BE85")).
+				Bold(true)
 )
 
 func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
@@ -301,6 +323,7 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
 		{"Manage Devices", "Initialize and partition devices on hypervisors"},
 		{"Manage NISDs", "Initialize NISD instances on device partitions"},
+		{"Manage Vdevs", "Create and manage virtual devices"},
 		{"View Configuration", "Display current hierarchical configuration"},
 		{"Save & Exit", "Save configuration and exit"},
 		{"Exit", "Exit without saving"},
@@ -524,6 +547,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateShowStartedNISD(msg)
 	case stateViewAllNISDs:
 		m, cmd = m.updateViewAllNISDs(msg)
+	// Vdev Management
+	case stateVdevManagement:
+		m, cmd = m.updateVdevManagement(msg)
+	case stateVdevForm:
+		m, cmd = m.updateVdevForm(msg)
+	case stateVdevDeviceSelection:
+		m, cmd = m.updateVdevDeviceSelection(msg)
+	case stateEditVdev:
+		m, cmd = m.updateEditVdev(msg)
+	case stateViewVdev:
+		m, cmd = m.updateViewVdev(msg)
+	case stateShowAddedVdev:
+		m, cmd = m.updateShowAddedVdev(msg)
 	// Control Plane
 	// Configuration View
 	case stateViewConfig:
@@ -582,7 +618,13 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
 				return m, nil
-			case 5: // View Configuration
+			case 5: // Manage Vdevs
+				m.state = stateVdevManagement
+				m.vdevMgmtCursor = 0
+				m.selectedDevicesForVdev = make(map[int]bool)
+				m.message = ""
+				return m, nil
+			case 6: // View Configuration
 				m.state = stateViewConfig
 				// Reset config cursor and expand states
 				m.configCursor = 0
@@ -598,7 +640,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				}
 				m = m.updateConfigView()
 				return m, nil
-			case 6: // Save & Exit
+			case 7: // Save & Exit
 				if err := m.config.SaveToFile(m.configPath); err != nil {
 					m.message = fmt.Sprintf("Error saving config: %v", err)
 					return m, nil
@@ -606,7 +648,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = fmt.Sprintf("Configuration saved to %s", m.configPath)
 				m.quitting = true
 				return m, tea.Quit
-			case 7: // Exit
+			case 8: // Exit
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -1196,37 +1238,36 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
+			m.message = fmt.Sprintf("Device %s initialized successfully", device.ID)
+
+			// Send to control plane if available
+			if m.cpClient != nil {
+				log.Info("Put device info")
+				// Get the updated device after initialization
+				updatedDevice := hv.Dev[m.selectedDeviceIdx]
+				deviceInfo := ctlplfl.Device{
+					ID:            updatedDevice.ID,
+					NisdID:        "", // Empty for now, can be set later
+					SerialNumber:  updatedDevice.SerialNumber,
+					Status:        0, // Active status
+					HypervisorID:  hv.ID,
+					FailureDomain: updatedDevice.FailureDomain,
+				}
+
+				_, cpErr := m.cpClient.PutDeviceInfo(&deviceInfo)
+				if cpErr != nil {
+					log.Warn("Failed to sync device to control plane: ", cpErr)
+					m.message += " (Control plane sync failed)"
+				} else {
+					log.Info("Successfully synced device to control plane")
+					m.message += " and synced to control plane"
+				}
+			} else {
+				log.Error("Failed to write DeviceInfo in CP")
+			}
 			// Save configuration
 			if err := m.config.SaveToFile(m.configPath); err != nil {
 				m.message = fmt.Sprintf("Device initialized but failed to save: %v", err)
-			} else {
-				m.message = fmt.Sprintf("Device %s initialized successfully", device.ID)
-
-				// Send to control plane if available
-				if m.cpClient != nil {
-					log.Info("Put device info")
-					// Get the updated device after initialization
-					updatedDevice := hv.Dev[m.selectedDeviceIdx]
-					deviceInfo := ctlplfl.Device{
-						ID:            updatedDevice.ID,
-						NisdID:        "", // Empty for now, can be set later
-						SerialNumber:  updatedDevice.SerialNumber,
-						Status:        0, // Active status
-						HypervisorID:  hv.ID,
-						FailureDomain: updatedDevice.FailureDomain,
-					}
-
-					_, cpErr := m.cpClient.PutDeviceInfo(&deviceInfo)
-					if cpErr != nil {
-						log.Warn("Failed to sync device to control plane: ", cpErr)
-						m.message += " (Control plane sync failed)"
-					} else {
-						log.Info("Successfully synced device to control plane")
-						m.message += " and synced to control plane"
-					}
-				} else {
-					log.Error("Failed to write DeviceInfo in CP")
-				}
 			}
 
 			m.state = stateDeviceManagement
@@ -1794,6 +1835,19 @@ func (m model) View() string {
 		return m.viewShowStartedNISD()
 	case stateViewAllNISDs:
 		return m.viewAllNISDs()
+	// Vdev Management Views
+	case stateVdevManagement:
+		return m.viewVdevManagement()
+	case stateVdevForm:
+		return m.viewVdevForm()
+	case stateVdevDeviceSelection:
+		return m.viewVdevDeviceSelection()
+	case stateEditVdev:
+		return m.viewEditVdev()
+	case stateViewVdev:
+		return m.viewViewVdev()
+	case stateShowAddedVdev:
+		return m.viewShowAddedVdev()
 	// Control Plane Views
 	// Configuration View
 	case stateViewConfig:
@@ -6494,6 +6548,487 @@ func (m model) viewAllNISDs() string {
 	s.WriteString("\n\nPress any key to return to NISD management")
 
 	return s.String()
+}
+
+// Vdev Management Functions
+
+func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.vdevMgmtCursor > 0 {
+				m.vdevMgmtCursor--
+			}
+		case "down", "j":
+			maxItems := 3 // Create Vdev, Edit Vdev, View Vdev
+			if m.vdevMgmtCursor < maxItems-1 {
+				m.vdevMgmtCursor++
+			}
+		case "enter", " ":
+			switch m.vdevMgmtCursor {
+			case 0: // Create Vdev
+				m.state = stateVdevDeviceSelection
+				m.selectedDevicesForVdev = make(map[int]bool)
+				m.message = ""
+				return m, nil
+			case 1: // Edit Vdev
+				m.state = stateEditVdev
+				m.message = ""
+				return m, nil
+			case 2: // View Vdev
+				m.state = stateViewVdev
+				m.message = ""
+				return m, nil
+			}
+		case "esc":
+			m.state = stateMenu
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewVdevManagement() string {
+	title := titleStyle.Render("Vdev Management")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	options := []string{
+		"Create Vdev",
+		"Edit Vdev",
+		"View Vdev",
+	}
+
+	for i, option := range options {
+		cursor := " "
+		if m.vdevMgmtCursor == i {
+			cursor = ">"
+		}
+		s.WriteString(fmt.Sprintf("%s %s\n", cursor, option))
+	}
+
+	s.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • esc: back"))
+
+	return s.String()
+}
+
+func (m model) updateVdevDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.deviceCursor > 0 {
+				m.deviceCursor--
+			}
+		case "down", "j":
+			// Get devices from control plane for navigation
+			var deviceCount int
+			if m.cpClient != nil && m.cpConnected {
+				req := ctlplfl.GetReq{ID: "", GetAll: true}
+				devices, err := m.cpClient.GetDeviceInfo(req)
+				if err == nil {
+					deviceCount = len(devices)
+				}
+			}
+			if m.deviceCursor < deviceCount-1 {
+				m.deviceCursor++
+			}
+		case "r", "R":
+			// Toggle device selection with 'R' key
+			m.selectedDevicesForVdev[m.deviceCursor] = !m.selectedDevicesForVdev[m.deviceCursor]
+		case "enter", " ":
+			// Continue to form after device selection
+			if len(m.selectedDevicesForVdev) > 0 {
+				// Validate that we still have control plane connection
+				if m.cpClient == nil || !m.cpConnected {
+					m.message = "Control plane connection lost"
+					return m, nil
+				}
+
+				m.state = stateVdevForm
+				m.focusedInput = inputVdevSize
+				// Initialize vdev size input
+				m.vdevSizeInput = textinput.New()
+				m.vdevSizeInput.Placeholder = "e.g., 10GB, 1TB, 1PB"
+				m.vdevSizeInput.Focus()
+				m.vdevSizeInput.CharLimit = 32
+				m.message = ""
+			} else {
+				m.message = "Please select at least one device using 'R' key"
+			}
+		case "esc":
+			m.state = stateVdevManagement
+			m.selectedDevicesForVdev = make(map[int]bool)
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewVdevDeviceSelection() string {
+	title := titleStyle.Render("Select Devices for Vdev Creation")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	// Query devices from control plane instead of using config
+	if m.cpClient == nil || !m.cpConnected {
+		s.WriteString(errorStyle.Render("Control plane not connected") + "\n\n")
+		s.WriteString("Please ensure control plane is connected to view devices.\n\n")
+		s.WriteString(helpStyle.Render("esc: back to Vdev management"))
+		return s.String()
+	}
+
+	// Get all devices from control plane
+	req := ctlplfl.GetReq{ID: "", GetAll: true}
+	devices, err := m.cpClient.GetDeviceInfo(req)
+	if err != nil {
+		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query devices: %v", err)) + "\n\n")
+		s.WriteString(helpStyle.Render("esc: back to Vdev management"))
+		return s.String()
+	}
+
+	// Filter devices that are initialized (have partitions)
+	var availableDevices []ctlplfl.Device
+	for _, device := range devices {
+		if device.Initialized && len(device.Partitions) > 0 {
+			availableDevices = append(availableDevices, device)
+		}
+	}
+
+	if len(availableDevices) == 0 {
+		s.WriteString("No devices with partitions available for Vdev creation.\n")
+		s.WriteString("Please initialize and partition devices first.\n\n")
+		s.WriteString(helpStyle.Render("esc: back to Vdev management"))
+		return s.String()
+	}
+
+	s.WriteString("Available Devices (from Control Plane):\n")
+	s.WriteString("Press 'R' to select/deselect devices\n\n")
+
+	for i, device := range availableDevices {
+		cursor := "  "
+		if m.deviceCursor == i {
+			cursor = "> "
+		}
+
+		selected := ""
+		if m.selectedDevicesForVdev[i] {
+			selected = "[✓] "
+		} else {
+			selected = "[ ] "
+		}
+
+		deviceInfo := fmt.Sprintf("%s%s%s (Size: %d bytes, Partitions: %d)",
+			cursor, selected, device.Name, device.Size, len(device.Partitions))
+
+		if m.deviceCursor == i {
+			deviceInfo = selectedStyle.Render(deviceInfo)
+		}
+
+		s.WriteString(deviceInfo + "\n")
+	}
+
+	selectedCount := len(m.selectedDevicesForVdev)
+	s.WriteString(fmt.Sprintf("\nSelected devices: %d\n", selectedCount))
+
+	s.WriteString("\n" + helpStyle.Render("↑/↓: navigate • R: select/deselect • enter: continue • esc: back"))
+
+	return s.String()
+}
+
+func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "tab", "shift+tab", "up", "down":
+			// Only one input field for now (size)
+		case "enter":
+			// Create the Vdev
+			sizeStr := m.vdevSizeInput.Value()
+			if sizeStr == "" {
+				m.message = "Please enter Vdev size"
+				return m, nil
+			}
+
+			// Parse size (basic implementation)
+			size, err := parseSize(sizeStr)
+			if err != nil {
+				m.message = fmt.Sprintf("Invalid size format: %v", err)
+				return m, nil
+			}
+
+			// Create Vdev
+			vdev := &ctlplfl.Vdev{
+				Size: size,
+			}
+
+			// Initialize the Vdev (generates ID)
+			if err := vdev.Init(); err != nil {
+				m.message = fmt.Sprintf("Failed to initialize Vdev: %v", err)
+				return m, nil
+			}
+
+			// Call CreateVdev from control plane client
+			if m.cpClient != nil && m.cpConnected {
+				if err := m.cpClient.CreateVdev(vdev); err != nil {
+					m.message = fmt.Sprintf("Failed to create Vdev: %v", err)
+					return m, nil
+				}
+				m.currentVdev = *vdev
+				m.state = stateShowAddedVdev
+				m.message = "Vdev created successfully"
+			} else {
+				m.message = "Control plane not connected"
+			}
+		case "esc":
+			m.state = stateVdevDeviceSelection
+			m.message = ""
+			return m, nil
+		}
+	}
+
+	m.vdevSizeInput, cmd = m.vdevSizeInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) viewVdevForm() string {
+	title := titleStyle.Render("Create Vdev")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	// Show selected devices from control plane
+	selectedCount := len(m.selectedDevicesForVdev)
+	s.WriteString(fmt.Sprintf("Selected devices: %d\n", selectedCount))
+
+	// Display details of selected devices from control plane
+	if m.cpClient != nil && m.cpConnected && selectedCount > 0 {
+		req := ctlplfl.GetReq{ID: "", GetAll: true}
+		devices, err := m.cpClient.GetDeviceInfo(req)
+		if err == nil {
+			// Filter to show only initialized devices with partitions
+			var availableDevices []ctlplfl.Device
+			for _, device := range devices {
+				if device.Initialized && len(device.Partitions) > 0 {
+					availableDevices = append(availableDevices, device)
+				}
+			}
+
+			s.WriteString("Selected device details:\n")
+			for i, isSelected := range m.selectedDevicesForVdev {
+				if isSelected && i < len(availableDevices) {
+					device := availableDevices[i]
+					s.WriteString(fmt.Sprintf("- %s (%d bytes, %d partitions)\n",
+						device.Name, device.Size, len(device.Partitions)))
+				}
+			}
+		}
+	}
+	s.WriteString("\n")
+
+	// Size input
+	s.WriteString("Vdev Size: ")
+	s.WriteString(m.vdevSizeInput.View())
+	s.WriteString("\n\n")
+
+	s.WriteString("Examples: 10GB, 1TB, 1PB\n\n")
+
+	s.WriteString(helpStyle.Render("enter: create Vdev • esc: back"))
+
+	return s.String()
+}
+
+func (m model) updateEditVdev(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.state = stateVdevManagement
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewEditVdev() string {
+	title := titleStyle.Render("Edit Vdev")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	s.WriteString("Edit functionality coming soon...\n\n")
+
+	s.WriteString(helpStyle.Render("esc: back"))
+
+	return s.String()
+}
+
+func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.state = stateVdevManagement
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m model) viewViewVdev() string {
+	title := titleStyle.Render("View Vdevs")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	// Query Vdevs from control plane
+	if m.cpClient != nil && m.cpConnected {
+		req := &ctlplfl.GetReq{ID: "", GetAll: true}
+		vdevs, err := m.cpClient.GetVdevs(req)
+		if err != nil {
+			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
+		} else if len(vdevs) == 0 {
+			s.WriteString("No Vdevs found.\n\n")
+		} else {
+			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
+			for i, vdev := range vdevs {
+				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.VdevID))
+				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
+				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
+				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
+				s.WriteString("\n")
+			}
+		}
+	} else {
+		s.WriteString(errorStyle.Render("Control plane not connected") + "\n\n")
+	}
+
+	s.WriteString(helpStyle.Render("esc: back"))
+
+	return s.String()
+}
+
+func (m model) updateShowAddedVdev(msg tea.Msg) (model, tea.Cmd) {
+	switch msg.(type) {
+	case tea.KeyMsg:
+		m.state = stateVdevManagement
+		m.selectedDevicesForVdev = make(map[int]bool)
+		m.vdevSizeInput.SetValue("")
+		m.message = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) viewShowAddedVdev() string {
+	title := titleStyle.Render("Vdev Created Successfully")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	s.WriteString("Vdev Details:\n")
+	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.VdevID))
+	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Size))
+	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.NumChunks))
+	s.WriteString(fmt.Sprintf("Replicas: %d\n", m.currentVdev.NumReplica))
+
+	s.WriteString("\n\nPress any key to return to Vdev management")
+
+	return s.String()
+}
+
+// Helper function to parse size strings like "10GB", "1TB", "1PB"
+func parseSize(sizeStr string) (int64, error) {
+	sizeStr = strings.TrimSpace(strings.ToUpper(sizeStr))
+
+	if len(sizeStr) < 2 {
+		return 0, fmt.Errorf("invalid size format")
+	}
+
+	// Extract number and unit
+	var numStr string
+	var unit string
+
+	for i, r := range sizeStr {
+		if r >= '0' && r <= '9' || r == '.' {
+			numStr += string(r)
+		} else {
+			unit = sizeStr[i:]
+			break
+		}
+	}
+
+	if numStr == "" {
+		return 0, fmt.Errorf("no number found in size")
+	}
+
+	// Parse the number (support decimal)
+	num, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid number: %v", err)
+	}
+
+	// Convert based on unit
+	var multiplier int64
+	switch unit {
+	case "B", "BYTES":
+		multiplier = 1
+	case "KB":
+		multiplier = 1024
+	case "MB":
+		multiplier = 1024 * 1024
+	case "GB":
+		multiplier = 1024 * 1024 * 1024
+	case "TB":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	case "PB":
+		multiplier = 1024 * 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, fmt.Errorf("unsupported unit: %s", unit)
+	}
+
+	return int64(num * float64(multiplier)), nil
 }
 
 func main() {

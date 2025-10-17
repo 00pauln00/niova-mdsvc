@@ -20,6 +20,7 @@ type DevicePartition = ctlplfl.DevicePartition
 type PDU = ctlplfl.PDU
 type Rack = ctlplfl.Rack
 type Hypervisor = ctlplfl.Hypervisor
+type Vdev = ctlplfl.Vdev
 
 type Config struct {
 	PDUs  []ctlplfl.PDU  `json:"pdus"`
