@@ -162,7 +162,21 @@ type pduPopulator struct{}
 
 func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg) {
 	pdu := entity.(*cpLib.PDU)
-	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key: []byte(getConfKey(pduKey, pdu.ID)),
-	})
+	*commitChgs = append(*commitChgs,
+		funclib.CommitChg{
+			Key: []byte(getConfKey(pduKey, pdu.ID)),
+		},
+		funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(pduKey, pdu.ID), LOCATION)),
+			Value: []byte(pdu.Location),
+		},
+		funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(pduKey, pdu.ID), POWER_CAP)),
+			Value: []byte(pdu.PowerCapacity),
+		},
+		funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(pduKey, pdu.ID), SPEC)),
+			Value: []byte(pdu.Specification),
+		},
+	)
 }

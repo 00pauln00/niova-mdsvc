@@ -32,6 +32,9 @@ const (
 	NUM_CHUNKS     = "nc"
 	NUM_REPLICAS   = "nr"
 	ERASURE_CODE   = "e"
+	LOCATION       = "l"
+	POWER_CAP      = "pw"
+	SPEC           = "sp"
 
 	nisdCfgKey = "n_cfg"
 	//vdevCfgKey   = "v_cfg"
@@ -441,10 +444,9 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
-
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
-		log.Error("Range read failure ", err)
+		log.Error("Range read failure: ", err)
 		return nil, err
 	}
 	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})

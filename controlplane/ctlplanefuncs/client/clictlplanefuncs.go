@@ -76,6 +76,9 @@ func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 		log.Error("failed to send request(_put): ", err)
 		return err
 	}
+	if rsb == nil {
+		return fmt.Errorf("failed to fetch response from control plane: %v", err)
+	}
 
 	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
@@ -98,6 +101,9 @@ func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
 	if err != nil {
 		log.Error("request failed: ", err)
 		return err
+	}
+	if rsb == nil {
+		return fmt.Errorf("failed to fetch response from control plane: %v", err)
 	}
 	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {

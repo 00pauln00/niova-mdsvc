@@ -75,7 +75,7 @@ type Device struct {
 }
 
 type DevicePartition struct {
-	PartitionID string `json:"partition_id"`
+	PartitionID   string `json:"partition_id"`
 	PartitionPath string `json:"partition_path"`
 	NISDUUID      string `json:"nisd_uuid"`
 	DevID         string `json:"Dev_Id"`
@@ -99,7 +99,7 @@ type PDU struct {
 	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
 	Name          string `xml:"Name" json:"Name" yaml:"name"`
 	Location      string `xml:"Location" json:"Location" yaml:"location"`
-	PowerCapacity string `xml:"PowerCap" json:"PowerCap" yaml:"powercap"`
+	PowerCapacity string `xml:"PowerCap" json:"PowerCapacity" yaml:"powercap"`
 	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
 	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
 }

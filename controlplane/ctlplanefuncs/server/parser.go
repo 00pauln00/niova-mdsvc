@@ -182,11 +182,19 @@ func (pduParser) NewEntity(id string) Entity {
 }
 func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
 	pdu := entity.(*ctlplfl.PDU)
-	if len(parts) < KEY_LEN {
-		return
-	}
 	pdu.ID = parts[BASE_UUID_PREFIX]
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
+		case LOCATION:
+			pdu.Location = string(value)
+		case POWER_CAP:
+			pdu.PowerCapacity = string(value)
+		case SPEC:
+			pdu.Specification = string(value)
+		}
+	}
 }
+
 func (pduParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.PDU) }
 
 type ptParser struct{}
