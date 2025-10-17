@@ -99,8 +99,16 @@ func (s *SSHClient) GetDevices() ([]ctlplfl.Device, error) {
 
 	for _, lsblkDev := range lsblkDevices {
 		if existing, exists := deviceMap[lsblkDev.Name]; exists {
+			// Merge information from lsblk with by-id information
 			existing.Size = lsblkDev.Size
+			if existing.SerialNumber == "" {
+				existing.SerialNumber = lsblkDev.SerialNumber
+			}
+			if existing.DevicePath == "" {
+				existing.DevicePath = lsblkDev.DevicePath
+			}
 		} else {
+			log.Info("Add device to list: ", lsblkDev)
 			devices = append(devices, lsblkDev)
 		}
 	}
@@ -138,8 +146,9 @@ func parseByIdDevices(output string) []ctlplfl.Device {
 				}
 
 				devices = append(devices, Device{
-					ID:   id,
-					Name: deviceName,
+					ID:         id,
+					Name:       deviceName,
+					DevicePath: "/dev/" + deviceName,
 				})
 			}
 		}
@@ -235,6 +244,7 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 			devices = append(devices, Device{
 				ID:           name,
 				Name:         name,
+				DevicePath:   "/dev/" + name,
 				Size:         sizeBytes,
 				SerialNumber: serialNum,
 			})
