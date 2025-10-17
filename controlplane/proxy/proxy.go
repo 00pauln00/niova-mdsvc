@@ -4,11 +4,13 @@ import (
 	//"bufio"
 	"bufio"
 	"bytes"
+	"net/http"
 
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 
 	httpServer "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpserver"
 
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
@@ -525,9 +527,15 @@ Return(s) : error
 
 Description : Call back for PMDB read func requests to HTTP server.
 */
-func (handler *proxyHandler) ReadHandlerCB(name string, xmlbody []byte, response *[]byte) error {
-	log.Info("ReadFuncHandlerCB called with name: ", name, string(xmlbody))
-	r := &funclib.FuncReq{Name: name, Args: xmlbody}
+func (handler *proxyHandler) ReadHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
+	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
+	encType := GetEncodingType(reader)
+	res, err := DecodeRequest(encType, name, body)
+	if err != nil {
+		log.Error("RHCB:failed to decode request: ", err)
+		return err
+	}
+	r := &funclib.FuncReq{Name: name, Args: res}
 	request := encode(PumiceDBCommon.PumiceRequest{
 		ReqType:    PumiceDBCommon.FUNC_REQ,
 		ReqPayload: encode(r),
@@ -539,9 +547,14 @@ func (handler *proxyHandler) ReadHandlerCB(name string, xmlbody []byte, response
 		GetResponse: 1,
 		Response:    response,
 	}
-	err := handler.pmdbClientObj.GetEncoded(reqArgs)
+	err = handler.pmdbClientObj.GetEncoded(reqArgs)
 	if err != nil {
 		log.Error("Error in GetEncoded and Response: ", err)
+		return err
+	}
+	err = EncodeResponse(encType, name, reqArgs.Response)
+	if err != nil {
+		log.Error("RHCB:failed to encode response: ", err)
 		return err
 	}
 	return nil
@@ -555,9 +568,16 @@ Return(s) : error
 
 Description : Call back for PMDB write func requests to HTTP server.
 */
-func (handler *proxyHandler) WriteHandlerCB(name string, rncui string, xmlbody []byte, response *[]byte) error {
+func (handler *proxyHandler) WriteHandlerCB(name string, rncui string, body []byte, response *[]byte, reader *http.Request) error {
 	log.Info("FuncHandlerCB called with name: ", name)
-	r := &funclib.FuncReq{Name: name, Args: xmlbody}
+	encType := GetEncodingType(reader)
+	res, err := DecodeRequest(encType, name, body)
+	if err != nil {
+		log.Error("WHCB:failed to decode request: ", err)
+		return err
+	}
+	r := &funclib.FuncReq{Name: name, Args: res}
+
 	request := encode(PumiceDBCommon.PumiceRequest{
 		ReqType:    PumiceDBCommon.FUNC_REQ,
 		ReqPayload: encode(r),
@@ -570,9 +590,14 @@ func (handler *proxyHandler) WriteHandlerCB(name string, rncui string, xmlbody [
 		GetResponse: 1,
 		Response:    response,
 	}
-	err := handler.pmdbClientObj.PutEncoded(reqArgs)
+	err = handler.pmdbClientObj.PutEncoded(reqArgs)
 	if err != nil {
 		log.Error("Error in WriteEncoded and Response: ", err)
+		return err
+	}
+	err = EncodeResponse(encType, name, reqArgs.Response)
+	if err != nil {
+		log.Error("WHCB:failed to encode response: ", err)
 		return err
 	}
 	return nil
@@ -691,7 +716,7 @@ func main() {
 
 	var err error
 	var i int
-
+	cpLib.RegisterGOBStructs()
 	proxyObj := proxyHandler{}
 	//Get commandline paraameters.
 	proxyObj.getCmdParams()

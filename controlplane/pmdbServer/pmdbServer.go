@@ -74,6 +74,8 @@ type pmdbServerHandler struct {
 
 func main() {
 	serverHandler := pmdbServerHandler{}
+	cpLib.RegisterGOBStructs()
+
 	nso, pErr := serverHandler.parseArgs()
 	if pErr != nil {
 		log.Println(pErr)
@@ -131,14 +133,26 @@ func main() {
 	//Wait till HTTP Server has started
 	srvctlplanefuncs.SetClmFamily(colmfamily)
 	cpAPI := PumiceDBFunc.NewFuncServer()
-	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
+
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceInfo)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, srvctlplanefuncs.WPRackCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.WPCreatePartition)
+
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
+	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
-	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.CreateVdev)
+	cpAPI.RegisterReadFunc(cpLib.GET_PARTITION, srvctlplanefuncs.ReadPartition)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV, srvctlplanefuncs.ReadVdevCfg)
+
+	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
@@ -152,7 +166,7 @@ func main() {
 	}
 
 	nso.leaseObj = leaseServerLib.LeaseServerObject{}
-	//Initalise leaseObj
+	// Initalise leaseObj
 	nso.leaseObj.InitLeaseObject(nso.pso)
 	// Separate column families for application requests and lease
 	nso.pso.ColumnFamilies = []string{colmfamily, nso.leaseObj.LeaseColmFam}
@@ -550,24 +564,24 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult, lastKey, seqNum, snapMiss, err := nso.pso.RangeReadKV(readArgs.UserID,
+		readResult, err := nso.pso.RangeReadKV(readArgs.UserID,
 			reqStruct.Key,
 			int64(keyLen), reqStruct.Prefix,
 			(readArgs.ReplySize - int64(encodingOverhead)),
 			reqStruct.Consistent, reqStruct.SeqNum, colmfamily)
 		var cRead bool
-		if lastKey != "" {
+		if readResult.LastKey != "" {
 			cRead = true
 		} else {
 			cRead = false
 		}
 		resultResponse = requestResponseLib.KVResponse{
 			Prefix:       reqStruct.Key,
-			ResultMap:    readResult,
+			ResultMap:    readResult.ResultMap,
 			ContinueRead: cRead,
-			Key:          lastKey,
-			SeqNum:       seqNum,
-			SnapMiss:     snapMiss,
+			Key:          readResult.LastKey,
+			SeqNum:       readResult.SeqNum,
+			SnapMiss:     readResult.SnapMiss,
 		}
 		readErr = err
 	} else {

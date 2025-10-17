@@ -11,26 +11,19 @@ import (
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
 
-type EncodeType int
-
-const (
-	XML EncodeType = iota
-	GoBinary
-)
-
 // Client side interferace for control plane functions
 type CliCFuncs struct {
 	appUUID  string
 	writeSeq uint64
 	sdObj    *sd.ServiceDiscoveryHandler
-	encType  EncodeType
+	encType  pmCmn.Format
 }
 
 func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFuncs {
 	ccf := CliCFuncs{
 		appUUID:  appUUID,
 		writeSeq: uint64(0),
-		encType:  XML, // Default encoding type
+		encType:  pmCmn.JSON, // Default encoding type
 	}
 
 	ccf.sdObj = &sd.ServiceDiscoveryHandler{
@@ -49,24 +42,6 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	log.Info("Successfully initialized controlplane client: ", appUUID)
 
 	return &ccf
-}
-
-func (ccf *CliCFuncs) encode(data interface{}) ([]byte, error) {
-	if ccf.encType == GoBinary {
-		return pmCmn.GobEncode(data)
-	} else if ccf.encType == XML {
-		return ctlplfl.XMLEncode(data)
-	}
-	return nil, errors.New("unsupported encoding type")
-}
-
-func (ccf *CliCFuncs) decode(bin []byte, st interface{}) error {
-	if ccf.encType == GoBinary {
-		return pmCmn.GobDecode(bin, st)
-	} else if ccf.encType == XML {
-		return ctlplfl.XMLDecode(bin, st)
-	}
-	return errors.New("unsupported decoding type")
 }
 
 func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, error) {
@@ -90,7 +65,7 @@ func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
 
 func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 	url := "name=" + urla
-	rqb, err := ccf.encode(data)
+	rqb, err := pmCmn.Encoder(ccf.encType, data)
 	if err != nil {
 		log.Error("failed to encode data: ", err)
 		return err
@@ -101,19 +76,22 @@ func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 		log.Error("failed to send request(_put): ", err)
 		return err
 	}
+	if rsb == nil {
+		return fmt.Errorf("failed to fetch response from control plane: %v", err)
+	}
 
-	err = ccf.decode(rsb, resp)
+	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
-		log.Error("failed to decode response: ", err)
+		log.Error("failed to decode response in put: ", err)
 		return err
 	}
 
 	return nil
 }
 
-func (ccf *CliCFuncs) get(data interface{}, urla string) error {
+func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
 	url := "name=" + urla
-	rqb, err := ccf.encode(data)
+	rqb, err := pmCmn.Encoder(ccf.encType, data)
 	if err != nil {
 		log.Error("failed to encode data: ", err)
 		return err
@@ -124,9 +102,12 @@ func (ccf *CliCFuncs) get(data interface{}, urla string) error {
 		log.Error("request failed: ", err)
 		return err
 	}
-	err = ccf.decode(rsb, data)
+	if rsb == nil {
+		return fmt.Errorf("failed to fetch response from control plane: %v", err)
+	}
+	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
-		log.Error("failed to decode response: ", err)
+		log.Error("failed to decode response in get: ", err)
 		return err
 	}
 	return nil
@@ -148,7 +129,7 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 	Snap.Vdev = vdev
 	Snap.Chunks = chks
 
-	rqb, err := ccf.encode(Snap)
+	rqb, err := pmCmn.Encoder(ccf.encType, Snap)
 	if err != nil {
 		return err
 	}
@@ -159,7 +140,7 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 	}
 
 	var snapRes ctlplfl.SnapResponseXML
-	err = ccf.decode(rsb, snapRes)
+	err = pmCmn.Decoder(ccf.encType, rsb, snapRes)
 	if err != nil {
 		return err
 	}
@@ -176,7 +157,7 @@ func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
 
 	var snap ctlplfl.SnapXML
 	snap.SnapName = name
-	rqb, err := ccf.encode(snap)
+	rqb, err := pmCmn.Encoder(ccf.encType, snap)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +170,7 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 
 	var snap ctlplfl.SnapXML
 	snap.Vdev = vdev
-	rqb, err := ccf.encode(snap)
+	rqb, err := pmCmn.Encoder(ccf.encType, snap)
 	if err != nil {
 		return nil, err
 	}
@@ -197,34 +178,140 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceCfg(device *ctlplfl.DeviceInfo) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
-	if err != nil {	
-		log.Error("PutDeviceCfg failed: ", err)
+	if err != nil {
+		log.Error("PutDeviceInfo failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetDeviceCfg(dev *ctlplfl.DeviceInfo) error {
-	return ccf.get(dev, ctlplfl.GET_DEVICE)
+// TODO make changes to use new GetRequest struct
+func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
+	dev := make([]ctlplfl.Device, 0)
+	err := ccf.get(req, &dev, ctlplfl.GET_DEVICE)
+	if err != nil {
+		log.Error("failed to get device info: ", err)
+		return nil, err
+	}
+	return dev, nil
 }
 
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
-	if err != nil {	
+	if err != nil {
 		log.Error("PutNisdCfg failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdCfg(ncfg *ctlplfl.Nisd) error {
-	return ccf.get(ncfg, ctlplfl.GET_NISD)
+func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+	ncfg := make([]ctlplfl.Nisd, 0)
+	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
+	if err != nil {
+		log.Error("failed to fet nisd info: ", err)
+		return nil, err
+	}
+	return ncfg, nil
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
 	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
+}
+
+func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
+	vdevs := make([]ctlplfl.Vdev, 0)
+	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return nil, err
+	}
+
+	return vdevs, nil
+}
+
+func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(devp, resp, ctlplfl.PUT_PARTITION)
+	if err != nil {
+		log.Error("Put Partition failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartition, error) {
+	pts := make([]ctlplfl.DevicePartition, 0)
+	err := ccf.get(req, &pts, ctlplfl.GET_PARTITION)
+	if err != nil {
+		log.Error("Get Partition failed: ", err)
+		return nil, err
+	}
+	return pts, nil
+}
+
+func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_PDU)
+	if err != nil {
+		log.Error("PutPDUs failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
+	pdus := make([]ctlplfl.PDU, 0)
+	err := ccf.get(req, &pdus, ctlplfl.GET_PDU)
+	if err != nil {
+		log.Error("GetPDUs failed: ", err)
+		return nil, err
+	}
+	return pdus, nil
+}
+
+func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_RACK)
+	if err != nil {
+		log.Error("PutRack failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
+	racks := make([]ctlplfl.Rack, 0)
+	err := ccf.get(req, &racks, ctlplfl.GET_RACK)
+	if err != nil {
+		log.Error("GetRacks failed: ", err)
+		return nil, err
+	}
+	return racks, nil
+}
+
+func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_HYPERVISOR)
+	if err != nil {
+		log.Error("PutHypervisor failed: ", err)
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, error) {
+	hypervisors := make([]ctlplfl.Hypervisor, 0)
+	err := ccf.get(req, &hypervisors, ctlplfl.GET_HYPERVISOR)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return nil, err
+	}
+
+	return hypervisors, nil
 }
