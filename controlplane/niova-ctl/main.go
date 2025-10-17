@@ -813,7 +813,7 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					selDev := m.discoveredDevs[i]
 					log.Info("Discovered device: ", selDev)
 					selDev.HypervisorID = m.currentHv.ID
-					selDev.Initialized = false
+					selDev.State = ctlplfl.UNINITIALIZED
 					selectedDevices = append(selectedDevices, m.discoveredDevs[i])
 				}
 			}
@@ -1265,9 +1265,8 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				updatedDevice := hv.Dev[m.selectedDeviceIdx]
 				deviceInfo := ctlplfl.Device{
 					ID:            updatedDevice.ID,
-					NisdID:        "", // Empty for now, can be set later
 					SerialNumber:  updatedDevice.SerialNumber,
-					Status:        0, // Active status
+					State:        ctlplfl.INITIALIZED, // Active status
 					HypervisorID:  hv.ID,
 					FailureDomain: updatedDevice.FailureDomain,
 				}
@@ -1685,7 +1684,7 @@ func (m model) updateConfigView() model {
 
 					for _, dev := range hv.Dev {
 						content.WriteString(fmt.Sprintf("            • %s", dev.String()))
-						if dev.Initialized {
+						if dev.State == ctlplfl.INITIALIZED {
 							content.WriteString(fmt.Sprintf(" [UUID: %s",
 								dev.ID))
 						}
@@ -1724,7 +1723,7 @@ func (m model) updateConfigView() model {
 			content.WriteString(fmt.Sprintf("  Devices (%d):\n", len(hv.Dev)))
 			for _, dev := range hv.Dev {
 				content.WriteString(fmt.Sprintf("    • %s", dev.String()))
-				if dev.Initialized {
+				if dev.State == ctlplfl.INITIALIZED {
 					content.WriteString(fmt.Sprintf(" [UUID: %s]",
 						dev.ID))
 				}
@@ -2633,7 +2632,7 @@ func (m model) viewViewHypervisor() string {
 					if device.DevicePath != "" {
 						s.WriteString(fmt.Sprintf(" (%s)", device.DevicePath))
 					}
-					if device.Initialized {
+					if device.State == ctlplfl.INITIALIZED {
 						s.WriteString(" [Initialized]")
 					}
 					s.WriteString("\n")
@@ -2850,7 +2849,7 @@ func (m model) viewDeviceManagement() string {
 	for _, hv := range m.config.Hypervisors {
 		totalDevices += len(hv.Dev)
 		for _, device := range hv.Dev {
-			if device.Initialized {
+			if device.State == ctlplfl.INITIALIZED {
 				initializedCount++
 			}
 		}
@@ -2944,7 +2943,7 @@ func (m model) viewDeviceInitialize() string {
 			}
 
 			// Check if device is already initialized
-			if device.Initialized {
+			if device.State == ctlplfl.INITIALIZED {
 				initText := fmt.Sprintf("Device %s is already initialized", device.ID)
 				s.WriteString(cursor + successStyle.Render(initText) + "\n")
 				s.WriteString(fmt.Sprintf("    UUID: %s\n", device.ID))
@@ -3055,7 +3054,7 @@ func (m model) viewDeviceView() string {
 
 		// Build status indicator
 		status := ""
-		if device.Initialized {
+		if device.State == ctlplfl.INITIALIZED {
 			status = "[INITIALIZED]"
 		} else {
 			status = "[UNINITIALIZED]"
@@ -3082,7 +3081,7 @@ func (m model) viewDeviceView() string {
 				s.WriteString(fmt.Sprintf("    Size: %s\n", formatBytes(device.Size)))
 			}
 
-			if device.Initialized {
+			if device.State == ctlplfl.INITIALIZED {
 				if device.ID != "" {
 					s.WriteString(fmt.Sprintf("    Device UUID: %s\n", device.ID))
 				}
@@ -3449,7 +3448,7 @@ func (m model) viewPartitionCreate() string {
 
 			// Build device info line with better status display
 			status := ""
-			if deviceInfo.Device.Initialized {
+			if deviceInfo.Device.State == ctlplfl.INITIALIZED {
 				status = "[INIT]"
 			} else {
 				status = "[UNINITIALIZED]"
@@ -5733,7 +5732,6 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 	// Create Device from form inputs
 	deviceInfo := ctlplfl.Device{
 		ID:         m.writeDeviceInputs[0].Value(),
-		NisdID:        m.writeDeviceInputs[1].Value(),
 		SerialNumber:  m.writeDeviceInputs[2].Value(),
 		HypervisorID:  m.writeDeviceInputs[4].Value(),
 		FailureDomain: m.writeDeviceInputs[5].Value(),
@@ -6736,7 +6734,7 @@ func (m model) viewVdevDeviceSelection() string {
 	// Filter devices that are initialized (have partitions)
 	var availableDevices []ctlplfl.Device
 	for _, device := range devices {
-		if device.Initialized && len(device.Partitions) > 0 {
+		if device.State == ctlplfl.INITIALIZED && len(device.Partitions) > 0 {
 			availableDevices = append(availableDevices, device)
 		}
 	}
@@ -6865,7 +6863,7 @@ func (m model) viewVdevForm() string {
 			// Filter to show only initialized devices with partitions
 			var availableDevices []ctlplfl.Device
 			for _, device := range devices {
-				if device.Initialized && len(device.Partitions) > 0 {
+				if device.State == ctlplfl.INITIALIZED && len(device.Partitions) > 0 {
 					availableDevices = append(availableDevices, device)
 				}
 			}
@@ -7108,9 +7106,8 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						Name:          device.Name,
 						DevicePath:    device.DevicePath,
 						SerialNumber:  device.SerialNumber,
-						Status:        0, // Default status
+						State:         ctlplfl.INITIALIZED, // Default status
 						Size:          device.Size,
-						Initialized:   device.Initialized,
 						HypervisorID:  hv.ID,
 						FailureDomain: device.FailureDomain,
 					}
@@ -7143,9 +7140,8 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						Name:          device.Name,
 						DevicePath:    device.DevicePath,
 						SerialNumber:  device.SerialNumber,
-						Status:        0, // Default status
+						State:         ctlplfl.INITIALIZED, // Default status
 						Size:          device.Size,
-						Initialized:   false, // Discovered devices start as not initialized
 						HypervisorID:  m.currentHv.ID,
 						FailureDomain: device.FailureDomain,
 					}
@@ -7240,7 +7236,7 @@ func (m model) viewInitializeDeviceForm() string {
 			s.WriteString(fmt.Sprintf("\nHypervisor: %s (%s) - Configured Devices\n", hv.Name, hv.ID))
 			for _, device := range hv.Dev {
 				status := "✓"
-				if !device.Initialized {
+				if device.State != ctlplfl.INITIALIZED {
 					status = "○"
 				}
 				s.WriteString(fmt.Sprintf("  %s %s - %s (Size: %d GB)\n",
@@ -7346,7 +7342,7 @@ func (m model) viewAllDevices() string {
 
 		for _, device := range hvDevices {
 			status := "Initialized"
-			if !device.Initialized {
+			if device.State != ctlplfl.INITIALIZED {
 				status = "Not Initialized"
 			}
 
@@ -7358,9 +7354,6 @@ func (m model) viewAllDevices() string {
 			s.WriteString(fmt.Sprintf("  Size: %d GB\n", sizeGB))
 			s.WriteString(fmt.Sprintf("  Status: %s\n", status))
 			s.WriteString(fmt.Sprintf("  Failure Domain: %s\n", device.FailureDomain))
-			if device.NisdID != "" {
-				s.WriteString(fmt.Sprintf("  NISD ID: %s\n", device.NisdID))
-			}
 			s.WriteString("\n")
 		}
 		s.WriteString("\n")

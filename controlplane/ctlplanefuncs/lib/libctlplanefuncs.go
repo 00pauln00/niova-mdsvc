@@ -71,7 +71,6 @@ type Device struct {
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
 	State        uint16 `xml:"State" json:"State"`
 	Size         int64  `xml:"Size" json:"Size"`
-	Initialized  bool   `xml:"Initialized" json:"initialized"`
 	//Parent info
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
@@ -177,17 +176,17 @@ type NisdCntrConfig struct {
 
 // String returns a string representation of the Device
 func (d Device) String() string {
-	status := ""
-	if d.Initialized {
-		status = " [INIT]"
+	state := ""
+	if d.State == INITIALIZED {
+		state = " [INIT]"
 		if len(d.Partitions) > 0 {
-			status += fmt.Sprintf(" [%d partitions]", len(d.Partitions))
+			state += fmt.Sprintf(" [%d partitions]", len(d.Partitions))
 		}
 	}
 	if d.Size > 0 {
-		return fmt.Sprintf("%s (%s)%s", d.ID, formatBytes(d.Size), status)
+		return fmt.Sprintf("%s (%s)%s", d.ID, formatBytes(d.Size), state)
 	}
-	return fmt.Sprintf("%s%s", d.ID, status)
+	return fmt.Sprintf("%s%s", d.ID, state)
 }
 
 // formatBytes formats a byte count in human readable form

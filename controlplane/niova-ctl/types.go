@@ -429,7 +429,7 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 			for k, hv := range rack.Hypervisors {
 				if hv.ID == hypervisorUUID {
 					for devIndex, dev := range hv.Dev {
-						if dev.Name == deviceName && !dev.Initialized {
+						if dev.Name == deviceName && dev.State != ctlplfl.INITIALIZED {
 
 							/*
 								// Allocate ports
@@ -450,7 +450,7 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 								HypervisorID:  hypervisorUUID,
 								DevicePath:    fmt.Sprintf("/dev/%s", dev.Name),
 								FailureDomain: hierarchicalFailureDomain,
-								Initialized:   true,
+								State:         ctlplfl.INITIALIZED,
 							}
 
 							return nil
@@ -466,7 +466,7 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 	for hvIndex, hv := range c.Hypervisors {
 		if hv.ID == hypervisorUUID {
 			for devIndex, dev := range hv.Dev {
-				if dev.Name == deviceName && !dev.Initialized {
+				if dev.Name == deviceName && dev.State != ctlplfl.INITIALIZED {
 
 					/*
 						// Allocate ports
@@ -484,7 +484,7 @@ func (c *Config) InitializeDevice(hypervisorUUID, deviceName, failureDomain stri
 						HypervisorID:  hypervisorUUID,
 						DevicePath:    fmt.Sprintf("/dev/%s", dev.Name),
 						FailureDomain: failureDomain,
-						Initialized:   true,
+						State:         ctlplfl.INITIALIZED,
 					}
 
 					return nil
@@ -1285,7 +1285,7 @@ func (c *Config) GetAllDevicesWithPartitions() []struct {
 		for _, rack := range pdu.Racks {
 			for _, hv := range rack.Hypervisors {
 				for _, dev := range hv.Dev {
-					if dev.Initialized {
+					if dev.State == ctlplfl.INITIALIZED {
 						devices = append(devices, struct {
 							HvUUID string
 							HvName string
@@ -1304,7 +1304,7 @@ func (c *Config) GetAllDevicesWithPartitions() []struct {
 	// Check legacy hypervisors
 	for _, hv := range c.Hypervisors {
 		for _, dev := range hv.Dev {
-			if dev.Initialized {
+			if dev.State == ctlplfl.INITIALIZED {
 				devices = append(devices, struct {
 					HvUUID string
 					HvName string
