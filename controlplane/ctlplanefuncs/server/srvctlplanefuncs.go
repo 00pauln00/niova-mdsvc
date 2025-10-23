@@ -51,6 +51,7 @@ const (
 	nisdKey      = "n"
 	vdevKey      = "v"
 	chunkKey     = "c"
+	vdevCfgKey   = "v/cfg"
 	hvKey        = "hv"
 	ptKey        = "pt"
 
@@ -304,7 +305,7 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	key := getConfKey(vdevKey, vdev.VdevID)
+	key := getConfKey(vdevCfgKey, vdev.VdevID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
@@ -318,7 +319,7 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 			continue
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, cfgkey, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
 			Value: []byte(value),
 		})
 	}
@@ -663,4 +664,60 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
+}
+
+func ReadVdevs(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+
+	key := vdevCfgKey
+	if !req.GetAll {
+		key = getConfKey(vdevCfgKey, req.ID)
+	}
+
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+
+	vdevMap := make(map[string]*ctlplfl.Vdev)
+	for k, value := range readResult.ResultMap {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		if len(parts) < 3 { // minimal expected parts to include vdev id, base key and an index/element
+			continue
+		}
+		vdevID := parts[BASE_UUID_PREFIX+1]
+		if _, ok := vdevMap[vdevID]; !ok {
+			vdevMap[vdevID] = &ctlplfl.Vdev{
+				VdevID: vdevID,
+			}
+		}
+		vdev := vdevMap[vdevID]
+
+		switch parts[CFG_KEY_IDX] {
+		case cfgkey:
+			switch parts[VDEV_ELEMENT_KEY] {
+			case SIZE:
+				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+					vdev.Size = sz
+				}
+			case NUM_CHUNKS:
+				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+					vdev.NumChunks = uint32(nc)
+				}
+			case NUM_REPLICAS:
+				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+					vdev.NumReplica = uint8(nr)
+				}
+			}
+		}
+	}
+
+	vdevList := make([]*ctlplfl.Vdev, 0, len(vdevMap))
+	for _, v := range vdevMap {
+		vdevList = append(vdevList, v)
+	}
+	return pmCmn.Encoder(ENC_TYPE, vdevList)
+
 }

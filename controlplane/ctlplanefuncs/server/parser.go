@@ -13,6 +13,7 @@ const ( // Key Prefixes
 	ELEMENT_KEY      = 2
 	KEY_LEN          = 3
 	VDEV_CFG_C_KEY   = 2
+	CFG_KEY_IDX      = 1
 	VDEV_ELEMENT_KEY = 3
 )
 

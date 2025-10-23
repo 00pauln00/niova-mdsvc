@@ -10,26 +10,27 @@ import (
 )
 
 const (
-	PUT_DEVICE     = "PutDeviceInfo"
-	GET_DEVICE     = "GetDeviceInfo"
-	PUT_NISD       = "PutNisdCfg"
-	GET_NISD       = "GetNisdCfg"
-	GET_NISD_LIST  = "GetAllNisd"
-	CREATE_VDEV    = "CreateVdev"
-	GET_VDEV       = "GetVdev"
-	CREATE_SNAP    = "CreateSnap"
-	READ_SNAP_NAME = "ReadSnapByName"
-	READ_SNAP_VDEV = "ReadSnapForVdev"
-	PUT_PDU        = "PutPDU"
-	GET_PDU        = "GetPDU"
-	GET_RACK       = "GetRack"
-	PUT_RACK       = "PutRack"
-	GET_HYPERVISOR = "GetHypervisor"
-	PUT_HYPERVISOR = "PutHypervisor"
-	PUT_PARTITION  = "PutPartition"
-	GET_PARTITION  = "GetPartition"
-	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
-	NAME           = "name"
+	PUT_DEVICE          = "PutDeviceInfo"
+	GET_DEVICE          = "GetDeviceInfo"
+	PUT_NISD            = "PutNisdCfg"
+	GET_NISD            = "GetNisdCfg"
+	GET_NISD_LIST       = "GetAllNisd"
+	CREATE_VDEV         = "CreateVdev"
+	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
+	GET_VDEV            = "GetVdevs"
+	CREATE_SNAP         = "CreateSnap"
+	READ_SNAP_NAME      = "ReadSnapByName"
+	READ_SNAP_VDEV      = "ReadSnapForVdev"
+	PUT_PDU             = "PutPDU"
+	GET_PDU             = "GetPDU"
+	GET_RACK            = "GetRack"
+	PUT_RACK            = "PutRack"
+	GET_HYPERVISOR      = "GetHypervisor"
+	PUT_HYPERVISOR      = "PutHypervisor"
+	PUT_PARTITION       = "PutPartition"
+	GET_PARTITION       = "GetPartition"
+	CHUNK_SIZE          = 8 * 1024 * 1024 * 1024
+	NAME                = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
