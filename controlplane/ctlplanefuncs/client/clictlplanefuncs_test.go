@@ -77,13 +77,13 @@ func TestPutAndGetNisd(t *testing.T) {
 	}
 
 	for _, n := range mockNisd {
-		resp, err := c.PutNisdCfg(&n)
+		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: "nisd-002"})
-	log.Info("GetNisdCfg: ", res)
+	res, err := c.GetNisds(cpLib.GetReq{ID: "nisd-002"})
+	log.Info("GetNisd: ", res)
 	assert.NoError(t, err)
 
 }
@@ -146,16 +146,16 @@ func TestPutAndGetDevice(t *testing.T) {
 	}
 
 	for _, p := range mockDevices {
-		resp, err := c.PutDeviceInfo(&p)
+		resp, err := c.PutDevice(&p)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
+	res, err := c.GetDevices(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
 	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 	assert.NoError(t, err)
 
-	res, err = c.GetDeviceInfo(cpLib.GetReq{GetAll: true})
+	res, err = c.GetDevices(cpLib.GetReq{GetAll: true})
 	log.Infof("fetech all device list: %s,%v", res[0].ID, res[0].Partitions)
 	assert.NoError(t, err)
 

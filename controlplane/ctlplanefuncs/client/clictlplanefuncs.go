@@ -178,18 +178,18 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutDevice(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
 	if err != nil {
-		log.Error("PutDeviceInfo failed: ", err)
+		log.Error("PutDevice failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
 // TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
+func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
 	dev := make([]ctlplfl.Device, 0)
 	err := ccf.get(req, &dev, ctlplfl.GET_DEVICE)
 	if err != nil {
@@ -199,17 +199,17 @@ func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error
 	return dev, nil
 }
 
-func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
 	if err != nil {
-		log.Error("PutNisdCfg failed: ", err)
+		log.Error("PutNisd failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 	ncfg := make([]ctlplfl.Nisd, 0)
 	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
 	if err != nil {

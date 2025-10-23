@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	PUT_DEVICE          = "PutDeviceInfo"
-	GET_DEVICE          = "GetDeviceInfo"
-	PUT_NISD            = "PutNisdCfg"
-	GET_NISD            = "GetNisdCfg"
+	PUT_DEVICE          = "PutDevice"
+	GET_DEVICE          = "GetDevice"
+	PUT_NISD            = "PutNisd"
+	GET_NISD            = "GetNisd"
 	GET_NISD_LIST       = "GetAllNisd"
 	CREATE_VDEV         = "CreateVdev"
 	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"

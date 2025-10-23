@@ -854,7 +854,7 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Debug("writing nisd details to pmdb: ", nisd)
-		resp, err := c.PutNisdCfg(&nisd)
+		resp, err := c.PutNisd(&nisd)
 		if err != nil {
 			log.Error("failed to write nisd info:", err)
 			os.Exit(-1)
@@ -869,7 +869,7 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Debug("writing device info into pmdb", dev)
-		resp, err := c.PutDeviceInfo(&dev)
+		resp, err := c.PutDevice(&dev)
 		if err != nil {
 			log.Error("failed to write device info", err)
 			os.Exit(-1)

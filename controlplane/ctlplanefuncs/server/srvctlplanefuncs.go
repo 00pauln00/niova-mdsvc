@@ -546,7 +546,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, hvList)
 }
 
-func ReadVdevCfg(args ...interface{}) (interface{}, error) {
+func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 
@@ -666,7 +666,7 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
 }
 
-func ReadVdevs(args ...interface{}) (interface{}, error) {
+func ReadVdevsCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 
