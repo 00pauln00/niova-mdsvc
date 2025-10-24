@@ -225,3 +225,35 @@ func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, ent
 		})
 	}
 }
+
+type nisdArgsPopulator struct{}
+
+func (nisdArgsPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+	args := entity.(*cpLib.NisdArgs)
+	for _, field := range []string{DEFRAG, MBCCnt, MergeHCnt, MCIReadCache, S3, DSYNC, ALLOW_DEFRAG_MCIB_CACHE} {
+		var value string
+		switch field {
+		case DEFRAG:
+			value = strconv.FormatBool(args.Defrag)
+		case MBCCnt:
+			value = strconv.Itoa(args.MBCCnt)
+		case MergeHCnt:
+			value = strconv.Itoa(args.MergeHCnt)
+		case MCIReadCache:
+			value = strconv.Itoa(args.MCIBReadCache)
+		case DSYNC:
+			value = args.DSync
+		case S3:
+			value = args.S3
+		case ALLOW_DEFRAG_MCIB_CACHE:
+			value = strconv.FormatBool(args.AllowDefragMCIBCache)
+
+		default:
+			continue
+		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", argsKey, field)),
+			Value: []byte(value),
+		})
+	}
+}

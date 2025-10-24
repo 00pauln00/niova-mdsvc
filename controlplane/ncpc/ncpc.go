@@ -727,7 +727,10 @@ func main() {
 	//Intialize client object
 	clientObj := clientHandler{}
 	var nisdDetails string
+	var vdevSize int64
 	flag.StringVar(&nisdDetails, "nd", "", "enter nisd details in json format")
+	flag.Int64Var(&vdevSize, "vds", 100*1024*1024*1024, "enter vdev size in bytes")
+
 	//Get commandline parameters.
 	clientObj.getCmdParams()
 
@@ -854,7 +857,7 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Debug("writing nisd details to pmdb: ", nisd)
-		resp, err := c.PutNisdCfg(&nisd)
+		resp, err := c.PutNisd(&nisd)
 		if err != nil {
 			log.Error("failed to write nisd info:", err)
 			os.Exit(-1)
@@ -869,12 +872,35 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Debug("writing device info into pmdb", dev)
-		resp, err := c.PutDeviceInfo(&dev)
+		resp, err := c.PutDevice(&dev)
 		if err != nil {
 			log.Error("failed to write device info", err)
 			os.Exit(-1)
 		}
 		log.Debug("WriteDevice successful", resp)
+	case "CreateVdev":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		// Step 1: Create first Vdev
+		vdev := &cpLib.Vdev{
+			Size: vdevSize,
+		}
+		err = c.CreateVdev(vdev)
+		if err != nil {
+			log.Error("failed to create vdev:", err)
+			os.Exit(-1)
+		}
+		log.Info("Vdev created successfully with UUID:", vdev)
+	case "GetVdev":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		vdev, err := c.GetVdevs(&cpLib.GetReq{
+			GetAll: true,
+		})
+		if err != nil {
+			log.Error("failed to get vdev info:", err)
+			os.Exit(-1)
+		}
+		log.Info("Vdev info retrieved successfully:", vdev)
+
 	}
 
 	if err != nil {

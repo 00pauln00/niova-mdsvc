@@ -10,26 +10,29 @@ import (
 )
 
 const (
-	PUT_DEVICE     = "PutDeviceInfo"
-	GET_DEVICE     = "GetDeviceInfo"
-	PUT_NISD       = "PutNisdCfg"
-	GET_NISD       = "GetNisdCfg"
-	GET_NISD_LIST  = "GetAllNisd"
-	CREATE_VDEV    = "CreateVdev"
-	GET_VDEV       = "GetVdev"
-	CREATE_SNAP    = "CreateSnap"
-	READ_SNAP_NAME = "ReadSnapByName"
-	READ_SNAP_VDEV = "ReadSnapForVdev"
-	PUT_PDU        = "PutPDU"
-	GET_PDU        = "GetPDU"
-	GET_RACK       = "GetRack"
-	PUT_RACK       = "PutRack"
-	GET_HYPERVISOR = "GetHypervisor"
-	PUT_HYPERVISOR = "PutHypervisor"
-	PUT_PARTITION  = "PutPartition"
-	GET_PARTITION  = "GetPartition"
-	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
-	NAME           = "name"
+	PUT_DEVICE          = "PutDevice"
+	GET_DEVICE          = "GetDevice"
+	PUT_NISD            = "PutNisd"
+	GET_NISD            = "GetNisd"
+	GET_NISD_LIST       = "GetAllNisd"
+	CREATE_VDEV         = "CreateVdev"
+	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
+	GET_VDEV            = "GetVdevs"
+	CREATE_SNAP         = "CreateSnap"
+	READ_SNAP_NAME      = "ReadSnapByName"
+	READ_SNAP_VDEV      = "ReadSnapForVdev"
+	PUT_PDU             = "PutPDU"
+	GET_PDU             = "GetPDU"
+	GET_RACK            = "GetRack"
+	PUT_RACK            = "PutRack"
+	GET_HYPERVISOR      = "GetHypervisor"
+	PUT_HYPERVISOR      = "PutHypervisor"
+	PUT_PARTITION       = "PutPartition"
+	GET_PARTITION       = "GetPartition"
+	PUT_NISD_ARGS       = "PutNisdArgs"
+	GET_NISD_ARGS       = "GetNisdArgs"
+	CHUNK_SIZE          = 8 * 1024 * 1024 * 1024
+	NAME                = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -84,6 +87,16 @@ type DevicePartition struct {
 	NISDUUID      string `json:"nisd_uuid"`
 	DevID         string `json:"Dev_Id"`
 	Size          int64  `json:"size,omitempty"`
+}
+
+type NisdArgs struct {
+	Defrag               bool   // -g Defrag
+	MBCCnt               int    // -m
+	MergeHCnt            int    // -M
+	MCIBReadCache        int    // -r
+	S3                   string // -s
+	DSync                string // -D
+	AllowDefragMCIBCache bool   // -x
 }
 
 type Nisd struct {

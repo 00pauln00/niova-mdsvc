@@ -1266,13 +1266,13 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				deviceInfo := ctlplfl.Device{
 					ID:            updatedDevice.ID,
 					SerialNumber:  updatedDevice.SerialNumber,
-					State:        ctlplfl.INITIALIZED, // Active status
+					State:         ctlplfl.INITIALIZED, // Active status
 					HypervisorID:  hv.ID,
 					FailureDomain: updatedDevice.FailureDomain,
 				}
 				log.Info("Put device info: ", deviceInfo)
 
-				_, cpErr := m.cpClient.PutDeviceInfo(&deviceInfo)
+				_, cpErr := m.cpClient.PutDevice(&deviceInfo)
 				if cpErr != nil {
 					log.Warn("Failed to sync device to control plane: ", cpErr)
 					m.message += " (Control plane sync failed)"
@@ -5746,7 +5746,7 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 
 	log.Info("Sending device info to control plane: ", deviceInfo)
 
-	_, err := m.cpClient.PutDeviceInfo(&deviceInfo)
+	_, err := m.cpClient.PutDevice(&deviceInfo)
 	if err != nil {
 		m.message = fmt.Sprintf("Error writing device to control plane: %v", err)
 		log.Error("Failed to write device info: ", err)
@@ -6173,13 +6173,13 @@ func (m *model) initializeNISD() error {
 		AvailableSize: m.selectedPartitionForNISD.Size,
 	}
 
-	// Call PutNisdCfg
-	resp, err := m.cpClient.PutNisdCfg(nisd)
+	// Call PutNisd
+	resp, err := m.cpClient.PutNisd(nisd)
 	if err != nil {
 		return fmt.Errorf("failed to register NISD with control plane: %v", err)
 	}
 
-	log.Info("PutNisdCfg: ", nisd)
+	log.Info("PutNisd: ", nisd)
 
 	if resp == nil {
 		return fmt.Errorf("received nil response from control plane")
@@ -6233,14 +6233,14 @@ func (m *model) initializeSelectedNISDs() error {
 			AvailableSize: partitionInfo.Partition.Size,
 		}
 
-		// Call PutNisdCfg
-		resp, err := m.cpClient.PutNisdCfg(nisd)
+		// Call PutNisd
+		resp, err := m.cpClient.PutNisd(nisd)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("failed to register NISD %s with control plane: %v", partitionInfo.Partition.NISDUUID, err))
 			continue
 		}
 
-		log.Info("PutNisdCfg: ", nisd)
+		log.Info("PutNisd: ", nisd)
 
 		if resp == nil {
 			errors = append(errors, fmt.Sprintf("received nil response from control plane for NISD %s", partitionInfo.Partition.NISDUUID))
@@ -6515,7 +6515,7 @@ func (m model) viewAllNISDs() string {
 	// Create request to get all NISDs (empty ID means get all)
 	req := ctlplfl.GetReq{ID: ""}
 
-	nisds, err := m.cpClient.GetNisdCfg(req)
+	nisds, err := m.cpClient.GetNisds(req)
 	if err != nil {
 		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query NISDs from control plane: %v", err)) + "\n\n")
 		s.WriteString("Please check:\n")
@@ -6659,7 +6659,7 @@ func (m model) updateVdevDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			var deviceCount int
 			if m.cpClient != nil && m.cpConnected {
 				req := ctlplfl.GetReq{ID: "", GetAll: true}
-				devices, err := m.cpClient.GetDeviceInfo(req)
+				devices, err := m.cpClient.GetDevices(req)
 				if err == nil {
 					deviceCount = len(devices)
 				}
@@ -6724,7 +6724,7 @@ func (m model) viewVdevDeviceSelection() string {
 
 	// Get all devices from control plane
 	req := ctlplfl.GetReq{ID: "", GetAll: true}
-	devices, err := m.cpClient.GetDeviceInfo(req)
+	devices, err := m.cpClient.GetDevices(req)
 	if err != nil {
 		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query devices: %v", err)) + "\n\n")
 		s.WriteString(helpStyle.Render("esc: back to Vdev management"))
@@ -6858,7 +6858,7 @@ func (m model) viewVdevForm() string {
 	// Display details of selected devices from control plane
 	if m.cpClient != nil && m.cpConnected && selectedCount > 0 {
 		req := ctlplfl.GetReq{ID: "", GetAll: true}
-		devices, err := m.cpClient.GetDeviceInfo(req)
+		devices, err := m.cpClient.GetDevices(req)
 		if err == nil {
 			// Filter to show only initialized devices with partitions
 			var availableDevices []ctlplfl.Device
@@ -7094,7 +7094,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 			m.message = ""
 			return m, nil
 		case "enter", " ":
-			// Call PutDeviceInfo for all devices
+			// Call PutDevice for all devices
 			deviceCount := 0
 			errorCount := 0
 
@@ -7122,7 +7122,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						", Serial: ", deviceInfo.SerialNumber,
 						", HV: ", deviceInfo.HypervisorID)
 
-					_, err := m.cpClient.PutDeviceInfo(&deviceInfo)
+					_, err := m.cpClient.PutDevice(&deviceInfo)
 					if err != nil {
 						log.Warn("Failed to initialize device in control plane: ", err)
 						errorCount++
@@ -7156,7 +7156,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						", Serial: ", deviceInfo.SerialNumber,
 						", HV: ", deviceInfo.HypervisorID)
 
-					_, err := m.cpClient.PutDeviceInfo(&deviceInfo)
+					_, err := m.cpClient.PutDevice(&deviceInfo)
 					if err != nil {
 						log.Warn("Failed to initialize discovered device in control plane: ", err)
 						errorCount++
@@ -7225,7 +7225,7 @@ func (m model) viewInitializeDeviceForm() string {
 	}
 
 	totalDevices := deviceCount + len(m.discoveredDevs)
-	s.WriteString(fmt.Sprintf("This will initialize %d devices to the Control Plane using PutDeviceInfo().\n\n", totalDevices))
+	s.WriteString(fmt.Sprintf("This will initialize %d devices to the Control Plane using PutDevice().\n\n", totalDevices))
 
 	// Show device summary
 	s.WriteString("Devices to be initialized:\n")
@@ -7297,7 +7297,7 @@ func (m model) viewAllDevices() string {
 
 	// Query all devices from control plane
 	req := ctlplfl.GetReq{ID: "", GetAll: true}
-	devices, err := m.cpClient.GetDeviceInfo(req)
+	devices, err := m.cpClient.GetDevices(req)
 	if err != nil {
 		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query devices from control plane: %v", err)) + "\n\n")
 		s.WriteString(helpStyle.Render("esc: back to Device Management"))

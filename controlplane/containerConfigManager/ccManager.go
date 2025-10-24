@@ -76,7 +76,7 @@ func main() {
 
 		log.Info("setting nisd id: ", pt[ZERO_INDEX].NISDUUID)
 		req.ID = pt[ZERO_INDEX].NISDUUID
-		nisdInfo, err := c.GetNisdCfg(req)
+		nisdInfo, err := c.GetNisds(req)
 		if err != nil {
 			log.Error("failed to get nisd details: ", err)
 			os.Exit(-1)
