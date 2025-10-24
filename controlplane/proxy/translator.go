@@ -35,11 +35,14 @@ func GetReqStruct(name string) any {
 		return &cpLib.PDU{}
 	case cpLib.PUT_PARTITION:
 		return &cpLib.DevicePartition{}
+	case cpLib.PUT_NISD_ARGS:
+		return &cpLib.NisdArgs{}
 	case cpLib.CREATE_SNAP, cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
 		var size int64
 		return &size
+
 	}
 	return nil
 }
@@ -66,7 +69,9 @@ func GetRespStruct(name string) any {
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_SNAP:
 		return &cpLib.SnapResponseXML{}
-	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION:
+	case cpLib.GET_NISD_ARGS:
+		return &cpLib.NisdArgs{}
+	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS:
 		return &cpLib.ResponseXML{}
 	}
 	return nil

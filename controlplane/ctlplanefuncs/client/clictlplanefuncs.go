@@ -326,3 +326,25 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 
 	return hypervisors, nil
 }
+
+func (ccf *CliCFuncs) PutNisdArgs(req *ctlplfl.NisdArgs) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_NISD_ARGS)
+	if err != nil {
+		log.Error("PutNisdArgs failed: ", err)
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetNisdArgs() ([]ctlplfl.NisdArgs, error) {
+	var args []ctlplfl.NisdArgs
+	err := ccf.get(nil, &args, ctlplfl.GET_NISD_ARGS)
+	if err != nil {
+		log.Error("GetNisdArgs failed: ", err)
+		return nil, err
+	}
+
+	return args, nil
+}

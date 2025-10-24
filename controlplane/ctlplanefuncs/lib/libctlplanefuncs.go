@@ -29,6 +29,8 @@ const (
 	PUT_HYPERVISOR      = "PutHypervisor"
 	PUT_PARTITION       = "PutPartition"
 	GET_PARTITION       = "GetPartition"
+	PUT_NISD_ARGS       = "PutNisdArgs"
+	GET_NISD_ARGS       = "GetNisdArgs"
 	CHUNK_SIZE          = 8 * 1024 * 1024 * 1024
 	NAME                = "name"
 
@@ -108,7 +110,6 @@ type Nisd struct {
 	InitDev       bool   `yaml:"init"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
-	Args          NisdArgs
 }
 
 type PDU struct {
