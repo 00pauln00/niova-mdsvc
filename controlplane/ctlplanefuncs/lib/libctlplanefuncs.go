@@ -87,6 +87,16 @@ type DevicePartition struct {
 	Size          int64  `json:"size,omitempty"`
 }
 
+type NisdArgs struct {
+	Defrag               bool   // -g Defrag
+	MBCCnt               int    // -m
+	MergeHCnt            int    // -M
+	MCIBReadCache        int    // -r
+	S3                   string // -s
+	DSync                string // -D
+	AllowDefragMCIBCache bool   // -x
+}
+
 type Nisd struct {
 	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
 	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
@@ -98,6 +108,7 @@ type Nisd struct {
 	InitDev       bool   `yaml:"init"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	Args          NisdArgs
 }
 
 type PDU struct {
