@@ -83,7 +83,7 @@ func TestPutAndGetNisd(t *testing.T) {
 	}
 
 	res, err := c.GetNisds(cpLib.GetReq{ID: "nisd-002"})
-	log.Info("GetNisd: ", res)
+	log.Info("GetNisds: ", res)
 	assert.NoError(t, err)
 
 }

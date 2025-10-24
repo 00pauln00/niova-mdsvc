@@ -244,6 +244,7 @@ func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
+
 func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
 
 type deviceWithPartitionParser struct{}
@@ -316,3 +317,31 @@ func (deviceWithPartitionParser) ParseField(entity Entity, parts []string, value
 func (deviceWithPartitionParser) GetEntity(entity Entity) Entity {
 	return *entity.(*ctlplfl.Device)
 }
+
+type vdevParser struct{}
+
+func (vdevParser) GetRootKey() string { return vdevCfgKey }
+func (vdevParser) NewEntity(id string) Entity {
+	return &ctlplfl.Vdev{VdevID: id}
+}
+func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
+	vdev := entity.(*ctlplfl.Vdev)
+	if len(parts) == KEY_LEN {
+		switch parts[ELEMENT_KEY] {
+		case SIZE:
+			if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+				vdev.Size = sz
+			}
+		case NUM_CHUNKS:
+			if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+				vdev.NumChunks = uint32(nc)
+			}
+		case NUM_REPLICAS:
+			if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+				vdev.NumReplica = uint8(nr)
+			}
+		}
+	}
+}
+
+func (vdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Vdev) }

@@ -41,9 +41,10 @@ const (
 	DEVICE_PATH    = "dp"
 	PARTITION_PATH = "ptp"
 
-	nisdCfgKey   = "n_cfg"
 	cfgkey       = "cfg"
+	nisdCfgKey   = "n_cfg"
 	deviceCfgKey = "d_cfg"
+	vdevCfgKey   = "v_cfg"
 	sdeviceKey   = "sd"
 	parentInfo   = "pi"
 	pduKey       = "p"
@@ -51,7 +52,6 @@ const (
 	nisdKey      = "n"
 	vdevKey      = "v"
 	chunkKey     = "c"
-	vdevCfgKey   = "v/cfg"
 	hvKey        = "hv"
 	ptKey        = "pt"
 
@@ -681,43 +681,7 @@ func ReadVdevsCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	vdevMap := make(map[string]*ctlplfl.Vdev)
-	for k, value := range readResult.ResultMap {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 3 { // minimal expected parts to include vdev id, base key and an index/element
-			continue
-		}
-		vdevID := parts[BASE_UUID_PREFIX+1]
-		if _, ok := vdevMap[vdevID]; !ok {
-			vdevMap[vdevID] = &ctlplfl.Vdev{
-				VdevID: vdevID,
-			}
-		}
-		vdev := vdevMap[vdevID]
-
-		switch parts[CFG_KEY_IDX] {
-		case cfgkey:
-			switch parts[VDEV_ELEMENT_KEY] {
-			case SIZE:
-				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
-					vdev.Size = sz
-				}
-			case NUM_CHUNKS:
-				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
-					vdev.NumChunks = uint32(nc)
-				}
-			case NUM_REPLICAS:
-				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
-					vdev.NumReplica = uint8(nr)
-				}
-			}
-		}
-	}
-
-	vdevList := make([]*ctlplfl.Vdev, 0, len(vdevMap))
-	for _, v := range vdevMap {
-		vdevList = append(vdevList, v)
-	}
+	vdevList := ParseEntities[ctlplfl.Vdev](readResult.ResultMap, vdevParser{})
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
 
 }
