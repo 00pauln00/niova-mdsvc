@@ -729,7 +729,7 @@ func main() {
 	var nisdDetails string
 	var vdevSize int64
 	flag.StringVar(&nisdDetails, "nd", "", "enter nisd details in json format")
-	flag.Int64Var(&vdevSize, "vs", 100*1024*1024*1024, "enter vdev size in bytes")
+	flag.Int64Var(&vdevSize, "vds", 100*1024*1024*1024, "enter vdev size in bytes")
 
 	//Get commandline parameters.
 	clientObj.getCmdParams()
