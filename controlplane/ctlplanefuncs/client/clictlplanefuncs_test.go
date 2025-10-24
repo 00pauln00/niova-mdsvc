@@ -228,41 +228,77 @@ func TestPutAndGetHypervisor(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestMultiCreateVdev(t *testing.T) {
+func TestVdevLifecycle(t *testing.T) {
 	c := newClient(t)
-	vdev1 := &cpLib.Vdev{
-		Size: 700 * 1024 * 1024 * 1024}
-	err := c.CreateVdev(vdev1)
-	log.Info("CreateMultiVdev Result 1: ", vdev1)
-	VDEV_ID = vdev1.VdevID
-	assert.NoError(t, err)
 
-	vdev2 := &cpLib.Vdev{
-		Size: 400 * 1024 * 1024 * 1024}
-	err = c.CreateVdev(vdev2)
-	log.Info("CreateMultiVdev Result 2: ", vdev2)
-	assert.NoError(t, err)
-}
-
-func TestGetAllVdev(t *testing.T) {
-	c := newClient(t)
-	req := &cpLib.GetReq{
-		GetAll: true,
+	// Step 0: Create a NISD to allocate space for Vdevs
+	n := cpLib.Nisd{
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     15_000_000_000_000, // 1 TB
+		AvailableSize: 15_000_000_000_000, // 750 GB
 	}
-	resp, err := c.GetVdevs(req)
-	log.Info("fetch all vdevs response: ", resp)
+	_, err := c.PutNisd(&n)
 	assert.NoError(t, err)
-}
 
-func TestGetSpecificVdev(t *testing.T) {
-	c := newClient(t)
-	req := &cpLib.GetReq{
-		ID:     VDEV_ID,
+	// Step 1: Create first Vdev
+	vdev1 := &cpLib.Vdev{
+		Size: 700 * 1024 * 1024 * 1024,
+	}
+	err = c.CreateVdev(vdev1)
+	assert.NoError(t, err, "failed to create vdev1")
+	assert.NotEmpty(t, vdev1.VdevID, "vdev1 ID should not be empty")
+	log.Info("Created vdev1: ", vdev1)
+
+	// Step 2: Create second Vdev
+	vdev2 := &cpLib.Vdev{
+		Size: 400 * 1024 * 1024 * 1024,
+	}
+	err = c.CreateVdev(vdev2)
+	assert.NoError(t, err, "failed to create vdev2")
+	assert.NotEmpty(t, vdev2.VdevID, "vdev2 ID should not be empty")
+	log.Info("Created vdev2: ", vdev2)
+
+	// Step 3: Fetch all Vdevs and validate both exist
+	getAllReq := &cpLib.GetReq{GetAll: true}
+	allResp, err := c.GetVdevs(getAllReq)
+	assert.NoError(t, err, "failed to fetch all vdevs")
+	assert.NotNil(t, allResp, "all vdevs response should not be nil")
+	log.Info("All vdevs response: ", allResp)
+
+	var found1, found2 bool
+	for _, v := range allResp {
+		if v.VdevID == vdev1.VdevID {
+			found1 = true
+			assert.Equal(t, vdev1.Size, v.Size, "vdev1 size mismatch")
+		}
+		if v.VdevID == vdev2.VdevID {
+			found2 = true
+			assert.Equal(t, vdev2.Size, v.Size, "vdev2 size mismatch")
+		}
+	}
+	assert.True(t, found1, "vdev1 not found in GetAll response")
+	assert.True(t, found2, "vdev2 not found in GetAll response")
+
+	// Step 4: Fetch specific Vdev (vdev1)
+	getSpecificReq := &cpLib.GetReq{
+		ID:     vdev1.VdevID,
 		GetAll: false,
 	}
-	resp, err := c.GetVdevs(req)
-	log.Info("vdevs response: ", resp)
-	assert.NoError(t, err)
+	specificResp, err := c.GetVdevs(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev")
+	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
+	log.Info("Specific vdev response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
 }
 
 func TestPutAndGetPartition(t *testing.T) {
