@@ -564,6 +564,11 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		key = getConfKey(vdevKey, req.ID)
 	}
 
+	cfgKey := vdevCfgKey
+	if !req.GetAll {
+		cfgKey = getConfKey(vdevCfgKey, req.ID)
+	}
+
 	nisdResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -578,44 +583,24 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
+	cfgResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, cfgKey, int64(len(cfgKey)), cfgKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure: ", err)
+		return nil, err
+	}
 	vdevMap := make(map[string]*ctlplfl.Vdev)
 	// top-level map: vdevID -> (nisdID -> *NisdChunk)
 	vdevNisdChunkMap := make(map[string]map[string]*ctlplfl.NisdChunk)
 
 	for k, value := range readResult.ResultMap {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 3 { // minimal expected parts to include vdev id, base key and an index/element
+		vdevID := parts[BASE_UUID_PREFIX]
+		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
+		if len(parts) < 4 {
 			continue
 		}
-		vdevID := parts[BASE_UUID_PREFIX]
-		if _, ok := vdevMap[vdevID]; !ok {
-			vdevMap[vdevID] = &ctlplfl.Vdev{
-				VdevID: vdevID,
-			}
-		}
-		vdev := vdevMap[vdevID]
+		if parts[VDEV_CFG_C_KEY] == chunkKey {
 
-		switch parts[VDEV_CFG_C_KEY] {
-		case cfgkey:
-			switch parts[VDEV_ELEMENT_KEY] {
-			case SIZE:
-				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
-					vdev.Size = sz
-				}
-			case NUM_CHUNKS:
-				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
-					vdev.NumChunks = uint32(nc)
-				}
-			case NUM_REPLICAS:
-				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
-					vdev.NumReplica = uint8(nr)
-				}
-			}
-		case chunkKey:
-			// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
-			if len(parts) < 4 {
-				continue
-			}
 			nisdID := string(value)
 
 			// ensure per-vdev map exists
@@ -658,6 +643,36 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 			if chunkIdx >= 0 {
 				perVdevMap[nisdID].Chunk = append(perVdevMap[nisdID].Chunk, chunkIdx)
 			}
+		}
+	}
+
+	for k, value := range cfgResult.ResultMap {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		vdevID := parts[BASE_UUID_PREFIX]
+		if _, ok := vdevMap[vdevID]; !ok {
+			vdevMap[vdevID] = &ctlplfl.Vdev{
+				VdevID: vdevID,
+			}
+		}
+		vdev := vdevMap[vdevID]
+
+		if parts[BASE_KEY] == vdevCfgKey {
+			switch parts[ELEMENT_KEY] {
+			case SIZE:
+				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+					vdev.Size = sz
+				}
+			case NUM_CHUNKS:
+				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+					vdev.NumChunks = uint32(nc)
+				}
+			case NUM_REPLICAS:
+				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+					vdev.NumReplica = uint8(nr)
+				}
+
+			}
+
 		}
 	}
 

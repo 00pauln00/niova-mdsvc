@@ -286,6 +286,11 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.True(t, found1, "vdev1 not found in GetAll response")
 	assert.True(t, found2, "vdev2 not found in GetAll response")
 
+	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
+	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
+	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
+	log.Info("All vdevs with chunk mapping response: ", allCResp)
+
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetReq{
 		ID:     vdev1.VdevID,
@@ -297,6 +302,15 @@ func TestVdevLifecycle(t *testing.T) {
 	log.Info("Specific vdev response: ", specificResp)
 
 	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+
+	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
+	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
 	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
 	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
 }
