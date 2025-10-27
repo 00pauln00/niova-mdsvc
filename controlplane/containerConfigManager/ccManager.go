@@ -61,7 +61,11 @@ func main() {
 	}
 
 	log.Debugf("read nisd config details: %+v", conf.NisdConfig)
-
+	nisdArgs, err := c.GetNisdArgs()
+	if err != nil {
+		log.Error("failed to fetch nisd args: ", err)
+	}
+	naS := nisdArgs.BuildCmdArgs()
 	for i, nisd := range conf.NisdConfig {
 		req := cpLib.GetReq{
 			ID:     nisd.DevID,
@@ -85,6 +89,7 @@ func main() {
 		conf.NisdConfig[i].ClientPort = nisdInfo[ZERO_INDEX].ClientPort
 		conf.NisdConfig[i].PeerPort = nisdInfo[ZERO_INDEX].PeerPort
 		conf.NisdConfig[i].DevID = nisdInfo[ZERO_INDEX].DevID
+		conf.NisdConfig[i].Args = naS
 		log.Info("fetched nisd info from control plane: ", nisdInfo[ZERO_INDEX])
 
 	}

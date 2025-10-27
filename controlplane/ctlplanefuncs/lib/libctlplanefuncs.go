@@ -3,6 +3,8 @@ package libctlplanefuncs
 import (
 	"encoding/gob"
 	"fmt"
+	"strconv"
+	"strings"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -110,6 +112,7 @@ type Nisd struct {
 	InitDev       bool   `yaml:"init"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	Args          string `yaml:"cmdline_args"`
 }
 
 type PDU struct {
@@ -239,4 +242,32 @@ func RegisterGOBStructs() {
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
 	gob.Register(NisdArgs{})
+}
+
+func (a *NisdArgs) BuildCmdArgs() string {
+	var parts []string
+
+	if a.Defrag {
+		parts = append(parts, "-g")
+	}
+	if a.MBCCnt != 0 {
+		parts = append(parts, "-m", strconv.Itoa(a.MBCCnt))
+	}
+	if a.MergeHCnt != 0 {
+		parts = append(parts, "-M", strconv.Itoa(a.MergeHCnt))
+	}
+	if a.MCIBReadCache != 0 {
+		parts = append(parts, "-r", strconv.Itoa(a.MCIBReadCache))
+	}
+	if a.S3 != "" {
+		parts = append(parts, "-s", a.S3)
+	}
+	if a.DSync != "" {
+		parts = append(parts, "-D", a.DSync)
+	}
+	if a.AllowDefragMCIBCache {
+		parts = append(parts, "-x")
+	}
+
+	return strings.Join(parts, " ")
 }
