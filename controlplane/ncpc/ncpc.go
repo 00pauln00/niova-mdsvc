@@ -298,14 +298,15 @@ func (clientObj *clientHandler) prepareLOInfoRequest(b *bytes.Buffer) error {
 func (co *clientHandler) prepNSendReq(rncui string, isWrite bool, itr int) error {
 
 	var rqb bytes.Buffer
-	err := PumiceDBCommon.PrepareAppPumiceRequest(co.clientReqArr[itr].Request,
-		rncui, &rqb)
+
+	encoder := gob.NewEncoder(&rqb)
+	err := encoder.Encode(co.clientReqArr[itr].Request)
 	if err != nil {
 		return err
 	}
 
 	//Send the request
-	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "", isWrite)
+	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app?rncui="+rncui, isWrite)
 	if err != nil {
 		return err
 	}

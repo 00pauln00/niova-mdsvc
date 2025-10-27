@@ -177,8 +177,8 @@ func (handler *configApplication) startPMDBClient() error {
 	fmt.Println("Raft uuid : ", handler.raftUUID)
 	//handler.raftUUID = "c077b532-44f2-11ed-822f-72e5126963a0"
 	//Get client object
-	handler.pmdbClientObj = pmdbc.PmdbClientNew(handler.raftUUID, handler.clientUUID)
-	if handler.pmdbClientObj == nil {
+	handler.pmdbClientObj, err = pmdbc.PmdbClientNew(handler.raftUUID, handler.clientUUID)
+	if err != nil {
 		return errors.New("PMDB client object is empty")
 	}
 
@@ -209,18 +209,16 @@ func (handler *configApplication) Write(key string, data []byte) error {
 	request.Value = data
 	request.Rncui = uuid.NewV4().String() + ":0:0:0:0"
 	var requestBytes bytes.Buffer
-	var replySize int64
 
 	enc := gob.NewEncoder(&requestBytes)
 	enc.Encode(request)
-	reqArgs := &pmdbc.PmdbReqArgs{
-		Rncui:       request.Rncui,
-		ReqByteArr:  requestBytes.Bytes(),
-		GetResponse: 0,
-		ReplySize:   &replySize,
+	reqArgs := &pmdbc.PmdbReq{
+		Rncui:    request.Rncui,
+		Request:  requestBytes.Bytes(),
+		GetReply: 0,
 	}
 
-	err := handler.pmdbClientObj.PutEncoded(reqArgs)
+	err := handler.pmdbClientObj.Put(reqArgs)
 	return err
 }
 
@@ -231,13 +229,14 @@ func (handler *configApplication) Read(key string, response *[]byte) error {
 	var requestBytes bytes.Buffer
 	enc := gob.NewEncoder(&requestBytes)
 	enc.Encode(request)
-	reqArgs := &pmdbc.PmdbReqArgs{
+	reqArgs := &pmdbc.PmdbReq{
 		Rncui:      "",
-		ReqByteArr: requestBytes.Bytes(),
-		Response:   response,
+		Request: requestBytes.Bytes(),
+		GetReply: 1,
+		Reply:   response,
 	}
 
-	return handler.pmdbClientObj.GetEncoded(reqArgs)
+	return handler.pmdbClientObj.Get(reqArgs)
 }
 
 func main() {
