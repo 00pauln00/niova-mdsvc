@@ -530,11 +530,16 @@ Description : Call back for PMDB read func requests to HTTP server.
 func (handler *proxyHandler) ReadHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
 	encType := GetEncodingType(reader)
-	res, err := DecodeRequest(encType, name, body)
-	if err != nil {
-		log.Error("RHCB:failed to decode request: ", err)
-		return err
+	var res any = nil
+	var err error
+	if len(body) > 0 {
+		res, err = DecodeRequest(encType, name, body)
+		if err != nil {
+			log.Error("RHCB:failed to decode request: ", err)
+			return err
+		}
 	}
+
 	r := &funclib.FuncReq{Name: name, Args: res}
 	request := encode(PumiceDBCommon.PumiceRequest{
 		ReqType:    PumiceDBCommon.FUNC_REQ,

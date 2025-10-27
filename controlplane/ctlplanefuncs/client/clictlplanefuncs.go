@@ -338,12 +338,21 @@ func (ccf *CliCFuncs) PutNisdArgs(req *ctlplfl.NisdArgs) (*ctlplfl.ResponseXML, 
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdArgs() ([]ctlplfl.NisdArgs, error) {
-	var args []ctlplfl.NisdArgs
-	err := ccf.get(nil, &args, ctlplfl.GET_NISD_ARGS)
+func (ccf *CliCFuncs) GetNisdArgs() (ctlplfl.NisdArgs, error) {
+	var args ctlplfl.NisdArgs
+	url := "name=" + ctlplfl.GET_NISD_ARGS
+	rsb, err := ccf.request(nil, url, false)
 	if err != nil {
-		log.Error("GetNisdArgs failed: ", err)
-		return nil, err
+		log.Error("request failed: ", err)
+		return args, err
+	}
+	if rsb == nil {
+		return args, fmt.Errorf("failed to fetch response from control plane: %v", err)
+	}
+	err = pmCmn.Decoder(ccf.encType, rsb, &args)
+	if err != nil {
+		log.Error("failed to decode response: ", err)
+		return args, err
 	}
 
 	return args, nil

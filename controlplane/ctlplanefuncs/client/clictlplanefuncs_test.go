@@ -342,3 +342,22 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 		runPutAndGetRack(b, c)
 	}
 }
+
+func TestPutAndGetNisdArgs(t *testing.T) {
+	c := newClient(t)
+	na := &cpLib.NisdArgs{
+		Defrag:               true,
+		MBCCnt:               8,
+		MergeHCnt:            4,
+		MCIBReadCache:        256,
+		S3:                   "s3://backup-bucket/data",
+		DSync:                "enabled",
+		AllowDefragMCIBCache: false,
+	}
+	resp, err := c.PutNisdArgs(na)
+	log.Info("created na: ", resp)
+	assert.NoError(t, err)
+	nisdArgs, err := c.GetNisdArgs()
+	assert.NoError(t, err)
+	log.Info("Get na: ", nisdArgs)
+}

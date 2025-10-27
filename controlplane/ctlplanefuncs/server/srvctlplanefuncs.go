@@ -706,7 +706,7 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 		log.Error("Failed to marshal nisd args response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd args response: %v", err)
 	}
-	commitChgs := PopulateEntities[*ctlplfl.NisdArgs](&nArgs, hvPopulator{}, nisdCfgKey)
+	commitChgs := PopulateEntities[*ctlplfl.NisdArgs](&nArgs, nisdArgsPopulator{}, argsKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
