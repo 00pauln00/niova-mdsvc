@@ -453,6 +453,28 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
+	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
+
+	// Validate each PDU field-by-field
+	for _, inserted := range pdus {
+		var found *cpLib.PDU
+		for _, fetched := range res {
+			if fetched.ID == inserted.ID {
+				found = &fetched
+				break
+			}
+		}
+
+		assert.NotNil(t, found, "Inserted PDU with ID %s not found in response", inserted.ID)
+
+		// Field-level checks
+		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.PowerCapacity, found.PowerCapacity, "Mismatch in PowerCapacity for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for PDU %s", inserted.ID)
+	}
+
+	log.Infof("Validated all %d PDUs successfully", len(pdus))
 	assert.NotEmpty(t, res)
 	
 	returned := res[0]
@@ -524,6 +546,28 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	// GET all NISDs
 	res, err := c.GetNisds(cpLib.GetReq{})
 	assert.NoError(t, err)
+	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
+
+	// Validate each rack field-by-field
+	for _, inserted := range racks {
+		var found *cpLib.Rack
+		for _, fetched := range resp {
+			if fetched.ID == inserted.ID {
+				found = &fetched
+				break
+			}
+		}
+
+		assert.NotNil(t, found, "Inserted rack with ID %s not found in GetRacks response", inserted.ID)
+
+		// Detailed field comparisons
+		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for Rack ID %s", inserted.ID)
+		assert.Equal(t, inserted.PDUID, found.PDUID, "Mismatch in PDUID for Rack ID %s", inserted.ID)
+		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for Rack ID %s", inserted.ID)
+		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for Rack ID %s", inserted.ID)
+	}
+
+	log.Infof("All %d racks validated successfully", len(racks))
 	assert.NotEmpty(t, res)
 
 	// Store results in the map
@@ -563,9 +607,26 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
 
 	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
+
+	// Validation: ensure inserted hypervisors are present with correct fields
+	for _, expected := range hypervisors {
+		found := false
+		for _, got := range resp {
+			if got.ID == expected.ID {
+				assert.Equal(t, expected.Name, got.Name, "Mismatch in Name for ID %s", expected.ID)
+				assert.Equal(t, expected.RackID, got.RackID, "Mismatch in RackID for ID %s", expected.ID)
+				assert.Equal(t, expected.IPAddress, got.IPAddress, "Mismatch in IPAddress for ID %s", expected.ID)
+				assert.Equal(t, expected.PortRange, got.PortRange, "Mismatch in PortRange for ID %s", expected.ID)
+				assert.Equal(t, expected.SSHPort, got.SSHPort, "Mismatch in SSHPort for ID %s", expected.ID)
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected hypervisor with ID %s not found in response", expected.ID)
+	}
 }
 
-func TestVdevLifecycle(t *testing.T) {
+func TestMultiCreateVdev(t *testing.T) {
 	c := newClient(t)
 
 	// Step 0: Create a NISD to allocate space for Vdevs
