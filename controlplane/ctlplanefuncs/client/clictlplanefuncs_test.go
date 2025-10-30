@@ -618,6 +618,28 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
+	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
+
+	// Validate each PDU field-by-field
+	for _, inserted := range pdus {
+		var found *cpLib.PDU
+		for _, fetched := range res {
+			if fetched.ID == inserted.ID {
+				found = &fetched
+				break
+			}
+		}
+
+		assert.NotNil(t, found, "Inserted PDU with ID %s not found in response", inserted.ID)
+
+		// Field-level checks
+		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.PowerCapacity, found.PowerCapacity, "Mismatch in PowerCapacity for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for PDU %s", inserted.ID)
+	}
+
+	log.Infof("Validated all %d PDUs successfully", len(pdus))
 	assert.NotEmpty(t, res)
 	
 	returned := res[0]
