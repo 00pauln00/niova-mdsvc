@@ -110,7 +110,23 @@ func TestPutAndGetNisd(t *testing.T) {
 	res, err := c.GetNisd(cpLib.GetReq{ID: "nisd-002"})
 	log.Info("GetNisds: ", res)
 	assert.NoError(t, err)
+	
+	expected := mockNisd[1]
+	returned := res[0]
 
+	// Validate all key fields match
+	assert.Equal(t, expected.ID, returned.ID, "ID mismatch")
+	assert.Equal(t, expected.DevID, returned.DevID, "DevID mismatch")
+	assert.Equal(t, expected.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
+	assert.Equal(t, expected.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
+	assert.Equal(t, expected.IPAddr, returned.IPAddr, "IPAddr mismatch")
+	assert.Equal(t, expected.ClientPort, returned.ClientPort, "ClientPort mismatch")
+	assert.Equal(t, expected.PeerPort, returned.PeerPort, "PeerPort mismatch")
+	assert.Equal(t, expected.TotalSize, returned.TotalSize, "TotalSize mismatch")
+	assert.Equal(t, expected.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
+	assert.Equal(t, expected.InitDev, returned.InitDev, "InitDev mismatch")
+
+	log.Info("All NISD PUT/GET validations successful.")
 }
 
 func TestPutAndGetDevice(t *testing.T) {
@@ -235,6 +251,28 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	res, err := c.GetNisdCfg(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
+	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
+
+	// Validate each PDU field-by-field
+	for _, inserted := range pdus {
+		var found *cpLib.PDU
+		for _, fetched := range res {
+			if fetched.ID == inserted.ID {
+				found = &fetched
+				break
+			}
+		}
+
+		assert.NotNil(t, found, "Inserted PDU with ID %s not found in response", inserted.ID)
+
+		// Field-level checks
+		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.PowerCapacity, found.PowerCapacity, "Mismatch in PowerCapacity for PDU %s", inserted.ID)
+		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for PDU %s", inserted.ID)
+	}
+
+	log.Infof("Validated all %d PDUs successfully", len(pdus))
 }
 
 func TestPutAndGetRack(t *testing.T) {
@@ -254,6 +292,28 @@ func TestPutAndGetRack(t *testing.T) {
 	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
 	log.Info("GetRacks: ", resp)
 	assert.NoError(t, err)
+	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
+
+	// Validate each rack field-by-field
+	for _, inserted := range racks {
+		var found *cpLib.Rack
+		for _, fetched := range resp {
+			if fetched.ID == inserted.ID {
+				found = &fetched
+				break
+			}
+		}
+
+		assert.NotNil(t, found, "Inserted rack with ID %s not found in GetRacks response", inserted.ID)
+
+		// Detailed field comparisons
+		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for Rack ID %s", inserted.ID)
+		assert.Equal(t, inserted.PDUID, found.PDUID, "Mismatch in PDUID for Rack ID %s", inserted.ID)
+		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for Rack ID %s", inserted.ID)
+		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for Rack ID %s", inserted.ID)
+	}
+
+	log.Infof("All %d racks validated successfully", len(racks))
 }
 
 func TestPutAndGetHypervisor(t *testing.T) {
