@@ -86,17 +86,22 @@ type DevicePartition struct {
 	Size          int64  `json:"size,omitempty"`
 }
 
+type NetworkInfo struct {
+	IPAddr string
+	Port   uint16
+}
+
 type Nisd struct {
-	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
 	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
 	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
 	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
 	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
-	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
 	InitDev       bool   `yaml:"init"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	SocketPath    string
+	NetInfo       []NetworkInfo
 }
 
 type PDU struct {
@@ -118,13 +123,14 @@ type Rack struct {
 }
 
 type Hypervisor struct {
-	ID        string // Unique hypervisor identifier
-	RackID    string
-	Name      string
-	IPAddress string
-	PortRange string
-	SSHPort   string // SSH port for connection
-	Dev       []Device
+	ID          string // Unique hypervisor identifier
+	RackID      string
+	Name        string
+	IPAddress   string
+	PortRange   string
+	SSHPort     string // SSH port for connection
+	Dev         []Device
+	RDMAEnabled bool
 }
 
 type NisdChunk struct {
