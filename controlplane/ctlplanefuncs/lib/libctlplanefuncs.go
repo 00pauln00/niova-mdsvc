@@ -231,4 +231,5 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
+	gob.Register(NetworkInfo{})
 }

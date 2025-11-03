@@ -38,8 +38,12 @@ const (
 	NAME           = "nm"
 	PORT_RANGE     = "pr"
 	SSH_PORT       = "ssh"
+	PORT           = "prt"
 	DEVICE_PATH    = "dp"
 	PARTITION_PATH = "ptp"
+	NETWORK_INFO   = "ni"
+	SOCKET_PATH    = "sck"
+	ENABLE_RDMA    = "rdma"
 
 	nisdCfgKey   = "n_cfg"
 	cfgkey       = "cfg"

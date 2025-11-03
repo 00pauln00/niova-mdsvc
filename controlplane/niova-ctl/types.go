@@ -391,11 +391,11 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 						// Mark the server port as allocated (NISD uses this)
 						allocatedPorts[int(nisd.PeerPort)] = true
 						// Mark the client port as allocated
-						allocatedPorts[int(nisd.ClientPort)] = true
-						// Mark client port + 1 as allocated (NISD uses this internally)
-						allocatedPorts[int(nisd.ClientPort)+1] = true
-						// Mark the gap port after client port + 1 as allocated for spacing
-						allocatedPorts[int(nisd.ClientPort)+2] = true
+						// allocatedPorts[int(nisd.ClientPort)] = true
+						// // Mark client port + 1 as allocated (NISD uses this internally)
+						// allocatedPorts[int(nisd.ClientPort)+1] = true
+						// // Mark the gap port after client port + 1 as allocated for spacing
+						// allocatedPorts[int(nisd.ClientPort)+2] = true
 					}
 				}
 			}

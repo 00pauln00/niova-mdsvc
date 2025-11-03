@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	log "github.com/sirupsen/logrus"
 )
 
 const ( // Key Prefixes
@@ -120,6 +121,12 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 			hv.SSHPort = string(value)
 		case NAME:
 			hv.Name = string(value)
+		case ENABLE_RDMA:
+			rdma, err := strconv.ParseBool(string(value))
+			if err != nil {
+				log.Error("failed to parse enable rdma field")
+			}
+			hv.RDMAEnabled = rdma
 		}
 	}
 }
@@ -164,7 +171,7 @@ type nisdParser struct{}
 func (nisdParser) GetRootKey() string { return nisdCfgKey }
 
 func (nisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{ID: id}
+	return &ctlplfl.Nisd{ID: id, NetInfo: make([]ctlplfl.NetworkInfo, 0)}
 }
 
 func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
@@ -173,9 +180,6 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 		switch parts[ELEMENT_KEY] {
 		case DEVICE_ID:
 			nisd.DevID = string(value)
-		case CLIENT_PORT:
-			p, _ := strconv.Atoi(string(value))
-			nisd.ClientPort = uint16(p)
 		case PEER_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
@@ -183,17 +187,39 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 			nisd.HyperVisorID = string(value)
 		case FAILURE_DOMAIN:
 			nisd.FailureDomain = string(value)
-		case IP_ADDR:
-			nisd.IPAddr = string(value)
 		case TOTAL_SPACE:
 			ts, _ := strconv.Atoi(string(value))
 			nisd.TotalSize = int64(ts)
 		case AVAIL_SPACE:
 			as, _ := strconv.Atoi(string(value))
 			nisd.AvailableSize = int64(as)
+		case SOCKET_PATH:
+			nisd.SocketPath = string(value)
+		}
+	}
+
+	// Handle network info keys: n/<nisd-id>/ni/<index>/(ip|ptr)
+	if len(parts) > KEY_LEN && parts[2] == NETWORK_INFO {
+		idx, err := strconv.Atoi(parts[3])
+		if err != nil {
+			return
+		}
+
+		// Ensure slice capacity
+		for len(nisd.NetInfo) <= idx {
+			nisd.NetInfo = append(nisd.NetInfo, ctlplfl.NetworkInfo{})
+		}
+
+		switch parts[4] {
+		case IP_ADDR:
+			nisd.NetInfo[idx].IPAddr = string(value)
+		case PORT:
+			p, _ := strconv.Atoi(string(value))
+			nisd.NetInfo[idx].Port = uint16(p)
 		}
 	}
 }
+
 func (nisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
 
 type pduParser struct{}

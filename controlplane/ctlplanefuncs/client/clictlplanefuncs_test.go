@@ -39,40 +39,57 @@ func TestPutAndGetNisd(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort:    7001,
 			PeerPort:      8001,
 			ID:            "nisd-001",
 			DevID:         "dev-001",
 			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.10",
 			InitDev:       true,
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
+			SocketPath:    "/path/sockets1",
+			NetInfo: []cpLib.NetworkInfo{
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+			},
 		},
 		{
-			ClientPort:    7002,
 			PeerPort:      8002,
 			ID:            "nisd-002",
 			DevID:         "dev-002",
 			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-02",
-			IPAddr:        "192.168.1.11",
 			InitDev:       false,
 			TotalSize:     500_000_000_000, // 500 GB
 			AvailableSize: 200_000_000_000, // 200 GB
+			SocketPath:    "/path/sockets2",
 		},
 		{
-			ClientPort:    7003,
 			PeerPort:      8003,
 			ID:            "nisd-003",
 			DevID:         "dev-003",
 			HyperVisorID:  "hv-02",
 			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.12",
 			InitDev:       true,
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
+			SocketPath:    "/path/sockets3",
+			NetInfo: []cpLib.NetworkInfo{
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+			},
 		},
 	}
 
@@ -82,7 +99,7 @@ func TestPutAndGetNisd(t *testing.T) {
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: "nisd-002"})
+	res, err := c.GetNisdCfg(cpLib.GetReq{ID: "nisd-003"})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
 
@@ -214,7 +231,7 @@ func TestPutAndGetHypervisor(t *testing.T) {
 
 	hypervisors := []cpLib.Hypervisor{
 		{RackID: "rack-1", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddress: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
-		{RackID: "rack-2", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
+		{RackID: "rack-2", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2", RDMAEnabled: true},
 	}
 
 	for _, hv := range hypervisors {
