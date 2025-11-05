@@ -220,7 +220,7 @@ func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
+	return ccf.put(vdev, vdev, ctlplfl.CREATE_VDEV)
 }
 
 func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
