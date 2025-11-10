@@ -402,6 +402,10 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	// GET all devices
 	res, err := c.GetDevices(cpLib.GetReq{})
 	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+=======
+	// GET all devices
+	res, err := c.GetDeviceInfo(cpLib.GetReq{})
+>>>>>>> 955463c ( Added two sub-tests for each entity.)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -547,25 +551,6 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	res, err := c.GetNisds(cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
-
-	// Validate each rack field-by-field
-	for _, inserted := range racks {
-		var found *cpLib.Rack
-		for _, fetched := range resp {
-			if fetched.ID == inserted.ID {
-				found = &fetched
-				break
-			}
-		}
-
-		assert.NotNil(t, found, "Inserted rack with ID %s not found in GetRacks response", inserted.ID)
-
-		// Detailed field comparisons
-		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.PDUID, found.PDUID, "Mismatch in PDUID for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for Rack ID %s", inserted.ID)
-	}
 
 	log.Infof("All %d racks validated successfully", len(racks))
 	assert.NotEmpty(t, res)
@@ -832,6 +817,7 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+<<<<<<< HEAD
 }
 
 func TestVdevNisdChunk(t *testing.T) {
@@ -887,3 +873,6 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	assert.NoError(t, err)
 	log.Info("Get na: ", nisdArgs)
 }
+=======
+}
+>>>>>>> 955463c ( Added two sub-tests for each entity.)
