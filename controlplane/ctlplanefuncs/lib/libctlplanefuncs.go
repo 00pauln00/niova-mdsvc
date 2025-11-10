@@ -28,6 +28,10 @@ const (
 	PUT_HYPERVISOR = "PutHypervisor"
 	PUT_PARTITION  = "PutPartition"
 	GET_PARTITION  = "GetPartition"
+	GET_VDEV_SIZE  = "get_vdev_size"
+	GET_CHUNK_NISD = "get_chunk_nisd"
+	GET_NISD_INFO  = "get_nisd_info"
+
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	NAME           = "name"
 
@@ -212,6 +216,23 @@ func Count8GBChunks(size int64) int64 {
 	return count + 1
 }
 
+type VdevSize struct {
+	XMLName xml.Name `xml:"Vdev"`
+	NVBLKS  uint64   `xml:"NVBLKS"`
+}
+
+type ChunkNisd struct {
+	XMLName xml.Name `xml:"ChunkNisd"`
+	NumReplicas    uint8   `xml:"NREPLICAS"`
+	NisdUUID	   string  `xml:"NISD"`
+}
+
+type NisdInfo struct {
+	XMLName xml.Name `xml:"NisdInfo"`
+	NisdIP  string `xml:"IP"`
+	NisdPort uint16 `xml:"PORT"`
+}
+
 func RegisterGOBStructs() {
 	gob.Register(Rack{})
 	gob.Register(GetReq{})
@@ -225,4 +246,7 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
+	gob.Register(VdevSize{})
+	gob.Register(ChunkNisd{})
+	gob.Register(NisdInfo{})
 }

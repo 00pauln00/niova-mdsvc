@@ -664,3 +664,15 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
 }
+
+func ReadVdevSize(args ..interface{}) (interface{}, error) {
+
+}
+
+func ReadChunkNisd(args ..interface{}) (interface{}, error) {
+
+}
+
+func ReadNisdInfo(args ..interface{}) (interface{}, error) {
+
+}
