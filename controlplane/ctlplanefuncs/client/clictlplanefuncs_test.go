@@ -53,37 +53,77 @@ func newClient(t *testing.T) *CliCFuncs {
 	return c
 }
 
-func TestPutAndGetNisd(t *testing.T) {
+func TestPutAndGetSingleNisd(t *testing.T) {
+	c := newClient(t)
+
+	mockNisd := cpLib.Nisd{
+			ClientPort:    7001,
+			PeerPort:      8001,
+			ID:            "nisd-001",
+			DevID:         "dev-001",
+			HyperVisorID:  "hv-01",
+			FailureDomain: "fd-01",
+			IPAddr:        "192.168.1.10",
+			InitDev:       true,
+			TotalSize:     1_000_000_000_000, // 1 TB
+			AvailableSize: 750_000_000_000,   // 750 GB
+	}
+
+	// PUT operation 
+	resp, err := c.PutNisdCfg(&n)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET operation 
+	res, err := c.GetNisdCfg(cpLib.GetReq{ID: n.ID})
+	log.Info("GetNisdCfg: ", res)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+	
+	returned := res[0]
+
+	// Validate all key fields match
+	assert.Equal(t, n.ID, returned.ID, "ID mismatch")
+	assert.Equal(t, n.DevID, returned.DevID, "DevID mismatch")
+	assert.Equal(t, n.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
+	assert.Equal(t, n.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
+	assert.Equal(t, n.IPAddr, returned.IPAddr, "IPAddr mismatch")
+	assert.Equal(t, n.ClientPort, returned.ClientPort, "ClientPort mismatch")
+	assert.Equal(t, n.PeerPort, returned.PeerPort, "PeerPort mismatch")
+	assert.Equal(t, n.TotalSize, returned.TotalSize, "TotalSize mismatch")
+	assert.Equal(t, n.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
+	assert.Equal(t, n.InitDev, returned.InitDev, "InitDev mismatch")
+
+	log.Info("Single NISD PUT/GET validations successful.")
+}
+
+func TestPutAndGetMultipleNisds(t *testing.T) {
 	c := newClient(t)
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort: 7001,
-			PeerPort:   8001,
-			ID:         "nisd-001",
-			FailureDomain: []string{
-				"pdu-01",
-				"rack-01",
-				"hv-01",
-				"dev-001",
-			},
+			ClientPort:    7001,
+			PeerPort:      8001,
+			ID:            "nisd-001",
+			DevID:         "dev-001",
+			HyperVisorID:  "hv-01",
+			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.10",
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 750_000_000_000,   // 750 GB
+			InitDev:       true,
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 750_000_000_000,
 		},
 		{
-			ClientPort: 7002,
-			PeerPort:   8002,
-			ID:         "nisd-002",
-			FailureDomain: []string{
-				"pdu-02",
-				"rack-02",
-				"hv-02",
-				"dev-002",
-			},
+			ClientPort:    7002,
+			PeerPort:      8002,
+			ID:            "nisd-002",
+			DevID:         "dev-002",
+			HyperVisorID:  "hv-01",
+			FailureDomain: "fd-02",
 			IPAddr:        "192.168.1.11",
-			TotalSize:     500_000_000_000, // 500 GB
-			AvailableSize: 200_000_000_000, // 200 GB
+			InitDev:       false,
+			TotalSize:     500_000_000_000,
+			AvailableSize: 200_000_000_000,
 		},
 		{
 			ClientPort: 7003,
@@ -96,40 +136,88 @@ func TestPutAndGetNisd(t *testing.T) {
 				"dev-003",
 			},
 			IPAddr:        "192.168.1.12",
-			TotalSize:     2_000_000_000_000, // 2 TB
-			AvailableSize: 1_500_000_000_000, // 1.5 TB
+			InitDev:       true,
+			TotalSize:     2_000_000_000_000,
+			AvailableSize: 1_500_000_000_000,
 		},
 	}
 
+	// PUT multiple NISDs
 	for _, n := range mockNisd {
 		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetNisd(cpLib.GetReq{ID: "nisd-002"})
-	log.Info("GetNisds: ", res)
+	// GET all NISDs
+	res, err := c.GetNisdCfg(cpLib.GetReq{})
 	assert.NoError(t, err)
-	
-	expected := mockNisd[1]
-	returned := res[0]
+	assert.NotEmpty(t, res)
 
-	// Validate all key fields match
-	assert.Equal(t, expected.ID, returned.ID, "ID mismatch")
-	assert.Equal(t, expected.DevID, returned.DevID, "DevID mismatch")
-	assert.Equal(t, expected.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
-	assert.Equal(t, expected.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
-	assert.Equal(t, expected.IPAddr, returned.IPAddr, "IPAddr mismatch")
-	assert.Equal(t, expected.ClientPort, returned.ClientPort, "ClientPort mismatch")
-	assert.Equal(t, expected.PeerPort, returned.PeerPort, "PeerPort mismatch")
-	assert.Equal(t, expected.TotalSize, returned.TotalSize, "TotalSize mismatch")
-	assert.Equal(t, expected.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
-	assert.Equal(t, expected.InitDev, returned.InitDev, "InitDev mismatch")
+	// Validate count
+	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
 
-	log.Info("All NISD PUT/GET validations successful.")
+	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
 }
 
-func TestPutAndGetDevice(t *testing.T) {
+func TestPutAndGetSingleDevice(t *testing.T) {
+	c := newClient(t)
+
+	device := cpLib.Device{
+		ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+		SerialNumber:  "SN112233445",
+		State:         2,
+		HypervisorID:  "hv-01",
+		FailureDomain: "fd-02",
+		DevicePath:    "/temp/path3",
+		Name:          "dev-3",
+		Size:          9999999,
+		Partitions: []cpLib.DevicePartition{
+			{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+				PartitionPath: "/part/path3",
+				NISDUUID:      "1",
+				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				Size:          123467,
+			},
+		},
+	}
+
+	// PUT single device
+	resp, err := c.PutDeviceInfo(&device)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET device
+	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
+	log.Infof("fetch single device info: %s", res)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+
+	returned := res[0]
+
+	// Validate all key fields
+	assert.Equal(t, device.ID, returned.ID)
+	assert.Equal(t, device.SerialNumber, returned.SerialNumber)
+	assert.Equal(t, device.HypervisorID, returned.HypervisorID)
+	assert.Equal(t, device.FailureDomain, returned.FailureDomain)
+	assert.Equal(t, device.DevicePath, returned.DevicePath)
+	assert.Equal(t, device.Name, returned.Name)
+	assert.Equal(t, device.Size, returned.Size)
+	assert.Equal(t, len(device.Partitions), len(returned.Partitions))
+
+	for i := range device.Partitions {
+		assert.Equal(t, device.Partitions[i].PartitionID, returned.Partitions[i].PartitionID)
+		assert.Equal(t, device.Partitions[i].PartitionPath, returned.Partitions[i].PartitionPath)
+		assert.Equal(t, device.Partitions[i].NISDUUID, returned.Partitions[i].NISDUUID)
+		assert.Equal(t, device.Partitions[i].DevID, returned.Partitions[i].DevID)
+		assert.Equal(t, device.Partitions[i].Size, returned.Partitions[i].Size)
+	}
+
+	log.Infof("Single Device PUT/GET validation successful for %s", device.ID)
+}
+
+func TestPutAndGetMultipleDevices(t *testing.T) {
 	c := newClient(t)
 
 	mockDevices := []cpLib.Device{
@@ -253,26 +341,40 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
 
-	// Validate each PDU field-by-field
-	for _, inserted := range pdus {
-		var found *cpLib.PDU
-		for _, fetched := range res {
-			if fetched.ID == inserted.ID {
-				found = &fetched
-				break
-			}
-		}
+	log.Infof("Validated all %d PDUs successfully", len(pdus))
+}
 
-		assert.NotNil(t, found, "Inserted PDU with ID %s not found in response", inserted.ID)
+func TestPutAndGetSingleRack(t *testing.T) {
+	c := newClient(t)
 
-		// Field-level checks
-		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for PDU %s", inserted.ID)
-		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for PDU %s", inserted.ID)
-		assert.Equal(t, inserted.PowerCapacity, found.PowerCapacity, "Mismatch in PowerCapacity for PDU %s", inserted.ID)
-		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for PDU %s", inserted.ID)
+	rack := cpLib.Rack{
+		ID:            "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+		PDUID:         "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+		Name:          "rack-1",
+		Location:      "us-east",
+		Specification: "rack1-spec",
 	}
 
-	log.Infof("Validated all %d PDUs successfully", len(pdus))
+	// PUT single rack
+	resp, err := c.PutRack(&rack)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET the same rack by ID
+	res, err := c.GetRacks(&cpLib.GetReq{ID: rack.ID})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+
+	returned := res[0]
+
+	// Validate all fields
+	assert.Equal(t, rack.ID, returned.ID)
+	assert.Equal(t, rack.PDUID, returned.PDUID)
+	assert.Equal(t, rack.Name, returned.Name)
+	assert.Equal(t, rack.Location, returned.Location)
+	assert.Equal(t, rack.Specification, returned.Specification)
+
+	log.Infof("Single Rack PUT/GET validation successful for Rack ID: %s", rack.ID)
 }
 
 func TestPutAndGetRack(t *testing.T) {
@@ -289,34 +391,47 @@ func TestPutAndGetRack(t *testing.T) {
 		assert.True(t, resp.Success)
 	}
 
-	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
-	log.Info("GetRacks: ", resp)
+	resp, err := c.GetRacks(&cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
-
-	// Validate each rack field-by-field
-	for _, inserted := range racks {
-		var found *cpLib.Rack
-		for _, fetched := range resp {
-			if fetched.ID == inserted.ID {
-				found = &fetched
-				break
-			}
-		}
-
-		assert.NotNil(t, found, "Inserted rack with ID %s not found in GetRacks response", inserted.ID)
-
-		// Detailed field comparisons
-		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.PDUID, found.PDUID, "Mismatch in PDUID for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for Rack ID %s", inserted.ID)
-	}
 
 	log.Infof("All %d racks validated successfully", len(racks))
 }
 
-func TestPutAndGetHypervisor(t *testing.T) {
+func TestPutAndGetSingleHypervisor(t *testing.T) {
+	c := newClient(t)
+
+	hv := cpLib.Hypervisor{
+		RackID:     "rack-1",
+		ID:         "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+		IPAddress:  "127.0.0.1",
+		PortRange:  "8000-9000",
+		SSHPort:    "6999",
+		Name:       "hv-1",
+	}
+
+	// Put one hypervisor
+	putResp, err := c.PutHypervisor(&hv)
+	assert.NoError(t, err, "Error while putting hypervisor")
+	assert.True(t, putResp.Success, "PutHypervisor response not successful")
+
+	// Get the same hypervisor by ID
+	getResp, err := c.GetHypervisor(&cpLib.GetReq{ID: hv.ID})
+	assert.NoError(t, err, "Error while getting hypervisor by ID")
+	assert.NotNil(t, getResp, "Expected non-nil response for GetHypervisor")
+
+	// Validate returned fields
+	assert.Equal(t, hv.ID, getResp[0].ID)
+	assert.Equal(t, hv.Name, getResp[0].Name)
+	assert.Equal(t, hv.RackID, getResp[0].RackID)
+	assert.Equal(t, hv.IPAddress, getResp[0].IPAddress)
+	assert.Equal(t, hv.PortRange, getResp[0].PortRange)
+	assert.Equal(t, hv.SSHPort, getResp[0].SSHPort)
+
+	log.Infof("Single Hypervisor PUT/GET validation successful for Hypervisor ID: %s", hv.ID)	
+}
+
+func TestPutAndGetMultipleHypervisors(t *testing.T) {
 	c := newClient(t)
 
 	hypervisors := []cpLib.Hypervisor{
@@ -324,18 +439,39 @@ func TestPutAndGetHypervisor(t *testing.T) {
 		{RackID: "rack-2", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
 	}
 
+	// PUT multiple hypervisor
 	for _, hv := range hypervisors {
 		resp, err := c.PutHypervisor(&hv)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
+	// GET all hypervisors
 	resp, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	log.Info("GetHypervisor: ", resp)
 	assert.NoError(t, err)
+	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(hypervisors), len(resp))
+
+	log.Infof("All %d racks validated successfully", len(hypervisors))
+
+	// Validation: ensure inserted hypervisors are present with correct fields
+	for _, expected := range hypervisors {
+		found := false
+		for _, got := range resp {
+			if got.ID == expected.ID {
+				assert.Equal(t, expected.Name, got.Name, "Mismatch in Name for ID %s", expected.ID)
+				assert.Equal(t, expected.RackID, got.RackID, "Mismatch in RackID for ID %s", expected.ID)
+				assert.Equal(t, expected.IPAddress, got.IPAddress, "Mismatch in IPAddress for ID %s", expected.ID)
+				assert.Equal(t, expected.PortRange, got.PortRange, "Mismatch in PortRange for ID %s", expected.ID)
+				assert.Equal(t, expected.SSHPort, got.SSHPort, "Mismatch in SSHPort for ID %s", expected.ID)
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected hypervisor with ID %s not found in response", expected.ID)
+	}
 }
 
-func TestVdevLifecycle(t *testing.T) {
+func TestMultiCreateVdev(t *testing.T) {
 	c := newClient(t)
 
 	// Step 0: Create a NISD to allocate space for Vdevs
@@ -415,8 +551,9 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.Equal(t, vdev1.Cfg.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
 }
 
-func TestPutAndGetPartition(t *testing.T) {
+func TestPutAndGetSinglePartition(t *testing.T) {
 	c := newClient(t)
+
 	pt := &cpLib.DevicePartition{
 		PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
 		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
@@ -470,393 +607,4 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
-}
-
-func TestVdevNisdChunk(t *testing.T) {
-
-	c := newClient(t)
-
-	// create nisd
-	mockNisd := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
-		FailureDomain: []string{
-			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
-			"2435b29e-df29-11f0-900b-d3d680074046",
-			"298cedc0-df29-11f0-8c85-e3df2426ed67",
-			"nvme-e3df2426ed67",
-		},
-		IPAddr:        "192.168.1.10",
-		TotalSize:     1_000_000_000_000, // 1 TB
-		AvailableSize: 750_000_000_000,   // 750 GB
-	}
-	resp, err := c.PutNisd(&mockNisd)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
-
-	// create vdev
-	vdev := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size: 500 * 1024 * 1024 * 1024,
-		}}
-	resp, err = c.CreateVdev(vdev)
-	log.Info("Created Vdev Result: ", resp)
-	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
-	log.Info("Read vdev:", readV)
-	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
-	log.Info("Read Nisd Chunk:", nc)
-}
-
-func TestPutAndGetNisdArgs(t *testing.T) {
-	c := newClient(t)
-	na := &cpLib.NisdArgs{
-		Defrag:               true,
-		MBCCnt:               8,
-		MergeHCnt:            4,
-		MCIBReadCache:        256,
-		S3:                   "s3://backup-bucket/data",
-		DSync:                "enabled",
-		AllowDefragMCIBCache: false,
-	}
-	resp, err := c.PutNisdArgs(na)
-	log.Info("created na: ", resp)
-	assert.NoError(t, err)
-	nisdArgs, err := c.GetNisdArgs()
-	assert.NoError(t, err)
-	log.Info("Get na: ", nisdArgs)
-}
-
-func TestParallelVdevCreation(t *testing.T) {
-	c := newClient(t)
-
-	pdus := []string{
-		"9bc244bc-df29-11f0-a93b-277aec17e401",
-		"9bc244bc-df29-11f0-a93b-277aec17e402",
-		"9bc244bc-df29-11f0-a93b-277aec17e403",
-		"9bc244bc-df29-11f0-a93b-277aec17e404",
-		"9bc244bc-df29-11f0-a93b-277aec17e405",
-	}
-
-	// 10 RACKS
-	racks := []string{
-		"3f082930-df29-11f0-ab7b-4bd430991101",
-		"3f082930-df29-11f0-ab7b-4bd430991102",
-		"3f082930-df29-11f0-ab7b-4bd430991103",
-		"3f082930-df29-11f0-ab7b-4bd430991104",
-		"3f082930-df29-11f0-ab7b-4bd430991105",
-		"3f082930-df29-11f0-ab7b-4bd430991106",
-		"3f082930-df29-11f0-ab7b-4bd430991107",
-		"3f082930-df29-11f0-ab7b-4bd430991108",
-		"3f082930-df29-11f0-ab7b-4bd430991109",
-		"3f082930-df29-11f0-ab7b-4bd430991110",
-	}
-
-	// 20 HVs
-	hvs := []string{
-		"bde1f08a-df63-11f0-88ef-430ddec19901",
-		"bde1f08a-df63-11f0-88ef-430ddec19902",
-		"bde1f08a-df63-11f0-88ef-430ddec19903",
-		"bde1f08a-df63-11f0-88ef-430ddec19904",
-		"bde1f08a-df63-11f0-88ef-430ddec19905",
-		"bde1f08a-df63-11f0-88ef-430ddec19906",
-		"bde1f08a-df63-11f0-88ef-430ddec19907",
-		"bde1f08a-df63-11f0-88ef-430ddec19908",
-		"bde1f08a-df63-11f0-88ef-430ddec19909",
-		"bde1f08a-df63-11f0-88ef-430ddec19910",
-		"bde1f08a-df63-11f0-88ef-430ddec19911",
-		"bde1f08a-df63-11f0-88ef-430ddec19912",
-		"bde1f08a-df63-11f0-88ef-430ddec19913",
-		"bde1f08a-df63-11f0-88ef-430ddec19914",
-		"bde1f08a-df63-11f0-88ef-430ddec19915",
-		"bde1f08a-df63-11f0-88ef-430ddec19916",
-		"bde1f08a-df63-11f0-88ef-430ddec19917",
-		"bde1f08a-df63-11f0-88ef-430ddec19918",
-		"bde1f08a-df63-11f0-88ef-430ddec19919",
-		"bde1f08a-df63-11f0-88ef-430ddec19920",
-	}
-
-	// 40 Devices
-	devices := []string{
-		"nvme-fb6358163001",
-		"nvme-fb6358163002",
-		"nvme-fb6358163003",
-		"nvme-fb6358163004",
-		"nvme-fb6358163005",
-		"nvme-fb6358163006",
-		"nvme-fb6358163007",
-		"nvme-fb6358163008",
-		"nvme-fb6358163009",
-		"nvme-fb6358163010",
-		"nvme-fb6358163011",
-		"nvme-fb6358163012",
-		"nvme-fb6358163013",
-		"nvme-fb6358163014",
-		"nvme-fb6358163015",
-		"nvme-fb6358163016",
-		"nvme-fb6358163017",
-		"nvme-fb6358163018",
-		"nvme-fb6358163019",
-		"nvme-fb6358163020",
-		"nvme-fb6358163021",
-		"nvme-fb6358163022",
-		"nvme-fb6358163023",
-		"nvme-fb6358163024",
-		"nvme-fb6358163025",
-		"nvme-fb6358163026",
-		"nvme-fb6358163027",
-		"nvme-fb6358163028",
-		"nvme-fb6358163029",
-		"nvme-fb6358163030",
-		"nvme-fb6358163031",
-		"nvme-fb6358163032",
-		"nvme-fb6358163033",
-		"nvme-fb6358163034",
-		"nvme-fb6358163035",
-		"nvme-fb6358163036",
-		"nvme-fb6358163037",
-		"nvme-fb6358163038",
-		"nvme-fb6358163039",
-		"nvme-fb6358163040",
-	}
-
-	mockNisd := make([]cpLib.Nisd, 0, 160)
-
-	pduCount := len(pdus)
-	rackPerPdu := 2
-	hvPerRack := 2
-	devPerHv := 2
-	nisdPerDev := 4
-
-	rackIdx := 0
-	hvIdx := 0
-	devIdx := 0
-
-	nisdID := 1
-
-	for p := 0; p < pduCount; p++ {
-		pdu := pdus[p]
-
-		for r := 0; r < rackPerPdu; r++ {
-			rack := racks[rackIdx]
-			rackIdx++
-
-			for h := 0; h < hvPerRack; h++ {
-				hv := hvs[hvIdx]
-				hvIdx++
-
-				for d := 0; d < devPerHv; d++ {
-					dev := devices[devIdx]
-					devIdx++
-
-					for n := 0; n < nisdPerDev; n++ {
-						nisd := cpLib.Nisd{
-							ClientPort: 7000 + uint16(nisdID),
-							PeerPort:   8000 + uint16(nisdID),
-							ID:         fmt.Sprintf("ed7914c3-2e96-4f3e-8e0d-%012x", nisdID),
-							FailureDomain: []string{
-								pdu,
-								rack,
-								hv,
-								dev,
-							},
-							IPAddr:        fmt.Sprintf("192.168.1.%d", ((nisdID-1)%250)+1),
-							TotalSize:     1_000_000_000_000,
-							AvailableSize: 1_000_000_000_000,
-						}
-
-						mockNisd = append(mockNisd, nisd)
-						nisdID++
-					}
-				}
-			}
-		}
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		for _, n := range mockNisd {
-			resp, err := c.PutNisd(&n)
-			assert.NoError(t, err)
-			assert.True(t, resp.Success)
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 150; i++ {
-			vdev := &cpLib.Vdev{
-				Cfg: cpLib.VdevCfg{
-					Size:       107374182400,
-					NumReplica: 1,
-				},
-			}
-			_, err := c.CreateVdev(vdev)
-			assert.NoError(t, err)
-			time.Sleep(30 * time.Millisecond)
-		}
-	}()
-
-	wg.Wait()
-
-}
-
-func TestCreateSmallHierarchy(t *testing.T) {
-	c := newClient(t)
-
-	pdus := []string{
-		"e5bdb838-df76-11f0-9d60-d3a87e703a41",
-		"e5bdb838-df76-11f0-9d60-d3a87e703a42",
-	}
-
-	// 10 RACKS
-	racks := []string{
-		"3f082930-df29-11f0-ab7b-4bd430991101",
-		"3f082930-df29-11f0-ab7b-4bd430991102",
-	}
-
-	// 20 HVs
-	hvs := []string{
-		"bde1f08a-df63-11f0-88ef-430ddec19901",
-		"bde1f08a-df63-11f0-88ef-430ddec19902",
-		"bde1f08a-df63-11f0-88ef-430ddec19903",
-		"bde1f08a-df63-11f0-88ef-430ddec19904",
-		"bde1f08a-df63-11f0-88ef-430ddec19905",
-	}
-
-	// 40 Devices
-	devices := []string{
-		"nvme-fb6358163001",
-		"nvme-fb6358163002",
-		"nvme-fb6358163003",
-		"nvme-fb6358163004",
-		"nvme-fb6358163005",
-		"nvme-fb6358163006",
-	}
-
-	mockNisd := []cpLib.Nisd{
-		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5661",
-			FailureDomain: []string{
-				pdus[0],
-				racks[0],
-				hvs[0],
-				devices[0],
-			},
-			IPAddr:        "192.168.1.1",
-			TotalSize:     1073741824000,
-			AvailableSize: 1073741824000,
-		},
-		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5662",
-			FailureDomain: []string{
-				pdus[0],
-				racks[0],
-				hvs[0],
-				devices[1],
-			},
-			IPAddr:        "192.168.1.1",
-			TotalSize:     1073741824000,
-			AvailableSize: 1073741824000,
-		},
-		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5663",
-			FailureDomain: []string{
-				pdus[0],
-				racks[0],
-				hvs[1],
-				devices[2],
-			},
-			IPAddr:        "192.168.1.1",
-			TotalSize:     1073741824000,
-			AvailableSize: 1073741824000,
-		},
-		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5664",
-			FailureDomain: []string{
-				pdus[1],
-				racks[1],
-				hvs[2],
-				devices[3],
-			},
-			IPAddr:        "192.168.1.1",
-			TotalSize:     1073741824000,
-			AvailableSize: 1073741824000,
-		},
-		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5665",
-			FailureDomain: []string{
-				pdus[1],
-				racks[1],
-				hvs[3],
-				devices[4],
-			},
-			IPAddr:        "192.168.1.1",
-			TotalSize:     1073741824000,
-			AvailableSize: 1073741824000,
-		},
-		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5666",
-			FailureDomain: []string{
-				pdus[1],
-				racks[1],
-				hvs[4],
-				devices[5],
-			},
-			IPAddr:        "192.168.1.1",
-			TotalSize:     1073741824000,
-			AvailableSize: 1073741824000,
-		},
-	}
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
-
-}
-
-func TestCreateVdev(t *testing.T) {
-	c := newClient(t)
-	vdev := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size:       1500 * 1024 * 1024 * 1024,
-			NumReplica: 4,
-		},
-	}
-
-	resp, err := c.CreateVdev(vdev)
-	assert.NoError(t, err)
-	log.Infof("vdev response status: %v", resp)
-}
-
-func usagePercent(n cpLib.Nisd) int64 {
-	used := n.TotalSize - n.AvailableSize
-	return (used * 100) / n.TotalSize
-}
-
-func TestGetNisd(t *testing.T) {
-	c := newClient(t)
-	res, err := c.GetNisds()
-	for _, n := range res {
-		log.Infof("Nisd ID: %s, usage: %d", n.ID, usagePercent(n))
-	}
-	log.Info("total number of nisd's : ", len(res))
-	assert.NoError(t, err)
 }
