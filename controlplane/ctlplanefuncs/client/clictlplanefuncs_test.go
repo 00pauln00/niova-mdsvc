@@ -542,6 +542,10 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	// GET all devices
 	res, err := c.GetDevices(cpLib.GetReq{})
 	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+=======
+	// GET all devices
+	res, err := c.GetDeviceInfo(cpLib.GetReq{})
+>>>>>>> 955463c ( Added two sub-tests for each entity.)
 	// GET operation 
 	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
@@ -1041,6 +1045,7 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+<<<<<<< HEAD
 }
 
 func TestVdevNisdChunk(t *testing.T) {
