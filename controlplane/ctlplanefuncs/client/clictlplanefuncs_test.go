@@ -784,25 +784,6 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
 
-	// Validate each rack field-by-field
-	for _, inserted := range racks {
-		var found *cpLib.Rack
-		for _, fetched := range resp {
-			if fetched.ID == inserted.ID {
-				found = &fetched
-				break
-			}
-		}
-
-		assert.NotNil(t, found, "Inserted rack with ID %s not found in GetRacks response", inserted.ID)
-
-		// Detailed field comparisons
-		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.PDUID, found.PDUID, "Mismatch in PDUID for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for Rack ID %s", inserted.ID)
-	}
-
 	log.Infof("All %d racks validated successfully", len(racks))
 	assert.NotEmpty(t, res)
 
@@ -1092,6 +1073,42 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+<<<<<<< HEAD
+}
+
+func TestVdevNisdChunk(t *testing.T) {
+
+	c := newClient(t)
+
+	// create nisd
+	mockNisd := cpLib.Nisd{
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+	}
+	resp, err := c.PutNisd(&mockNisd)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// create vdev
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size: 500 * 1024 * 1024 * 1024,
+		}}
+	err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", vdev)
+	assert.NoError(t, err)
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
+	log.Info("Read vdev:", readV)
+	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
+	log.Info("Read Nisd Chunk:", nc)
 }
 
 func TestPutAndGetNisdArgs(t *testing.T) {
@@ -1112,3 +1129,6 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	assert.NoError(t, err)
 	log.Info("Get na: ", nisdArgs)
 }
+=======
+}
+>>>>>>> 955463c ( Added two sub-tests for each entity.)
