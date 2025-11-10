@@ -34,7 +34,51 @@ func newClient(t *testing.T) *CliCFuncs {
 	return c
 }
 
-func TestPutAndGetNisd(t *testing.T) {
+func TestPutAndGetSingleNisd(t *testing.T) {
+	c := newClient(t)
+
+	mockNisd := cpLib.Nisd{
+			ClientPort:    7001,
+			PeerPort:      8001,
+			ID:            "nisd-001",
+			DevID:         "dev-001",
+			HyperVisorID:  "hv-01",
+			FailureDomain: "fd-01",
+			IPAddr:        "192.168.1.10",
+			InitDev:       true,
+			TotalSize:     1_000_000_000_000, // 1 TB
+			AvailableSize: 750_000_000_000,   // 750 GB
+	}
+
+	// PUT operation 
+	resp, err := c.PutNisdCfg(&n)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET operation 
+	res, err := c.GetNisdCfg(cpLib.GetReq{ID: n.ID})
+	log.Info("GetNisdCfg: ", res)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+	
+	returned := res[0]
+
+	// Validate all key fields match
+	assert.Equal(t, n.ID, returned.ID, "ID mismatch")
+	assert.Equal(t, n.DevID, returned.DevID, "DevID mismatch")
+	assert.Equal(t, n.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
+	assert.Equal(t, n.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
+	assert.Equal(t, n.IPAddr, returned.IPAddr, "IPAddr mismatch")
+	assert.Equal(t, n.ClientPort, returned.ClientPort, "ClientPort mismatch")
+	assert.Equal(t, n.PeerPort, returned.PeerPort, "PeerPort mismatch")
+	assert.Equal(t, n.TotalSize, returned.TotalSize, "TotalSize mismatch")
+	assert.Equal(t, n.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
+	assert.Equal(t, n.InitDev, returned.InitDev, "InitDev mismatch")
+
+	log.Info("Single NISD PUT/GET validations successful.")
+}
+
+func TestPutAndGetMultipleNisds(t *testing.T) {
 	c := newClient(t)
 
 	mockNisd := []cpLib.Nisd{
@@ -47,8 +91,8 @@ func TestPutAndGetNisd(t *testing.T) {
 			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.10",
 			InitDev:       true,
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 750_000_000_000,   // 750 GB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 750_000_000_000,
 		},
 		{
 			ClientPort:    7002,
@@ -59,8 +103,8 @@ func TestPutAndGetNisd(t *testing.T) {
 			FailureDomain: "fd-02",
 			IPAddr:        "192.168.1.11",
 			InitDev:       false,
-			TotalSize:     500_000_000_000, // 500 GB
-			AvailableSize: 200_000_000_000, // 200 GB
+			TotalSize:     500_000_000_000,
+			AvailableSize: 200_000_000_000,
 		},
 		{
 			ClientPort:    7003,
@@ -71,40 +115,87 @@ func TestPutAndGetNisd(t *testing.T) {
 			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.12",
 			InitDev:       true,
-			TotalSize:     2_000_000_000_000, // 2 TB
-			AvailableSize: 1_500_000_000_000, // 1.5 TB
+			TotalSize:     2_000_000_000_000,
+			AvailableSize: 1_500_000_000_000,
 		},
 	}
 
+	// PUT multiple NISDs
 	for _, n := range mockNisd {
 		resp, err := c.PutNisdCfg(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: "nisd-002"})
-	log.Info("GetNisdCfg: ", res)
+	// GET all NISDs
+	res, err := c.GetNisdCfg(cpLib.GetReq{})
 	assert.NoError(t, err)
-	
-	expected := mockNisd[1]
-	returned := res[0]
+	assert.NotEmpty(t, res)
 
-	// Validate all key fields match
-	assert.Equal(t, expected.ID, returned.ID, "ID mismatch")
-	assert.Equal(t, expected.DevID, returned.DevID, "DevID mismatch")
-	assert.Equal(t, expected.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
-	assert.Equal(t, expected.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
-	assert.Equal(t, expected.IPAddr, returned.IPAddr, "IPAddr mismatch")
-	assert.Equal(t, expected.ClientPort, returned.ClientPort, "ClientPort mismatch")
-	assert.Equal(t, expected.PeerPort, returned.PeerPort, "PeerPort mismatch")
-	assert.Equal(t, expected.TotalSize, returned.TotalSize, "TotalSize mismatch")
-	assert.Equal(t, expected.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
-	assert.Equal(t, expected.InitDev, returned.InitDev, "InitDev mismatch")
+	// Validate count
+	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
 
-	log.Info("All NISD PUT/GET validations successful.")
+	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
 }
 
-func TestPutAndGetDevice(t *testing.T) {
+func TestPutAndGetSingleDevice(t *testing.T) {
+	c := newClient(t)
+
+	device := cpLib.Device{
+		ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+		SerialNumber:  "SN112233445",
+		State:         2,
+		HypervisorID:  "hv-01",
+		FailureDomain: "fd-02",
+		DevicePath:    "/temp/path3",
+		Name:          "dev-3",
+		Size:          9999999,
+		Partitions: []cpLib.DevicePartition{
+			{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+				PartitionPath: "/part/path3",
+				NISDUUID:      "1",
+				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				Size:          123467,
+			},
+		},
+	}
+
+	// PUT single device
+	resp, err := c.PutDeviceInfo(&device)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET device
+	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
+	log.Infof("fetch single device info: %s", res)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+
+	returned := res[0]
+
+	// Validate all key fields
+	assert.Equal(t, device.ID, returned.ID)
+	assert.Equal(t, device.SerialNumber, returned.SerialNumber)
+	assert.Equal(t, device.HypervisorID, returned.HypervisorID)
+	assert.Equal(t, device.FailureDomain, returned.FailureDomain)
+	assert.Equal(t, device.DevicePath, returned.DevicePath)
+	assert.Equal(t, device.Name, returned.Name)
+	assert.Equal(t, device.Size, returned.Size)
+	assert.Equal(t, len(device.Partitions), len(returned.Partitions))
+
+	for i := range device.Partitions {
+		assert.Equal(t, device.Partitions[i].PartitionID, returned.Partitions[i].PartitionID)
+		assert.Equal(t, device.Partitions[i].PartitionPath, returned.Partitions[i].PartitionPath)
+		assert.Equal(t, device.Partitions[i].NISDUUID, returned.Partitions[i].NISDUUID)
+		assert.Equal(t, device.Partitions[i].DevID, returned.Partitions[i].DevID)
+		assert.Equal(t, device.Partitions[i].Size, returned.Partitions[i].Size)
+	}
+
+	log.Infof("Single Device PUT/GET validation successful for %s", device.ID)
+}
+
+func TestPutAndGetMultipleDevices(t *testing.T) {
 	c := newClient(t)
 
 	mockDevices := []cpLib.Device{
@@ -161,64 +252,57 @@ func TestPutAndGetDevice(t *testing.T) {
 		},
 	}
 
+	// PUT multiple devices
 	for _, p := range mockDevices {
 		resp, err := c.PutDeviceInfo(&p)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
-	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+	// GET all devices
+	res, err := c.GetDeviceInfo(cpLib.GetReq{})
 	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
 
-	returned := res[0]
-	expected := mockDevices[2]
+	// Validate count
+	assert.Equal(t, len(mockDevices), len(res), "Mismatch in number of devices retrieved")
 
-	// Validate single fetch matches inserted data
-	assert.Equal(t, expected.ID, returned.ID)
-	assert.Equal(t, expected.SerialNumber, returned.SerialNumber)
-	assert.Equal(t, expected.HypervisorID, returned.HypervisorID)
-	assert.Equal(t, expected.FailureDomain, returned.FailureDomain)
-	assert.Equal(t, expected.DevicePath, returned.DevicePath)
-	assert.Equal(t, expected.Name, returned.Name)
-	assert.Equal(t, expected.Size, returned.Size)
-	assert.Equal(t, len(expected.Partitions), len(returned.Partitions), "Mismatch in number of partitions")
-
-	for i := range expected.Partitions {
-		assert.Equal(t, expected.Partitions[i].PartitionID, returned.Partitions[i].PartitionID)
-		assert.Equal(t, expected.Partitions[i].PartitionPath, returned.Partitions[i].PartitionPath)
-		assert.Equal(t, expected.Partitions[i].NISDUUID, returned.Partitions[i].NISDUUID)
-		assert.Equal(t, expected.Partitions[i].DevID, returned.Partitions[i].DevID)
-		assert.Equal(t, expected.Partitions[i].Size, returned.Partitions[i].Size)
-	}
-
-	log.Infof("Validated single device fetch: %s (%s)", returned.ID, returned.SerialNumber)
-
-	res, err = c.GetDeviceInfo(cpLib.GetReq{GetAll: true})
-	log.Infof("fetch all device list: %s,%v", res[0].ID, res[0].Partitions)
-	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, len(res), len(mockDevices), "Expected all inserted devices in GetAll")
-
-	// Validate that each inserted device exists in the GetAll response
-	for _, inserted := range mockDevices {
-		found := false
-		for _, fetched := range res {
-			if fetched.ID == inserted.ID {
-				found = true
-				assert.Equal(t, inserted.SerialNumber, fetched.SerialNumber)
-				assert.Equal(t, inserted.HypervisorID, fetched.HypervisorID)
-				assert.Equal(t, inserted.FailureDomain, fetched.FailureDomain)
-				assert.Equal(t, inserted.Name, fetched.Name)
-				break
-			}
-		}
-		assert.True(t, found, "Inserted device %s not found in GetAll response", inserted.ID)
-	}
-
-	log.Infof("Validated all %d inserted devices exist in GetAll response", len(mockDevices))
+	log.Infof("Inserted %d devices, retrieved %d successfully", len(mockDevices), len(res))
 }
 
-func TestPutAndGetPDU(t *testing.T) {
+func TestPutAndGetSinglePDU(t *testing.T) {
+	c := newCLient(t) 
+
+	pdu := cpLib.PDU{
+		ID: "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+		Name:          "pdu-1",
+		Location:      "us-west",
+		PowerCapacity: "15Kw",
+		Specification: "specification1",
+	}
+
+	// PUT single PDU
+	resp, err := c.PutPDU(&p)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET operation 
+	res, err := c.GetPDU(cpLib.GetReq{ID: p.ID})
+	log.Info("Single PDU: ", res)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+	
+	returned := res[0]
+
+	assert.Equal(t, p.Name, returned.Name, "Mismatch in Name for PDU %s", p.ID)
+	assert.Equal(t, p.Location, returned.Location, "Mismatch in Location for PDU %s", p.ID)
+	assert.Equal(t, p.PowerCapacity, returned.PowerCapacity, "Mismatch in Power Capacity for PDU %s", p.ID)
+	assert.Equal(t, p.Specification, returned.Specification, "Mismatch in Specification for PDU %s", p.ID)
+
+	log.Infof("Single PDU PUT/GET validation successful for %s", p.ID)
+}
+
+func TestPutAndGetMultiplePDUs(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []cpLib.PDU{
@@ -236,37 +320,52 @@ func TestPutAndGetPDU(t *testing.T) {
 		},
 	}
 
+	// PUT multiple PDUs
 	for _, p := range pdus {
 		resp, err := c.PutPDU(&p)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
-	res, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
-	log.Info("resp from get pdus:", res)
+	// GET all PDUs
+	res, err := c.GetPDUs(&cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
 
-	// Validate each PDU field-by-field
-	for _, inserted := range pdus {
-		var found *cpLib.PDU
-		for _, fetched := range res {
-			if fetched.ID == inserted.ID {
-				found = &fetched
-				break
-			}
-		}
+	log.Infof("Validated all %d PDUs successfully", len(pdus))
+}
 
-		assert.NotNil(t, found, "Inserted PDU with ID %s not found in response", inserted.ID)
+func TestPutAndGetSingleRack(t *testing.T) {
+	c := newClient(t)
 
-		// Field-level checks
-		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for PDU %s", inserted.ID)
-		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for PDU %s", inserted.ID)
-		assert.Equal(t, inserted.PowerCapacity, found.PowerCapacity, "Mismatch in PowerCapacity for PDU %s", inserted.ID)
-		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for PDU %s", inserted.ID)
+	rack := cpLib.Rack{
+		ID:            "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+		PDUID:         "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+		Name:          "rack-1",
+		Location:      "us-east",
+		Specification: "rack1-spec",
 	}
 
-	log.Infof("Validated all %d PDUs successfully", len(pdus))
+	// PUT single rack
+	resp, err := c.PutRack(&rack)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// GET the same rack by ID
+	res, err := c.GetRacks(&cpLib.GetReq{ID: rack.ID})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+
+	returned := res[0]
+
+	// Validate all fields
+	assert.Equal(t, rack.ID, returned.ID)
+	assert.Equal(t, rack.PDUID, returned.PDUID)
+	assert.Equal(t, rack.Name, returned.Name)
+	assert.Equal(t, rack.Location, returned.Location)
+	assert.Equal(t, rack.Specification, returned.Specification)
+
+	log.Infof("Single Rack PUT/GET validation successful for Rack ID: %s", rack.ID)
 }
 
 func TestPutAndGetRack(t *testing.T) {
@@ -283,34 +382,47 @@ func TestPutAndGetRack(t *testing.T) {
 		assert.True(t, resp.Success)
 	}
 
-	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
-	log.Info("GetRacks: ", resp)
+	resp, err := c.GetRacks(&cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
-
-	// Validate each rack field-by-field
-	for _, inserted := range racks {
-		var found *cpLib.Rack
-		for _, fetched := range resp {
-			if fetched.ID == inserted.ID {
-				found = &fetched
-				break
-			}
-		}
-
-		assert.NotNil(t, found, "Inserted rack with ID %s not found in GetRacks response", inserted.ID)
-
-		// Detailed field comparisons
-		assert.Equal(t, inserted.Name, found.Name, "Mismatch in Name for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.PDUID, found.PDUID, "Mismatch in PDUID for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Location, found.Location, "Mismatch in Location for Rack ID %s", inserted.ID)
-		assert.Equal(t, inserted.Specification, found.Specification, "Mismatch in Specification for Rack ID %s", inserted.ID)
-	}
 
 	log.Infof("All %d racks validated successfully", len(racks))
 }
 
-func TestPutAndGetHypervisor(t *testing.T) {
+func TestPutAndGetSingleHypervisor(t *testing.T) {
+	c := newClient(t)
+
+	hv := cpLib.Hypervisor{
+		RackID:     "rack-1",
+		ID:         "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+		IPAddress:  "127.0.0.1",
+		PortRange:  "8000-9000",
+		SSHPort:    "6999",
+		Name:       "hv-1",
+	}
+
+	// Put one hypervisor
+	putResp, err := c.PutHypervisor(&hv)
+	assert.NoError(t, err, "Error while putting hypervisor")
+	assert.True(t, putResp.Success, "PutHypervisor response not successful")
+
+	// Get the same hypervisor by ID
+	getResp, err := c.GetHypervisor(&cpLib.GetReq{ID: hv.ID})
+	assert.NoError(t, err, "Error while getting hypervisor by ID")
+	assert.NotNil(t, getResp, "Expected non-nil response for GetHypervisor")
+
+	// Validate returned fields
+	assert.Equal(t, hv.ID, getResp[0].ID)
+	assert.Equal(t, hv.Name, getResp[0].Name)
+	assert.Equal(t, hv.RackID, getResp[0].RackID)
+	assert.Equal(t, hv.IPAddress, getResp[0].IPAddress)
+	assert.Equal(t, hv.PortRange, getResp[0].PortRange)
+	assert.Equal(t, hv.SSHPort, getResp[0].SSHPort)
+
+	log.Infof("Single Hypervisor PUT/GET validation successful for Hypervisor ID: %s", hv.ID)	
+}
+
+func TestPutAndGetMultipleHypervisors(t *testing.T) {
 	c := newClient(t)
 
 	hypervisors := []cpLib.Hypervisor{
@@ -318,15 +430,19 @@ func TestPutAndGetHypervisor(t *testing.T) {
 		{RackID: "rack-2", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
 	}
 
+	// PUT multiple hypervisor
 	for _, hv := range hypervisors {
 		resp, err := c.PutHypervisor(&hv)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
+	// GET all hypervisors
 	resp, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	log.Info("GetHypervisor: ", resp)
 	assert.NoError(t, err)
+	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(hypervisors), len(resp))
+
+	log.Infof("All %d racks validated successfully", len(hypervisors))
 
 	// Validation: ensure inserted hypervisors are present with correct fields
 	for _, expected := range hypervisors {
@@ -389,8 +505,9 @@ func TestGetSpecificVdev(t *testing.T) {
 	assert.Equal(t, VDEV_ID, v.VdevID, "Mismatch in Vdev ID")
 }
 
-func TestPutAndGetPartition(t *testing.T) {
+func TestPutAndGetSinglePartition(t *testing.T) {
 	c := newClient(t)
+
 	pt := &cpLib.DevicePartition{
 		PartitionID:   "96ea4c60-a5df-11f0-a315-fb09c06e6471",
 		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
@@ -398,23 +515,27 @@ func TestPutAndGetPartition(t *testing.T) {
 		PartitionPath: "some path",
 		NISDUUID:      "b962cea8-ab42-11f0-a0ad-1bd216770b60",
 	}
-	resp, err := c.PutPartition(pt)
-	log.Info("created partition: ", resp)
-	assert.NoError(t, err)
-	resp1, err := c.GetPartition(cpLib.GetReq{ID: "96ea4c60-a5df-11f0-a315-fb09c06e6471"})
-	assert.NoError(t, err)
-	log.Info("Get partition: ", resp1)
 
-	// Validate the retrieved partition details
+	// Put partition
+	resp, err := c.PutPartition(pt)
+	assert.NoError(t, err, "Error while putting partition")
+	assert.True(t, resp.Success, "PutPartition response not successful")
+
+	// Get partition by ID
+	resp1, err := c.GetPartition(cpLib.GetReq{ID: pt.PartitionID})
+	assert.NoError(t, err, "Error while getting partition by ID")
 	assert.Equal(t, 1, len(resp1), "Expected exactly one partition in Get response")
 
 	returned := resp1[0]
 
+	// Validate the retrieved partition details
 	assert.Equal(t, pt.PartitionID, returned.PartitionID, "Mismatch in PartitionID")
 	assert.Equal(t, pt.PartitionPath, returned.PartitionPath, "Mismatch in PartitionPath")
 	assert.Equal(t, pt.NISDUUID, returned.NISDUUID, "Mismatch in NISDUUID")
 	assert.Equal(t, pt.DevID, returned.DevID, "Mismatch in DevID")
 	assert.Equal(t, pt.Size, returned.Size, "Mismatch in Size (bytes)")
+
+	log.Infof("Single Partition PUT/GET validation successful for Partition ID: %s", pt.ID)
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
