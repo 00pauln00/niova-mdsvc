@@ -92,16 +92,17 @@ type DevicePartition struct {
 }
 
 type Nisd struct {
-	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
-	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
-	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
-	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
-	InitDev       bool   `yaml:"init"`
-	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
-	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	XMLName       xml.Name `xml:"NisdInfo"`
+	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
+	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
+	DevID         string   `xml:"DevID" json:"DevID" yaml:"name"`
+	HyperVisorID  string   `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
+	FailureDomain string   `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
+	IPAddr        string   `xml:"IPAddr" json:"IPAddr" yaml:"-"`
+	InitDev       bool     `yaml:"init"`
+	TotalSize     int64    `xml:"TotalSize" yaml:"-"`
+	AvailableSize int64    `xml:"AvailableSize" yaml:"-"`
 }
 
 type PDU struct {
@@ -228,12 +229,6 @@ type ChunkNisd struct {
 	NisdUUID    string   `xml:"NISD"`
 }
 
-type NisdInfo struct {
-	XMLName  xml.Name `xml:"NisdInfo"`
-	NisdIP   string   `xml:"IP"`
-	NisdPort uint16   `xml:"PORT"`
-}
-
 func RegisterGOBStructs() {
 	gob.Register(Rack{})
 	gob.Register(GetReq{})
@@ -249,7 +244,6 @@ func RegisterGOBStructs() {
 	gob.Register(SnapXML{})
 	gob.Register(VdevCfg{})
 	gob.Register(ChunkNisd{})
-	gob.Register(NisdInfo{})
 }
 
 func (req *GetReq) ValidateRequest() error {

@@ -209,9 +209,19 @@ func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, erro
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+func (ccf *CliCFuncs) GetNisdCfgs() ([]ctlplfl.Nisd, error) {
 	ncfg := make([]ctlplfl.Nisd, 0)
-	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
+	err := ccf.get(nil, &ncfg, ctlplfl.GET_NISD_LIST)
+	if err != nil {
+		log.Error("failed to fet nisd info: ", err)
+		return nil, err
+	}
+	return ncfg, nil
+}
+
+func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
+	ncfg := &ctlplfl.Nisd{}
+	err := ccf.get(req, ncfg, ctlplfl.GET_NISD)
 	if err != nil {
 		log.Error("failed to fet nisd info: ", err)
 		return nil, err

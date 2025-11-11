@@ -195,11 +195,27 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	return intrm.Response, nil
 }
 
-func RdNisdCfg(args ...interface{}) (interface{}, error) {
+// TODO: This method needs to be tested
+func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	log.Trace("fetching nisd details for key : ", nisdCfgKey)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	return pmCmn.Encoder(pmCmn.GOB, nisdList)
+}
+
+func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
 	req := args[1].(ctlplfl.GetReq)
-
+	err := req.ValidateRequest()
+	if err != nil {
+		return nil, err
+	}
 	key := getConfKey(nisdCfgKey, req.ID)
 	log.Trace("fetching nisd details for key : ", key)
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
@@ -208,7 +224,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
-	return pmCmn.Encoder(pmCmn.GOB, nisdList)
+	return pmCmn.Encoder(pmCmn.GOB, nisdList[0])
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {

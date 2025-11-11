@@ -6511,11 +6511,7 @@ func (m model) viewAllNISDs() string {
 		s.WriteString("Press any key to return to NISD management")
 		return s.String()
 	}
-
-	// Create request to get all NISDs (empty ID means get all)
-	req := ctlplfl.GetReq{ID: ""}
-
-	nisds, err := m.cpClient.GetNisdCfg(req)
+	nisds, err := m.cpClient.GetNisdCfgs()
 	if err != nil {
 		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query NISDs from control plane: %v", err)) + "\n\n")
 		s.WriteString("Please check:\n")

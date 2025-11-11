@@ -142,7 +142,8 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.WPCreatePartition)
 
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, srvctlplanefuncs.ReadAllNisdConfigs)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.ReadNisdConfig)
 	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
