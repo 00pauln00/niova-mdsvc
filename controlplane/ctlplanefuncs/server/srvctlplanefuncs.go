@@ -13,6 +13,7 @@ import (
 import (
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 var colmfamily string
@@ -304,24 +305,6 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	key := getConfKey(vdevKey, vdev.VdevID)
-	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
-		var value string
-		switch field {
-		case SIZE:
-			value = strconv.Itoa(int(vdev.Size))
-		case NUM_CHUNKS:
-			value = strconv.Itoa(int(vdev.NumChunks))
-		case NUM_REPLICAS:
-			value = strconv.Itoa(int(vdev.NumReplica))
-		default:
-			continue
-		}
-		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, cfgkey, field)),
-			Value: []byte(value),
-		})
-	}
 	vcKey := getVdevChunkKey(vdev.VdevID)
 	for _, nisd := range nisdList {
 		for i := 0; i < int(vdev.NumChunks); i++ {
@@ -353,15 +336,56 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 
 }
 
-// Creates a VDEV, allocates the NISD and updates the PMDB with new data
-func APCreateVdev(args ...interface{}) (interface{}, error) {
+// Initialize the VDEV during the write preparation stage.
+// Since the VDEV ID is derived from a randomly generated UUID, It needs to be generated within the Write Prep Phase.
+func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
 	vdev.Size = args[0].(int64)
-	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	log.Info("allocating vdev with size: ", vdev.Size)
 	vdev.Init()
+	log.Debug("Initializing vdev with size: ", vdev)
+	key := getConfKey(vdevKey, vdev.VdevID)
+	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
+		var value string
+		switch field {
+		case SIZE:
+			value = strconv.Itoa(int(vdev.Size))
+		case NUM_CHUNKS:
+			value = strconv.Itoa(int(vdev.NumChunks))
+		case NUM_REPLICAS:
+			value = strconv.Itoa(int(vdev.NumReplica))
+		default:
+			continue
+		}
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, cfgkey, field)),
+			Value: []byte(value),
+		})
+	}
+	r, err := pmCmn.Encoder(pmCmn.GOB, vdev)
+	if err != nil {
+		log.Error("Failed to marshal vdev response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
+	}
+	//Fill in FuncIntrm structure
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+}
+
+// Creates a VDEV, allocates the NISD and updates the PMDB with new data
+func APCreateVdev(args ...interface{}) (interface{}, error) {
+	var vdev ctlplfl.Vdev
+	var funcIntrm funclib.FuncIntrm
+
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
+	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
+	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
+	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
+	log.Debug("allocating vdev: ", vdev.VdevID)
 	nisdList, err := getNisdList(cbArgs)
 	if err != nil {
 		log.Error("failed to get nisd list:", err)
@@ -374,8 +398,8 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to allocate nisd: not enough space avialable")
 	}
 
-	genVdevKV(&vdev, allocNisds, &commitChgs)
-	genNisdKV(&vdev, allocNisds, &commitChgs)
+	genVdevKV(&vdev, allocNisds, &funcIntrm.Changes)
+	genNisdKV(&vdev, allocNisds, &funcIntrm.Changes)
 
 	r, err := pmCmn.Encoder(pmCmn.GOB, vdev)
 	if err != nil {
@@ -383,7 +407,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
 
-	applyKV(commitChgs, cbArgs)
+	applyKV(funcIntrm.Changes, cbArgs)
 
 	return r, nil
 }

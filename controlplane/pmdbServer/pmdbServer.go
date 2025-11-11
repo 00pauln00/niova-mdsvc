@@ -153,6 +153,7 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.GET_VDEV, srvctlplanefuncs.ReadVdevCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_CONT, srvctlplanefuncs.ReadVdevWithCont)
 
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
