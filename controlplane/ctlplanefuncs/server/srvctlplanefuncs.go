@@ -336,6 +336,8 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 
 }
 
+// Initialize the VDEV during the write preparation stage.
+// Since the VDEV ID is derived from a randomly generated UUID, It needs to be generated within the Write Prep Phase.
 func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
