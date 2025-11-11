@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"

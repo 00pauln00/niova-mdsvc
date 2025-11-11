@@ -4,9 +4,9 @@ import (
 	"encoding/gob"
 	"fmt"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 const (

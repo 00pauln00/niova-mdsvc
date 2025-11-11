@@ -4,11 +4,11 @@ import (
 	"C"
 	"fmt"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
-	log "github.com/sirupsen/logrus"
 )
 import (
 	"strconv"
