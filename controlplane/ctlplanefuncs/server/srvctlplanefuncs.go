@@ -342,7 +342,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	// Decode the input buffer into structure format
 	vdev.Size = args[0].(int64)
 	vdev.Init()
-	log.Info("Initializing vdev with size: ", vdev)
+	log.Debug("Initializing vdev with size: ", vdev)
 	key := getConfKey(vdevKey, vdev.VdevID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
@@ -383,7 +383,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
-	log.Info("allocating vdev: ", vdev.VdevID)
+	log.Debug("allocating vdev: ", vdev.VdevID)
 	nisdList, err := getNisdList(cbArgs)
 	if err != nil {
 		log.Error("failed to get nisd list:", err)
