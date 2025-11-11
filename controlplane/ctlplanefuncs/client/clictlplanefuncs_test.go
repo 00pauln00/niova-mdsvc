@@ -306,3 +306,32 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 		runPutAndGetRack(b, c)
 	}
 }
+
+func Test8PBVdev(t *testing.T) {
+	c := newClient(t)
+	mockNisd := cpLib.Nisd{
+
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     11258999068426240, // 1 TB
+		AvailableSize: 11258999068426240, // 750 GB
+	}
+	_, err := c.PutNisdCfg(&mockNisd)
+	assert.NoError(t, err)
+	vdev := &cpLib.Vdev{
+		Size: 536870912000}
+
+	err = c.CreateVdev(vdev)
+	assert.NoError(t, err)
+	log.Info("Create Vdev: ", vdev)
+
+	resp, err := c.GetVdevCont()
+	log.Info("fetch all vdevs response: ", resp)
+
+}

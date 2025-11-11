@@ -315,3 +315,31 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 
 	return hypervisors, nil
 }
+
+func (ccf *CliCFuncs) GetVdevCont() (ctlplfl.Response, error) {
+	req := ctlplfl.GetReq{
+		GetAll:       true,
+		IsConsistent: true,
+	}
+	for {
+		var res ctlplfl.Response
+		//vdevMap := make(map[string]map[string]interface{})
+		log.Infof("sending request: %+v", req)
+		err := ccf.get(req, &res, ctlplfl.GET_VDEV_CONT)
+		if err != nil {
+			log.Error("Get Vdev failed: ", err)
+			return res, err
+		}
+		log.Infof("got response: %+v", res)
+
+		// pmCmn.Decoder(pmCmn.JSON, res.Result.([]byte), &vdevMap)
+		// log.Info("got vdev result:", vdevMap)
+		if res.LastKey == "" {
+			break
+		}
+		req.LastKey = res.LastKey
+		req.SeqNum = res.SeqNum
+	}
+
+	return ctlplfl.Response{}, nil
+}

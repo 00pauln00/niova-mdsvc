@@ -539,7 +539,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-
+	log.Info("rocksdb output map:", readResult.ResultMap)
 	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
 
 	return pmCmn.Encoder(pmCmn.GOB, hvList)
@@ -663,4 +663,56 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
+}
+
+func ReadVdevWithCont(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+	log.Infof("fetched Request: %+v", req)
+	key := vdevKey
+	if !req.GetAll {
+		key = getConfKey(vdevKey, req.ID)
+	}
+	if req.LastKey != "" {
+		key = req.LastKey
+	}
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, req.IsConsistent, req.SeqNum, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	vdevMap := make(map[string]map[string]interface{})
+	log.Infof("read result map output: %+v", readResult.ResultMap)
+	for k, v := range readResult.ResultMap {
+		parts := strings.Split(strings.TrimPrefix(k, "/"), "/")
+		log.Info("parts :", parts)
+		vdevID := parts[BASE_UUID_PREFIX]
+		if _, ok := vdevMap[vdevID]; !ok {
+			vdevMap[vdevID] = make(map[string]interface{})
+		}
+		if parts[VDEV_CFG_C_KEY] == cfgkey {
+			vdevMap[vdevID][parts[VDEV_ELEMENT_KEY]] = string(v)
+		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
+			if _, ok := vdevMap[vdevID][string(v)]; !ok {
+				vdevMap[vdevID][string(v)] = []int{}
+			}
+			chunk, _ := strconv.Atoi(string(parts[VDEV_ELEMENT_KEY]))
+			vdevMap[vdevID][string(v)] = append(vdevMap[vdevID][string(v)].([]int), chunk)
+		}
+
+	}
+	// res, err := pmCmn.Encoder(ENC_TYPE, vdevMap)
+	// if err != nil {
+	// 	log.Error("Range read Encode failure ", err)
+	// 	return nil, err
+	// }
+	response := ctlplfl.Response{
+		Result:  vdevMap,
+		LastKey: readResult.LastKey,
+		SeqNum:  readResult.SeqNum,
+		Status:  0,
+	}
+	log.Infof("Sending Response: %+v", response)
+
+	return pmCmn.Encoder(ENC_TYPE, response)
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	log "github.com/sirupsen/logrus"
 )
 
 const ( // Key Prefixes
@@ -42,10 +43,10 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 		}
 		pe.ParseField(entity, parts, v)
 	}
-
 	result := make([]T, 0, len(entityMap))
-	for _, e := range entityMap {
+	for k, e := range entityMap {
 		final := pe.GetEntity(e)
+		log.Infof("parsed output: key %s, value %+v", k, final.(T))
 		result = append(result, final.(T))
 	}
 	return result

@@ -28,6 +28,7 @@ const (
 	PUT_HYPERVISOR = "PutHypervisor"
 	PUT_PARTITION  = "PutPartition"
 	GET_PARTITION  = "GetPartition"
+	GET_VDEV_CONT  = "GetVdevCont"
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	NAME           = "name"
 
@@ -143,8 +144,18 @@ type Vdev struct {
 }
 
 type GetReq struct {
-	ID     string
-	GetAll bool
+	ID           string
+	IsConsistent bool
+	LastKey      string
+	SeqNum       uint64
+	GetAll       bool
+}
+
+type Response struct {
+	Result  interface{}
+	LastKey string
+	SeqNum  uint64
+	Status  int
 }
 
 func (vdev *Vdev) Init() error {
@@ -225,4 +236,6 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
+	gob.Register(Response{})
+	gob.Register(map[string]map[string]interface{}{})
 }
