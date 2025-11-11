@@ -1266,7 +1266,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				deviceInfo := ctlplfl.Device{
 					ID:            updatedDevice.ID,
 					SerialNumber:  updatedDevice.SerialNumber,
-					State:        ctlplfl.INITIALIZED, // Active status
+					State:         ctlplfl.INITIALIZED, // Active status
 					HypervisorID:  hv.ID,
 					FailureDomain: updatedDevice.FailureDomain,
 				}
@@ -6805,8 +6805,9 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 
 			// Create Vdev
 			vdev := &ctlplfl.Vdev{
-				Size: size,
-			}
+				Cfg: ctlplfl.VdevCfg{
+					Size: size,
+				}}
 
 			// Initialize the Vdev (generates ID)
 			if err := vdev.Init(); err != nil {
@@ -6956,10 +6957,10 @@ func (m model) viewViewVdev() string {
 		} else {
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
 			for i, vdev := range vdevs {
-				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.VdevID))
-				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
-				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
-				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
+				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.Cfg.ID))
+				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Cfg.Size))
+				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.Cfg.NumChunks))
+				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.Cfg.NumReplica))
 				s.WriteString("\n")
 			}
 		}
@@ -6991,10 +6992,10 @@ func (m model) viewShowAddedVdev() string {
 	s.WriteString(title + "\n\n")
 
 	s.WriteString("Vdev Details:\n")
-	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.VdevID))
-	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Size))
-	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.NumChunks))
-	s.WriteString(fmt.Sprintf("Replicas: %d\n", m.currentVdev.NumReplica))
+	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.Cfg.ID))
+	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Cfg.Size))
+	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.Cfg.NumChunks))
+	s.WriteString(fmt.Sprintf("Replicas: %d\n", m.currentVdev.Cfg.NumReplica))
 
 	s.WriteString("\n\nPress any key to return to Vdev management")
 

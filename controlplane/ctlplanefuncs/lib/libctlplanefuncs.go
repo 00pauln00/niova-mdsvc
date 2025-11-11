@@ -2,6 +2,7 @@ package libctlplanefuncs
 
 import (
 	"encoding/gob"
+	"encoding/xml"
 	"fmt"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -28,12 +29,12 @@ const (
 	PUT_HYPERVISOR = "PutHypervisor"
 	PUT_PARTITION  = "PutPartition"
 	GET_PARTITION  = "GetPartition"
-	GET_VDEV_SIZE  = "get_vdev_size"
+	GET_VDEV_INFO  = "get_vdev_info" // new
 	GET_CHUNK_NISD = "get_chunk_nisd"
 	GET_NISD_INFO  = "get_nisd_info"
 
-	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
-	NAME           = "name"
+	CHUNK_SIZE = 8 * 1024 * 1024 * 1024
+	NAME       = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -136,14 +137,19 @@ type NisdChunk struct {
 	Chunk []int
 }
 
-type Vdev struct {
-	VdevID       string
-	NisdToChkMap []NisdChunk
+type VdevCfg struct {
+	XMLName      xml.Name `xml:"Vdev"`
+	ID           string
 	Size         int64
 	NumChunks    uint32
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+}
+
+type Vdev struct {
+	Cfg          VdevCfg
+	NisdToChkMap []NisdChunk
 }
 
 type GetReq struct {
@@ -158,11 +164,11 @@ func (vdev *Vdev) Init() error {
 		log.Error("failed to generate uuid:", err)
 		return err
 	}
-	vdev.VdevID = id.String()
-	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
-	vdev.NumReplica = 1
-	vdev.NumDataBlk = 0
-	vdev.NumParityBlk = 0
+	vdev.Cfg.ID = id.String()
+	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
+	vdev.Cfg.NumReplica = 1
+	vdev.Cfg.NumDataBlk = 0
+	vdev.Cfg.NumParityBlk = 0
 	return nil
 }
 
@@ -216,21 +222,16 @@ func Count8GBChunks(size int64) int64 {
 	return count + 1
 }
 
-type VdevSize struct {
-	XMLName xml.Name `xml:"Vdev"`
-	NVBLKS  uint64   `xml:"NVBLKS"`
-}
-
 type ChunkNisd struct {
-	XMLName xml.Name `xml:"ChunkNisd"`
-	NumReplicas    uint8   `xml:"NREPLICAS"`
-	NisdUUID	   string  `xml:"NISD"`
+	XMLName     xml.Name `xml:"ChunkNisd"`
+	NumReplicas uint8    `xml:"NREPLICAS"`
+	NisdUUID    string   `xml:"NISD"`
 }
 
 type NisdInfo struct {
-	XMLName xml.Name `xml:"NisdInfo"`
-	NisdIP  string `xml:"IP"`
-	NisdPort uint16 `xml:"PORT"`
+	XMLName  xml.Name `xml:"NisdInfo"`
+	NisdIP   string   `xml:"IP"`
+	NisdPort uint16   `xml:"PORT"`
 }
 
 func RegisterGOBStructs() {
@@ -246,7 +247,14 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
-	gob.Register(VdevSize{})
+	gob.Register(VdevCfg{})
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdInfo{})
+}
+
+func (req *GetReq) ValidateRequest() error {
+	if req.ID == "" {
+		return fmt.Errorf("Invalid Request: Recieved empty ID")
+	}
+	return nil
 }

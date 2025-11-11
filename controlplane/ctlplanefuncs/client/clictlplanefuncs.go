@@ -220,7 +220,7 @@ func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
+	return ccf.put(vdev.Cfg.Size, vdev, ctlplfl.CREATE_VDEV)
 }
 
 func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
@@ -314,4 +314,27 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 	}
 
 	return hypervisors, nil
+}
+
+func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
+	vdev := ctlplfl.VdevCfg{}
+	err := ccf.get(req, &vdev, ctlplfl.GET_VDEV_INFO)
+	if err != nil {
+		log.Error("Read Vdev Cfg failed: ", err)
+		return vdev, err
+	}
+
+	return vdev, nil
+}
+
+func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, error) {
+	cn := ctlplfl.ChunkNisd{}
+	log.Info("fetching chunk Info for:", req.ID)
+	err := ccf.get(req, &cn, ctlplfl.GET_CHUNK_NISD)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return cn, err
+	}
+
+	return cn, nil
 }

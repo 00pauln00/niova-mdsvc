@@ -2,6 +2,7 @@ package clictlplanefuncs
 
 import (
 	"os"
+	"path"
 	"testing"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
@@ -231,14 +232,18 @@ func TestPutAndGetHypervisor(t *testing.T) {
 func TestMultiCreateVdev(t *testing.T) {
 	c := newClient(t)
 	vdev1 := &cpLib.Vdev{
-		Size: 700 * 1024 * 1024 * 1024}
+		Cfg: cpLib.VdevCfg{
+			Size: 700 * 1024 * 1024 * 1024,
+		}}
 	err := c.CreateVdev(vdev1)
 	log.Info("CreateMultiVdev Result 1: ", vdev1)
-	VDEV_ID = vdev1.VdevID
+	VDEV_ID = vdev1.Cfg.ID
 	assert.NoError(t, err)
 
 	vdev2 := &cpLib.Vdev{
-		Size: 400 * 1024 * 1024 * 1024}
+		Cfg: cpLib.VdevCfg{
+			Size: 400 * 1024 * 1024 * 1024,
+		}}
 	err = c.CreateVdev(vdev2)
 	log.Info("CreateMultiVdev Result 2: ", vdev2)
 	assert.NoError(t, err)
@@ -305,4 +310,39 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+}
+
+func TestVdevNisdChunk(t *testing.T) {
+
+	c := newClient(t)
+
+	// create nisd
+	mockNisd := cpLib.Nisd{
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+	}
+	resp, err := c.PutNisdCfg(&mockNisd)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// create vdev
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size: 500 * 1024 * 1024 * 1024,
+		}}
+	err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", vdev)
+	assert.NoError(t, err)
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
+	log.Info("Read vdev:", readV)
+	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
+	log.Info("Read Nisd Chunk:", nc)
 }
