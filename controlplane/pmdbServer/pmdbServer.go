@@ -155,6 +155,7 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD_ARGS, srvctlplanefuncs.RdNisdArgs)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, srvctlplanefuncs.WPNisdArgs)
 
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
 
