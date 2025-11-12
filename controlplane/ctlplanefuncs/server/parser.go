@@ -13,7 +13,6 @@ const ( // Key Prefixes
 	ELEMENT_KEY      = 2
 	KEY_LEN          = 3
 	VDEV_CFG_C_KEY   = 2
-	CFG_KEY_IDX      = 1
 	VDEV_ELEMENT_KEY = 3
 )
 
@@ -43,7 +42,6 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 		}
 		pe.ParseField(entity, parts, v)
 	}
-
 	result := make([]T, 0, len(entityMap))
 	for _, e := range entityMap {
 		final := pe.GetEntity(e)
@@ -320,14 +318,14 @@ func (deviceWithPartitionParser) GetEntity(entity Entity) Entity {
 
 type vdevParser struct{}
 
-func (vdevParser) GetRootKey() string { return vdevCfgKey }
+func (vdevParser) GetRootKey() string { return vdevKey }
 func (vdevParser) NewEntity(id string) Entity {
 	return &ctlplfl.Vdev{VdevID: id}
 }
 func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 	vdev := entity.(*ctlplfl.Vdev)
-	if len(parts) == KEY_LEN {
-		switch parts[ELEMENT_KEY] {
+	if len(parts) > KEY_LEN {
+		switch parts[VDEV_ELEMENT_KEY] {
 		case SIZE:
 			if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
 				vdev.Size = sz

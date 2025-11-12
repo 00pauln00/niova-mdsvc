@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 import (
+	"path"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -53,7 +54,6 @@ const (
 	cfgkey       = "cfg"
 	nisdCfgKey   = "n_cfg"
 	deviceCfgKey = "d_cfg"
-	vdevCfgKey   = "v_cfg"
 	sdeviceKey   = "sd"
 	parentInfo   = "pi"
 	pduKey       = "p"
@@ -588,11 +588,6 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		key = getConfKey(vdevKey, req.ID)
 	}
 
-	cfgKey := vdevCfgKey
-	if !req.GetAll {
-		cfgKey = getConfKey(vdevCfgKey, req.ID)
-	}
-
 	nisdResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -607,11 +602,6 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	cfgResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, cfgKey, int64(len(cfgKey)), cfgKey, cbArgs.ReplySize, false, 0, colmfamily)
-	if err != nil {
-		log.Error("Range read failure: ", err)
-		return nil, err
-	}
 	vdevMap := make(map[string]*ctlplfl.Vdev)
 	// top-level map: vdevID -> (nisdID -> *NisdChunk)
 	vdevNisdChunkMap := make(map[string]map[string]*ctlplfl.NisdChunk)
@@ -620,10 +610,30 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		vdevID := parts[BASE_UUID_PREFIX]
 		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
-		if len(parts) < 4 {
-			continue
+		if _, ok := vdevMap[vdevID]; !ok {
+			vdevMap[vdevID] = &ctlplfl.Vdev{
+				VdevID: vdevID,
+			}
 		}
-		if parts[VDEV_CFG_C_KEY] == chunkKey {
+		vdev := vdevMap[vdevID]
+		if parts[VDEV_CFG_C_KEY] == cfgkey {
+			switch parts[VDEV_ELEMENT_KEY] {
+			case SIZE:
+				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+					vdev.Size = sz
+				}
+			case NUM_CHUNKS:
+				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+					vdev.NumChunks = uint32(nc)
+				}
+			case NUM_REPLICAS:
+				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+					vdev.NumReplica = uint8(nr)
+				}
+
+			}
+
+		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
 
 			nisdID := string(value)
 
@@ -670,36 +680,6 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	for k, value := range cfgResult.ResultMap {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
-		vdevID := parts[BASE_UUID_PREFIX]
-		if _, ok := vdevMap[vdevID]; !ok {
-			vdevMap[vdevID] = &ctlplfl.Vdev{
-				VdevID: vdevID,
-			}
-		}
-		vdev := vdevMap[vdevID]
-
-		if parts[BASE_KEY] == vdevCfgKey {
-			switch parts[ELEMENT_KEY] {
-			case SIZE:
-				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
-					vdev.Size = sz
-				}
-			case NUM_CHUNKS:
-				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
-					vdev.NumChunks = uint32(nc)
-				}
-			case NUM_REPLICAS:
-				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
-					vdev.NumReplica = uint8(nr)
-				}
-
-			}
-
-		}
-	}
-
 	vdevList := make([]*ctlplfl.Vdev, 0, len(vdevMap))
 	// attach only the nisd chunks that belong to each vdev
 	for vid, v := range vdevMap {
@@ -717,12 +697,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 func ReadVdevsCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
-
-	key := vdevCfgKey
-	if !req.GetAll {
-		key = getConfKey(vdevCfgKey, req.ID)
-	}
-
+	key := getConfKey(vdevKey, path.Join(req.ID, cfgkey))
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)

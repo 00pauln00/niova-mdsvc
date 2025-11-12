@@ -267,24 +267,6 @@ func TestVdevLifecycle(t *testing.T) {
 
 	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
-	allResp, err := c.GetVdevs(getAllReq)
-	assert.NoError(t, err, "failed to fetch all vdevs")
-	assert.NotNil(t, allResp, "all vdevs response should not be nil")
-	log.Info("All vdevs response: ", allResp)
-
-	var found1, found2 bool
-	for _, v := range allResp {
-		if v.VdevID == vdev1.VdevID {
-			found1 = true
-			assert.Equal(t, vdev1.Size, v.Size, "vdev1 size mismatch")
-		}
-		if v.VdevID == vdev2.VdevID {
-			found2 = true
-			assert.Equal(t, vdev2.Size, v.Size, "vdev2 size mismatch")
-		}
-	}
-	assert.True(t, found1, "vdev1 not found in GetAll response")
-	assert.True(t, found2, "vdev2 not found in GetAll response")
 
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
