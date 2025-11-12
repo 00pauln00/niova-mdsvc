@@ -778,7 +778,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	log.Info("result from :", rqResult)
 	// TODO: Add logic to fetch replicas
 	chunkInfo := ctlplfl.ChunkNisd{
-		NisdUUID: string(rqResult),
+		NisdUUID: append([]string{}, string(rqResult)),
 	}
 
 	return pmCmn.Encoder(ENC_TYPE, chunkInfo)
