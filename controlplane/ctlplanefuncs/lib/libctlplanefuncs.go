@@ -3,6 +3,8 @@ package libctlplanefuncs
 import (
 	"encoding/gob"
 	"fmt"
+	"strconv"
+	"strings"
 
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
@@ -10,26 +12,29 @@ import (
 )
 
 const (
-	PUT_DEVICE     = "PutDeviceInfo"
-	GET_DEVICE     = "GetDeviceInfo"
-	PUT_NISD       = "PutNisdCfg"
-	GET_NISD       = "GetNisdCfg"
-	GET_NISD_LIST  = "GetAllNisd"
-	CREATE_VDEV    = "CreateVdev"
-	GET_VDEV       = "GetVdev"
-	CREATE_SNAP    = "CreateSnap"
-	READ_SNAP_NAME = "ReadSnapByName"
-	READ_SNAP_VDEV = "ReadSnapForVdev"
-	PUT_PDU        = "PutPDU"
-	GET_PDU        = "GetPDU"
-	GET_RACK       = "GetRack"
-	PUT_RACK       = "PutRack"
-	GET_HYPERVISOR = "GetHypervisor"
-	PUT_HYPERVISOR = "PutHypervisor"
-	PUT_PARTITION  = "PutPartition"
-	GET_PARTITION  = "GetPartition"
-	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
-	NAME           = "name"
+	PUT_DEVICE          = "PutDevice"
+	GET_DEVICE          = "GetDevice"
+	PUT_NISD            = "PutNisd"
+	GET_NISD            = "GetNisd"
+	GET_NISD_LIST       = "GetAllNisd"
+	CREATE_VDEV         = "CreateVdev"
+	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
+	GET_VDEV            = "GetVdevs"
+	CREATE_SNAP         = "CreateSnap"
+	READ_SNAP_NAME      = "ReadSnapByName"
+	READ_SNAP_VDEV      = "ReadSnapForVdev"
+	PUT_PDU             = "PutPDU"
+	GET_PDU             = "GetPDU"
+	GET_RACK            = "GetRack"
+	PUT_RACK            = "PutRack"
+	GET_HYPERVISOR      = "GetHypervisor"
+	PUT_HYPERVISOR      = "PutHypervisor"
+	PUT_PARTITION       = "PutPartition"
+	GET_PARTITION       = "GetPartition"
+	PUT_NISD_ARGS       = "PutNisdArgs"
+	GET_NISD_ARGS       = "GetNisdArgs"
+	CHUNK_SIZE          = 8 * 1024 * 1024 * 1024
+	NAME                = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -86,6 +91,16 @@ type DevicePartition struct {
 	Size          int64  `json:"size,omitempty"`
 }
 
+type NisdArgs struct {
+	Defrag               bool   // -g Defrag
+	MBCCnt               int    // -m
+	MergeHCnt            int    // -M
+	MCIBReadCache        int    // -r
+	S3                   string // -s
+	DSync                string // -D
+	AllowDefragMCIBCache bool   // -x
+}
+
 type Nisd struct {
 	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
 	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
@@ -97,6 +112,7 @@ type Nisd struct {
 	InitDev       bool   `yaml:"init"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	Args          string `yaml:"cmdline_args"`
 }
 
 type PDU struct {
@@ -225,4 +241,33 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
+	gob.Register(NisdArgs{})
+}
+
+func (a *NisdArgs) BuildCmdArgs() string {
+	var parts []string
+
+	if a.Defrag {
+		parts = append(parts, "-g")
+	}
+	if a.MBCCnt != 0 {
+		parts = append(parts, "-m", strconv.Itoa(a.MBCCnt))
+	}
+	if a.MergeHCnt != 0 {
+		parts = append(parts, "-M", strconv.Itoa(a.MergeHCnt))
+	}
+	if a.MCIBReadCache != 0 {
+		parts = append(parts, "-r", strconv.Itoa(a.MCIBReadCache))
+	}
+	if a.S3 != "" {
+		parts = append(parts, "-s", a.S3)
+	}
+	if a.DSync != "" {
+		parts = append(parts, "-D", a.DSync)
+	}
+	if a.AllowDefragMCIBCache {
+		parts = append(parts, "-x")
+	}
+
+	return strings.Join(parts, " ")
 }

@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 import (
+	"path"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -42,8 +43,16 @@ const (
 	DEVICE_PATH    = "dp"
 	PARTITION_PATH = "ptp"
 
-	nisdCfgKey   = "n_cfg"
+	DEFRAG                  = "dfg"
+	MBCCnt                  = "mbc"
+	MergeHCnt               = "mhc"
+	MCIReadCache            = "mrc"
+	S3                      = "s3"
+	DSYNC                   = "ds"
+	ALLOW_DEFRAG_MCIB_CACHE = "admc"
+
 	cfgkey       = "cfg"
+	nisdCfgKey   = "n_cfg"
 	deviceCfgKey = "d_cfg"
 	sdeviceKey   = "sd"
 	parentInfo   = "pi"
@@ -54,6 +63,7 @@ const (
 	chunkKey     = "c"
 	hvKey        = "hv"
 	ptKey        = "pt"
+	argsKey      = "na"
 
 	ENC_TYPE = pmCmn.GOB
 )
@@ -569,7 +579,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, hvList)
 }
 
-func ReadVdevCfg(args ...interface{}) (interface{}, error) {
+func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 
@@ -580,7 +590,7 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 
 	nisdResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
-		log.Error("Range read failure ", err)
+		log.Error("Range read failure: ", err)
 		return nil, err
 	}
 	// ParseEntitiesMap now returns map[string]Entity
@@ -588,7 +598,7 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
-		log.Error("Range read failure ", err)
+		log.Error("Range read failure: ", err)
 		return nil, err
 	}
 
@@ -598,19 +608,15 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 
 	for k, value := range readResult.ResultMap {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 3 { // minimal expected parts to include vdev id, base key and an index/element
-			continue
-		}
 		vdevID := parts[BASE_UUID_PREFIX]
+		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
 		if _, ok := vdevMap[vdevID]; !ok {
 			vdevMap[vdevID] = &ctlplfl.Vdev{
 				VdevID: vdevID,
 			}
 		}
 		vdev := vdevMap[vdevID]
-
-		switch parts[VDEV_CFG_C_KEY] {
-		case cfgkey:
+		if parts[VDEV_CFG_C_KEY] == cfgkey {
 			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
 				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
@@ -624,12 +630,11 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
 					vdev.NumReplica = uint8(nr)
 				}
+
 			}
-		case chunkKey:
-			// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
-			if len(parts) < 4 {
-				continue
-			}
+
+		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
+
 			nisdID := string(value)
 
 			// ensure per-vdev map exists
@@ -687,4 +692,73 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
+}
+
+func ReadVdevsCfg(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+	key := getConfKey(vdevKey, path.Join(req.ID, cfgkey))
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+
+	vdevList := ParseEntities[ctlplfl.Vdev](readResult.ResultMap, vdevParser{})
+	return pmCmn.Encoder(ENC_TYPE, vdevList)
+
+}
+
+func WPNisdArgs(args ...interface{}) (interface{}, error) {
+	nArgs := args[0].(ctlplfl.NisdArgs)
+	resp := &ctlplfl.ResponseXML{
+		Name:    "nisd-args",
+		Success: true,
+	}
+	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
+	if err != nil {
+		log.Error("Failed to marshal nisd args response: ", err)
+		return nil, fmt.Errorf("failed to marshal nisd args response: %v", err)
+	}
+	commitChgs := PopulateEntities[*ctlplfl.NisdArgs](&nArgs, nisdArgsPopulator{}, argsKey)
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+}
+
+func RdNisdArgs(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, argsKey, int64(len(argsKey)), argsKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure: ", err)
+		return nil, err
+	}
+	var nisdArgs ctlplfl.NisdArgs
+	for k, v := range readResult.ResultMap {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		if len(parts) < 2 {
+			continue
+		}
+		switch parts[BASE_UUID_PREFIX] {
+		case DEFRAG:
+			nisdArgs.Defrag, _ = strconv.ParseBool(string(v))
+		case MBCCnt:
+			nisdArgs.MBCCnt, _ = strconv.Atoi(string(v))
+		case MergeHCnt:
+			nisdArgs.MergeHCnt, _ = strconv.Atoi(string(v))
+		case MCIReadCache:
+			nisdArgs.MCIBReadCache, _ = strconv.Atoi(string(v))
+		case DSYNC:
+			nisdArgs.DSync = string(v)
+		case S3:
+			nisdArgs.S3 = string(v)
+		case ALLOW_DEFRAG_MCIB_CACHE:
+			nisdArgs.AllowDefragMCIBCache, _ = strconv.ParseBool(string(v))
+		}
+	}
+	return pmCmn.Encoder(ENC_TYPE, nisdArgs)
+
 }

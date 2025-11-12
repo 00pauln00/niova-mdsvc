@@ -150,7 +150,10 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
 	cpAPI.RegisterReadFunc(cpLib.GET_PARTITION, srvctlplanefuncs.ReadPartition)
-	cpAPI.RegisterReadFunc(cpLib.GET_VDEV, srvctlplanefuncs.ReadVdevCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_CHUNK_INFO, srvctlplanefuncs.ReadVdevsInfoWithChunkMapping)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV, srvctlplanefuncs.ReadVdevsCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_ARGS, srvctlplanefuncs.RdNisdArgs)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, srvctlplanefuncs.WPNisdArgs)
 
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
