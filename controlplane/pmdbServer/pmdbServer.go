@@ -142,7 +142,8 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.WPCreatePartition)
 
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, srvctlplanefuncs.ReadAllNisdConfigs)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.ReadNisdConfig)
 	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
@@ -151,9 +152,10 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
 	cpAPI.RegisterReadFunc(cpLib.GET_PARTITION, srvctlplanefuncs.ReadPartition)
 	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_CHUNK_INFO, srvctlplanefuncs.ReadVdevsInfoWithChunkMapping)
-	cpAPI.RegisterReadFunc(cpLib.GET_VDEV, srvctlplanefuncs.ReadVdevsCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD_ARGS, srvctlplanefuncs.RdNisdArgs)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, srvctlplanefuncs.WPNisdArgs)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, srvctlplanefuncs.ReadVdevInfo)
+	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, srvctlplanefuncs.ReadChunkNisd)
 
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)

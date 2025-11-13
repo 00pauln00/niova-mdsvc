@@ -205,11 +205,27 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	return intrm.Response, nil
 }
 
-func RdNisdCfg(args ...interface{}) (interface{}, error) {
+// TODO: This method needs to be tested
+func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	log.Trace("fetching nisd details for key : ", nisdCfgKey)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		return nil, err
+	}
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	return pmCmn.Encoder(pmCmn.GOB, nisdList)
+}
+
+func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
 	req := args[1].(ctlplfl.GetReq)
-
+	err := req.ValidateRequest()
+	if err != nil {
+		return nil, err
+	}
 	key := getConfKey(nisdCfgKey, req.ID)
 	log.Trace("fetching nisd details for key : ", key)
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
@@ -218,7 +234,7 @@ func RdNisdCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
-	return pmCmn.Encoder(pmCmn.GOB, nisdList)
+	return pmCmn.Encoder(pmCmn.GOB, nisdList[0])
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
@@ -293,16 +309,16 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 // Allocates Nisd to the Requested VDEV
 func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
 	allocatedNisd := make([]*ctlplfl.Nisd, 0)
-	remainingVdevSize := vdev.Size
+	remainingVdevSize := vdev.Cfg.Size
 	vdev.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
 	for _, nisd := range nisds {
-		if (nisd.AvailableSize > int64(vdev.Size)) && remainingVdevSize > 0 {
+		if (nisd.AvailableSize > int64(vdev.Cfg.Size)) && remainingVdevSize > 0 {
 			nisdChunk := ctlplfl.NisdChunk{
 				Nisd:  nisd,
-				Chunk: make([]int, vdev.NumChunks),
+				Chunk: make([]int, vdev.Cfg.NumChunks),
 			}
 			allocatedNisd = append(allocatedNisd, &nisd)
-			for i := 0; i < int(vdev.NumChunks); i++ {
+			for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
 				nisdChunk.Chunk[i] = i
 				remainingVdevSize -= ctlplfl.CHUNK_SIZE
 				nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
@@ -315,9 +331,9 @@ func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	vcKey := getVdevChunkKey(vdev.VdevID)
+	vcKey := getVdevChunkKey(vdev.Cfg.ID)
 	for _, nisd := range nisdList {
-		for i := 0; i < int(vdev.NumChunks); i++ {
+		for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(fmt.Sprintf("%s/%d", vcKey, i)),
 				Value: []byte(nisd.ID),
@@ -330,8 +346,8 @@ func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 // Generates all the Keys and Values that needs to be inserted into NISD key space on vdev generation
 func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	for _, nisd := range nisdList {
-		key := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, vdev.VdevID)
-		for i := 0; i < int(vdev.NumChunks); i++ {
+		key := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, vdev.Cfg.ID)
+		for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
 			*commitChgs = append(*commitChgs, funclib.CommitChg{
 				Key:   []byte(key),
 				Value: []byte(fmt.Sprintf("R.0.%d", i)),
@@ -352,19 +368,19 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	vdev.Size = args[0].(int64)
+	vdev.Cfg.Size = args[0].(int64)
 	vdev.Init()
 	log.Debug("Initializing vdev with size: ", vdev)
-	key := getConfKey(vdevKey, vdev.VdevID)
+	key := getConfKey(vdevKey, vdev.Cfg.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
 		case SIZE:
-			value = strconv.Itoa(int(vdev.Size))
+			value = strconv.Itoa(int(vdev.Cfg.Size))
 		case NUM_CHUNKS:
-			value = strconv.Itoa(int(vdev.NumChunks))
+			value = strconv.Itoa(int(vdev.Cfg.NumChunks))
 		case NUM_REPLICAS:
-			value = strconv.Itoa(int(vdev.NumReplica))
+			value = strconv.Itoa(int(vdev.Cfg.NumReplica))
 		default:
 			continue
 		}
@@ -395,7 +411,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
-	log.Debug("allocating vdev: ", vdev.VdevID)
+	log.Debug("allocating vdev: ", vdev.Cfg.ID)
 	nisdList, err := getNisdList(cbArgs)
 	if err != nil {
 		log.Error("failed to get nisd list:", err)
@@ -611,24 +627,23 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		vdevID := parts[BASE_UUID_PREFIX]
 		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
 		if _, ok := vdevMap[vdevID]; !ok {
-			vdevMap[vdevID] = &ctlplfl.Vdev{
-				VdevID: vdevID,
-			}
+			vdevMap[vdevID] = &ctlplfl.Vdev{Cfg: ctlplfl.VdevCfg{
+				ID: vdevID}}
 		}
 		vdev := vdevMap[vdevID]
 		if parts[VDEV_CFG_C_KEY] == cfgkey {
 			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
 				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
-					vdev.Size = sz
+					vdev.Cfg.Size = sz
 				}
 			case NUM_CHUNKS:
 				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
-					vdev.NumChunks = uint32(nc)
+					vdev.Cfg.NumChunks = uint32(nc)
 				}
 			case NUM_REPLICAS:
 				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
-					vdev.NumReplica = uint8(nr)
+					vdev.Cfg.NumReplica = uint8(nr)
 				}
 
 			}
@@ -694,18 +709,79 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
 }
 
-func ReadVdevsCfg(args ...interface{}) (interface{}, error) {
+func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
-	key := getConfKey(vdevKey, path.Join(req.ID, cfgkey))
-	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+
+	err := req.ValidateRequest()
 	if err != nil {
-		log.Error("Range read failure ", err)
+		log.Error("failed to validate request:", err)
 		return nil, err
 	}
+	vKey := getConfKey(vdevKey, req.ID)
+	rqResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, vKey, int64(len(vKey)), vKey, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("RangeReadKV failure: ", err)
+		return nil, err
+	}
+	vdevInfo := ctlplfl.VdevCfg{
+		ID: req.ID,
+	}
 
-	vdevList := ParseEntities[ctlplfl.Vdev](readResult.ResultMap, vdevParser{})
-	return pmCmn.Encoder(ENC_TYPE, vdevList)
+	// TODO: move this to parsing file
+	for k, v := range rqResult.ResultMap {
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+		if parts[BASE_UUID_PREFIX] != vdevInfo.ID {
+			continue
+		}
+		switch parts[VDEV_CFG_C_KEY] {
+		case cfgkey:
+			switch parts[VDEV_ELEMENT_KEY] {
+			case SIZE:
+				if sz, err := strconv.ParseInt(string(v), 10, 64); err == nil {
+					vdevInfo.Size = sz
+				}
+			case NUM_CHUNKS:
+				if nc, err := strconv.ParseUint(string(v), 10, 32); err == nil {
+					vdevInfo.NumChunks = uint32(nc)
+				}
+			case NUM_REPLICAS:
+				if nr, err := strconv.ParseUint(string(v), 10, 8); err == nil {
+					vdevInfo.NumReplica = uint8(nr)
+				}
+			}
+		}
+
+	}
+	return pmCmn.Encoder(ENC_TYPE, vdevInfo)
+}
+
+func ReadChunkNisd(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+
+	err := req.ValidateRequest()
+	if err != nil {
+		log.Error("failed to validate request:", err)
+		return nil, err
+	}
+	keys := strings.Split(strings.Trim(req.ID, "/"), "/")
+	vdevID, chunk := keys[0], keys[1]
+	vcKey := getConfKey(vdevKey, path.Join(vdevID, chunkKey, chunk))
+	log.Info("searching for key:", vcKey)
+
+	rqResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, vcKey, int64(len(vcKey)), colmfamily)
+	if err != nil {
+		log.Error("RangeReadKV failure: ", err)
+		return nil, err
+	}
+	log.Info("result from :", rqResult)
+	// TODO: Add logic to fetch replicas
+	chunkInfo := ctlplfl.ChunkNisd{
+		NisdUUID: append([]string{}, string(rqResult)),
+	}
+
+	return pmCmn.Encoder(ENC_TYPE, chunkInfo)
 
 }
 

@@ -881,25 +881,25 @@ func main() {
 	case "CreateVdev":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		// Step 1: Create first Vdev
-		vdev := &cpLib.Vdev{
+		vdev := &cpLib.Vdev{Cfg: cpLib.VdevCfg{
 			Size: vdevSize,
-		}
+		}}
 		err = c.CreateVdev(vdev)
 		if err != nil {
 			log.Error("failed to create vdev:", err)
 			os.Exit(-1)
 		}
 		log.Info("Vdev created successfully with UUID:", vdev)
-	case "GetVdev":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		vdev, err := c.GetVdevs(&cpLib.GetReq{
-			GetAll: true,
-		})
-		if err != nil {
-			log.Error("failed to get vdev info:", err)
-			os.Exit(-1)
-		}
-		log.Info("Vdev info retrieved successfully:", vdev)
+		// case "GetVdev":
+		// 	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		// 	vdev, err := c.GetVdevCfg(&cpLib.GetReq{
+		// 		GetAll: true,
+		// 	})
+		// 	if err != nil {
+		// 		log.Error("failed to get vdev info:", err)
+		// 		os.Exit(-1)
+		// 	}
+		// 	log.Info("Vdev info retrieved successfully:", vdev)
 
 	}
 
