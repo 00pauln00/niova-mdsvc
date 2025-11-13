@@ -349,10 +349,9 @@ func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funcl
 // Initialize the VDEV during the write preparation stage.
 // Since the VDEV ID is derived from a randomly generated UUID, It needs to be generated within the Write Prep Phase.
 func WPCreateVdev(args ...interface{}) (interface{}, error) {
-	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	vdev.Size = args[0].(int64)
+	vdev := args[0].(ctlplfl.Vdev)
 	vdev.Init()
 	log.Debug("Initializing vdev with size: ", vdev)
 	key := getConfKey(vdevKey, vdev.VdevID)
@@ -396,16 +395,40 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Debug("allocating vdev: ", vdev.VdevID)
-	nisdList, err := getNisdList(cbArgs)
-	if err != nil {
-		log.Error("failed to get nisd list:", err)
-		return nil, err
+	var allocNisds []*ctlplfl.Nisd
+	var nisdList []ctlplfl.Nisd
+	var err error
+	if len(vdev.NisdToChkMap) == 0 {
+		log.Info("DevID is empty — using standard NISD allocation flow")
+
+		nisdList, err = getNisdList(cbArgs)
+		if err != nil {
+			log.Error("Failed to get NISD list:", err)
+			return nil, err
+		}
+
+	} else {
+		key := getConfKey(ptKey, vdev.NisdToChkMap[0].Nisd.DevID)
+		log.Infof("DevID '%s' provided — fetching NISD using alternate logic", vdev.NisdToChkMap[0].Nisd.DevID)
+		readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+		if err != nil {
+			log.Error("Range read failure: ", err)
+			return nil, err
+		}
+		pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
+		nisd_Key := getConfKey(nisdCfgKey, pt[0].NISDUUID)
+		readResult, err = PumiceDBServer.RangeReadKV(cbArgs.UserID, nisd_Key, int64(len(nisd_Key)), nisd_Key, cbArgs.ReplySize, false, 0, colmfamily)
+		if err != nil {
+			log.Error("Range read failure: ", err)
+			return nil, err
+		}
+		nisdList = ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
 	}
-	// allocate nisd chunks to vdev
-	allocNisds := allocateNisd(&vdev, nisdList)
+
+	allocNisds = allocateNisd(&vdev, nisdList)
 	if len(allocNisds) == 0 {
-		log.Error("failed to allocate nisd")
-		return nil, fmt.Errorf("failed to allocate nisd: not enough space avialable")
+		log.Error("Failed to allocate NISD")
+		return nil, fmt.Errorf("failed to allocate NISD: not enough space available")
 	}
 
 	genVdevKV(&vdev, allocNisds, &funcIntrm.Changes)
