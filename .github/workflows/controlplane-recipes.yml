@@ -94,6 +94,33 @@ jobs:
       run: mkdir  /home/runner/work/niovad/niovad/code_cov &&
            export GOCOVERDIR=/work/niovad/niovad/code_cov
 
+    - name: Persist envs (GOCOVERDIR + PATH)
+      run: |
+        echo "GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov" >> $GITHUB_ENV
+        echo "NIOVA_BUILD_DIR=/home/runner/work/niovad/niovad/build_dir" >> $GITHUB_ENV
+        # ensure go bin on PATH for subsequent steps
+        echo "PATH=/home/runner/work/go/go/bin:$PATH" >> $GITHUB_ENV
+
+    - name: show environment, permissions and key files
+      run: |
+        echo "USER: $(whoami)"
+        echo "PWD: $(pwd)"
+        echo "HOME: $HOME"
+        echo "PATH: $PATH"
+        echo "go version: $(go version || echo 'go not found')"
+        echo "ansible version: $(ansible --version | sed -n '1,2p' || true)"
+        echo "GOCOVERDIR: ${GOCOVERDIR:-<not-set>}"
+        echo "Build dir listing:"
+        ls -la /home/runner/work/niovad/niovad/build_dir || true
+        echo "holon dir listing:"
+        ls -la /home/runner/work/niovad/niovad/build_dir/holon || true
+        echo "holon_log listing:"
+        ls -la /home/runner/work/niovad/niovad/holon_log || true
+        echo "run-recipes.sh permissions:"
+        ls -l /home/runner/work/niovad/niovad/build_dir/run-recipes.sh || true
+        echo "controlplane_recipes.txt head:"
+        sed -n '1,40p' /home/runner/work/niovad/niovad/build_dir/controlplane_recipes.txt || true
+
     - name:  run recipes for controlplane application
       run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
            export PATH=$PATH:/home/runner/work/go/go/bin &&
