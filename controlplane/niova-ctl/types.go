@@ -377,13 +377,13 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 	if cpClient != nil {
 		// Type assert to get the actual client interface
 		if client, ok := cpClient.(interface {
-			GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
+			GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
 		}); ok {
 			// Create a request to get all NISDs
 			// Get all NISDs and filter by hypervisor UUID locally
-			req := ctlplfl.GetReq{ID: ""} // Empty ID to get all NISDs
+			req := ctlplfl.GetReq{GetAll: true} // Empty ID to get all NISDs
 
-			nisds, err := client.GetNisdCfg(req)
+			nisds, err := client.GetNisds(req)
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {

@@ -93,9 +93,8 @@ func TestPutAndGetMultiplePDUs(t *testing.T) {
 		},
 	}
 
-	// PUT multiple PDUs
-	for _, p := range pdus {
-		resp, err := c.PutPDU(&p)
+	for _, n := range mockNisd {
+		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
@@ -306,6 +305,8 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	// GET device
 	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
 	log.Infof("fetch single device info: %s", res)
+	res, err := c.GetNisds(cpLib.GetReq{ID: "nisd-002"})
+	log.Info("GetNisds: ", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -392,12 +393,16 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	// PUT multiple devices
 	for _, d := range mockDevices {
 		resp, err := c.PutDeviceInfo(&d)
+	for _, p := range mockDevices {
+		resp, err := c.PutDevice(&p)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
 	// GET all devices
 	res, err := c.GetDeviceInfo(cpLib.GetReq{})
+	res, err := c.GetDevices(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
+	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -405,6 +410,9 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	for _, d := range res {
 		Devices[d.ID] = d
 	}
+	res, err = c.GetDevices(cpLib.GetReq{GetAll: true})
+	log.Infof("fetech all device list: %s,%v", res[0].ID, res[0].Partitions)
+	assert.NoError(t, err)
 
 	// Validation: Device ↔ Hypervisor
 	for _, device := range Devices {
@@ -561,7 +569,7 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
 }
 
-func TestMultiCreateVdev(t *testing.T) {
+func TestVdevLifecycle(t *testing.T) {
 	c := newClient(t)
 	vdev1 := &cpLib.Vdev{
 		Size: 700 * 1024 * 1024 * 1024}         // 700 GB
@@ -571,6 +579,32 @@ func TestMultiCreateVdev(t *testing.T) {
 	log.Info("CreateMultiVdev Result 1: ", vdev1)
 	VDEV_ID = vdev1.VdevID
 
+	// Step 0: Create a NISD to allocate space for Vdevs
+	n := cpLib.Nisd{
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     15_000_000_000_000, // 1 TB
+		AvailableSize: 15_000_000_000_000, // 750 GB
+	}
+	_, err := c.PutNisd(&n)
+	assert.NoError(t, err)
+
+	// Step 1: Create first Vdev
+	vdev1 := &cpLib.Vdev{
+		Size: 700 * 1024 * 1024 * 1024,
+	}
+	err = c.CreateVdev(vdev1)
+	assert.NoError(t, err, "failed to create vdev1")
+	assert.NotEmpty(t, vdev1.VdevID, "vdev1 ID should not be empty")
+	log.Info("Created vdev1: ", vdev1)
+
+	// Step 2: Create second Vdev
 	vdev2 := &cpLib.Vdev{
 		Size: 400 * 1024 * 1024 * 1024}        // 400 GB
 	err = c.CreateVdev(vdev2)
@@ -661,11 +695,24 @@ func TestGetAllVdev(t *testing.T) {
 
 	assert.True(t, found, "Expected VDEV_ID %s to be returned in GetAllVdev", VDEV_ID)
 }
+		Size: 400 * 1024 * 1024 * 1024,
+	}
+	err = c.CreateVdev(vdev2)
+	assert.NoError(t, err, "failed to create vdev2")
+	assert.NotEmpty(t, vdev2.VdevID, "vdev2 ID should not be empty")
+	log.Info("Created vdev2: ", vdev2)
 
-func TestGetSpecificVdev(t *testing.T) {
-	c := newClient(t)
-	req := &cpLib.GetReq{
-		ID:     VDEV_ID,
+	// Step 3: Fetch all Vdevs and validate both exist
+	getAllReq := &cpLib.GetReq{GetAll: true}
+
+	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
+	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
+	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
+	log.Info("All vdevs with chunk mapping response: ", allCResp)
+
+	// Step 4: Fetch specific Vdev (vdev1)
+	getSpecificReq := &cpLib.GetReq{
+		ID:     vdev1.VdevID,
 		GetAll: false,
 	}
 	resp, err := c.GetVdevs(req)
@@ -693,6 +740,23 @@ func TestGetSpecificVdev(t *testing.T) {
 		}
 		assert.True(t, nisdExists,"Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
 	}
+	specificResp, err := c.GetVdevs(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev")
+	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
+	log.Info("Specific vdev response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+
+	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
+	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
 }
 
 func TestPutAndGetSinglePartition(t *testing.T) {
@@ -751,4 +815,24 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+}
+}
+
+func TestPutAndGetNisdArgs(t *testing.T) {
+	c := newClient(t)
+	na := &cpLib.NisdArgs{
+		Defrag:               true,
+		MBCCnt:               8,
+		MergeHCnt:            4,
+		MCIBReadCache:        256,
+		S3:                   "s3://backup-bucket/data",
+		DSync:                "enabled",
+		AllowDefragMCIBCache: false,
+	}
+	resp, err := c.PutNisdArgs(na)
+	log.Info("created na: ", resp)
+	assert.NoError(t, err)
+	nisdArgs, err := c.GetNisdArgs()
+	assert.NoError(t, err)
+	log.Info("Get na: ", nisdArgs)
 }
