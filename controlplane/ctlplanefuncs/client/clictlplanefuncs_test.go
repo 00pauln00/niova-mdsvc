@@ -261,7 +261,7 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 		assert.True(t, found, "Expected hypervisor with ID %s not found in response", expected.ID)
 	}
 
-	// Validation: Hypervisor ↔ Rack
+	// Validation: Hypervisor <-> Rack
 	for _, hv := range Hypervisors {
 		var rackExists bool
 		for _, rack := range Racks {
@@ -579,6 +579,14 @@ func TestMultiCreateVdev(t *testing.T) {
 	log.Info("CreateMultiVdev Result 2: ", vdev2)
 	assert.NoError(t, err)
 
+	vdev3 := &cpLib.Vdev{
+		Size: 800 * 1024 * 1024 * 1024}        // 400 GB
+	err = c.CreateVdev(vdev3)
+	assert.NoError(t, err)
+	assert.Greater(t, vdev3.Size, int64(0), "Vdev size must be greater than 0")
+	log.Info("CreateMultiVdev Result 3: ", vdev3)
+	assert.NoError(t, err)
+
 	// Verify that IDs are unique
 	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
 
@@ -594,12 +602,23 @@ func TestMultiCreateVdev(t *testing.T) {
 				if n.ID == nisd.ID {
 					nisdExists = true
 					log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
+					// GET nisd 
+					res, err := c.GetNisdCfg(cpLib.GetReq{ID: n.ID})
+					assert.NoError(t, err)
+					assert.NotEmpty(t, res)
+					returnedNisd := res[0]
+					log.Info("Available Capacity of Nisd", nisd.ID, ": ", returnedNisd.AvailableSize)
+					// ensure available capacity decreased after vdev creation
+					assert.Lessf(t, returnedNisd.AvailableSize, nisd.AvailableSize,
+						"Nisd %s AvailableSize (%d) did not decrease after vdev creation; original was %d",
+						n.ID, returnedNisd.AvailableSize, nisd.AvailableSize)
 					break
 				}
 			}
 			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
 
 			assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
+			
 		}
 	}
 }
