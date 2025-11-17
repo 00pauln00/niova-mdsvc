@@ -4,13 +4,14 @@ import (
 	"C"
 	"fmt"
 
-	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	log "github.com/sirupsen/logrus"
 )
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -692,24 +693,24 @@ func ReadVdevCfg(args ...interface{}) (interface{}, error) {
 func ReadVdevWithCont(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
-	log.Infof("fetched Request: %+v", req)
+	log.Debugf("fetched Request: %+v", req)
 	key := vdevKey
 	if !req.GetAll {
 		key = getConfKey(vdevKey, req.ID)
 	}
+	prefix := key
 	if req.LastKey != "" {
 		key = req.LastKey
+		prefix = filepath.Dir(key)
 	}
-	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, req.IsConsistent, req.SeqNum, colmfamily)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), prefix, cbArgs.ReplySize, req.IsConsistent, req.SeqNum, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
 	vdevMap := make(map[string]map[string]interface{})
-	log.Infof("read result map output: %+v", readResult.ResultMap)
 	for k, v := range readResult.ResultMap {
 		parts := strings.Split(strings.TrimPrefix(k, "/"), "/")
-		log.Info("parts :", parts)
 		vdevID := parts[BASE_UUID_PREFIX]
 		if _, ok := vdevMap[vdevID]; !ok {
 			vdevMap[vdevID] = make(map[string]interface{})
@@ -725,18 +726,13 @@ func ReadVdevWithCont(args ...interface{}) (interface{}, error) {
 		}
 
 	}
-	// res, err := pmCmn.Encoder(ENC_TYPE, vdevMap)
-	// if err != nil {
-	// 	log.Error("Range read Encode failure ", err)
-	// 	return nil, err
-	// }
 	response := ctlplfl.Response{
 		Result:  vdevMap,
 		LastKey: readResult.LastKey,
 		SeqNum:  readResult.SeqNum,
 		Status:  0,
 	}
-	log.Infof("Sending Response: %+v", response)
+	log.Debugf("Sending Response: %+v", response)
 
 	return pmCmn.Encoder(ENC_TYPE, response)
 }

@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	log "github.com/sirupsen/logrus"
 )
 
 const ( // Key Prefixes

@@ -3,8 +3,9 @@ package clictlplanefuncs
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
-	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	log "github.com/sirupsen/logrus"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -316,24 +317,95 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 	return hypervisors, nil
 }
 
-func (ccf *CliCFuncs) GetVdevCont() (ctlplfl.Response, error) {
+func (ccf *CliCFuncs) GetVdevCont() (map[string]*ctlplfl.Vdev, error) {
 	req := ctlplfl.GetReq{
 		GetAll:       true,
 		IsConsistent: true,
 	}
+
+	vdevMap := make(map[string]*ctlplfl.Vdev)
+
 	for {
 		var res ctlplfl.Response
-		//vdevMap := make(map[string]map[string]interface{})
-		log.Infof("sending request: %+v", req)
 		err := ccf.get(req, &res, ctlplfl.GET_VDEV_CONT)
 		if err != nil {
-			log.Error("Get Vdev failed: ", err)
-			return res, err
+			return vdevMap, err
 		}
-		log.Infof("got response: %+v", res)
 
-		// pmCmn.Decoder(pmCmn.JSON, res.Result.([]byte), &vdevMap)
-		// log.Info("got vdev result:", vdevMap)
+		payload := res.Result.(map[string]interface{})
+
+		for vdevID, data := range payload {
+			vd, ok := vdevMap[vdevID]
+			if !ok {
+				vd = &ctlplfl.Vdev{
+					VdevID:       vdevID,
+					NisdToChkMap: make([]ctlplfl.NisdChunk, 0),
+				}
+				vdevMap[vdevID] = vd
+			}
+
+			// persistent map for merging chunks per NISD
+			if vd.NisdToChkMap == nil {
+				vd.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
+			}
+
+			// local scratch map used only for current payload
+			scratch := make(map[string][]int)
+
+			for k, value := range data.(map[string]interface{}) {
+				switch k {
+				case ctlplfl.SIZE:
+					if sz, err := strconv.ParseInt(value.(string), 10, 64); err == nil {
+						vd.Size = sz
+					}
+
+				case ctlplfl.NUM_CHUNKS:
+					if sz, err := strconv.ParseInt(value.(string), 10, 64); err == nil {
+						vd.NumChunks = uint32(sz)
+					}
+
+				case ctlplfl.NUM_REPLICAS:
+					if sz, err := strconv.ParseInt(value.(string), 10, 64); err == nil {
+						vd.NumReplica = uint8(sz)
+					}
+
+				default:
+					rawList, ok := value.([]interface{})
+					if !ok {
+						continue
+					}
+
+					out := make([]int, 0, len(rawList))
+					for _, x := range rawList {
+						n, ok := x.(float64) // JSON numbers decode to float64
+						if !ok {
+							continue
+						}
+						out = append(out, int(n))
+					}
+
+					scratch[k] = append(scratch[k], out...)
+				}
+			}
+
+			// merge scratch into persistent vd.NisdToChkMap
+			for nisdID, chunks := range scratch {
+				merged := false
+				for i := range vd.NisdToChkMap {
+					if vd.NisdToChkMap[i].Nisd.ID == nisdID {
+						vd.NisdToChkMap[i].Chunk =
+							append(vd.NisdToChkMap[i].Chunk, chunks...)
+						merged = true
+					}
+				}
+				if !merged {
+					vd.NisdToChkMap = append(vd.NisdToChkMap, ctlplfl.NisdChunk{
+						Nisd:  ctlplfl.Nisd{ID: nisdID},
+						Chunk: chunks,
+					})
+				}
+			}
+		}
 		if res.LastKey == "" {
 			break
 		}
@@ -341,5 +413,5 @@ func (ccf *CliCFuncs) GetVdevCont() (ctlplfl.Response, error) {
 		req.SeqNum = res.SeqNum
 	}
 
-	return ctlplfl.Response{}, nil
+	return vdevMap, nil
 }

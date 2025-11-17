@@ -9,7 +9,6 @@ go 1.24.0
 toolchain go1.24.8
 
 require (
-	github.com/00pauln00/niova-lookout v0.0.0-20250929202742-19c00073f7c3
 	github.com/00pauln00/niova-pumicedb/go v0.0.0-20250619210501-e7cb0ad03da8
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10

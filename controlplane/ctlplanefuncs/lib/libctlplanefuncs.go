@@ -4,9 +4,9 @@ import (
 	"encoding/gob"
 	"fmt"
 
-	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -37,6 +37,42 @@ const (
 	RUNNING       = 3
 	FAILED        = 4
 	STOPPED       = 5
+
+	DEVICE_ID      = "d"
+	NISD_ID        = "n"
+	SERIAL_NUM     = "sn"
+	STATE          = "s"
+	FAILURE_DOMAIN = "fd"
+	CLIENT_PORT    = "cp"
+	PEER_PORT      = "pp"
+	IP_ADDR        = "ip"
+	TOTAL_SPACE    = "ts"
+	AVAIL_SPACE    = "as"
+	SIZE           = "sz"
+	NUM_CHUNKS     = "nc"
+	NUM_REPLICAS   = "nr"
+	ERASURE_CODE   = "e"
+	LOCATION       = "l"
+	POWER_CAP      = "pw"
+	SPEC           = "sp"
+	//NAME           = "nm"
+	PORT_RANGE     = "pr"
+	SSH_PORT       = "ssh"
+	DEVICE_PATH    = "dp"
+	PARTITION_PATH = "ptp"
+
+	nisdCfgKey   = "n_cfg"
+	cfgkey       = "cfg"
+	deviceCfgKey = "d_cfg"
+	sdeviceKey   = "sd"
+	parentInfo   = "pi"
+	pduKey       = "p"
+	rackKey      = "r"
+	nisdKey      = "n"
+	vdevKey      = "v"
+	chunkKey     = "c"
+	hvKey        = "hv"
+	ptKey        = "pt"
 )
 
 // Define Snapshot XML structure

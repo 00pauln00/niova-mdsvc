@@ -332,6 +332,7 @@ func Test8PBVdev(t *testing.T) {
 	log.Info("Create Vdev: ", vdev)
 
 	resp, err := c.GetVdevCont()
-	log.Info("fetch all vdevs response: ", resp)
+	assert.NoError(t, err)
+	log.Info("fetch all vdevs list: ", resp)
 
 }
