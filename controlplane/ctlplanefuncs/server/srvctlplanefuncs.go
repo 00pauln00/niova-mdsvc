@@ -558,16 +558,35 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(hvKey, req.ID)
 	}
-
-	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	prefix := key
+	if req.LastKey != "" {
+		key = req.LastKey
+		prefix = filepath.Dir(key)
+	}
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), prefix, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	log.Info("rocksdb output map:", readResult.ResultMap)
-	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
+	hvMap := make(map[string]map[string]interface{})
+	for k, v := range readResult.ResultMap {
+		parts := strings.Split(strings.TrimPrefix(k, "/"), "/")
+		hvID := parts[BASE_UUID_PREFIX]
+		if _, ok := hvMap[hvID]; !ok {
+			hvMap[hvID] = make(map[string]interface{})
+		}
+		hvMap[hvID][parts[ELEMENT_KEY]] = string(v)
+	}
 
-	return pmCmn.Encoder(pmCmn.GOB, hvList)
+	response := ctlplfl.Response{
+		Result:  hvMap,
+		LastKey: readResult.LastKey,
+		SeqNum:  readResult.SeqNum,
+		Status:  0,
+	}
+	log.Debugf("Sending Response: %+v", response)
+
+	return pmCmn.Encoder(ENC_TYPE, response)
 }
 
 func ReadVdevCfg(args ...interface{}) (interface{}, error) {

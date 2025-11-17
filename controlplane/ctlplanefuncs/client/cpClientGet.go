@@ -60,7 +60,7 @@ func mergeInto(dst map[string]map[string]interface{}, src map[string]interface{}
 	}
 }
 
-func (ccf *CliCFuncs) getAll(req cpLib.GetReq, urla string) (*map[string]map[string]interface{}, error) {
+func (ccf *CliCFuncs) getAll(req *cpLib.GetReq, urla string) (*map[string]map[string]interface{}, error) {
 	resp := &cpLib.Response{}
 	res := make(map[string]map[string]interface{}, 0)
 	for {
@@ -172,19 +172,19 @@ func (ccf *CliCFuncs) GetRacks(req *cpLib.GetReq) ([]cpLib.Rack, error) {
 	return racks, nil
 }
 
-func (ccf *CliCFuncs) GetHypervisor(req *cpLib.GetReq) ([]cpLib.Hypervisor, error) {
-	hypervisors := make([]cpLib.Hypervisor, 0)
-	err := ccf.get(req, &hypervisors, cpLib.GET_HYPERVISOR)
+func (ccf *CliCFuncs) GetHypervisor(req *cpLib.GetReq) (map[string]Entity, error) {
+	acc, err := ccf.getAll(req, cpLib.GET_HYPERVISOR)
 	if err != nil {
 		log.Error("GetHypervisor failed: ", err)
 		return nil, err
 	}
-
-	return hypervisors, nil
+	res := ParseEntities[cpLib.Hypervisor](acc, hv{})
+	log.Info("Hyper Visor:", res)
+	return res, nil
 }
 
 func (ccf *CliCFuncs) GetVdevCont() (map[string]*cpLib.Vdev, error) {
-	req := cpLib.GetReq{
+	req := &cpLib.GetReq{
 		GetAll:       true,
 		IsConsistent: true,
 	}

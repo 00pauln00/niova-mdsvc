@@ -73,6 +73,9 @@ const (
 	chunkKey     = "c"
 	hvKey        = "hv"
 	ptKey        = "pt"
+
+	// temp
+	RACK_KEY = "r"
 )
 
 // Define Snapshot XML structure
