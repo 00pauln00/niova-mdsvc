@@ -333,6 +333,8 @@ func Test8PBVdev(t *testing.T) {
 
 	resp, err := c.GetVdevCont()
 	assert.NoError(t, err)
-	log.Info("fetch all vdevs list: ", resp)
+	for k, v := range resp {
+		log.Infof("fetch all vdevs list: %s - %+v", k, *v)
+	}
 
 }

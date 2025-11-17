@@ -3,7 +3,6 @@ package clictlplanefuncs
 import (
 	"errors"
 	"fmt"
-	"strconv"
 
 	log "github.com/sirupsen/logrus"
 
@@ -90,30 +89,6 @@ func (ccf *CliCFuncs) put(data, resp interface{}, urla string) error {
 	return nil
 }
 
-func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
-	url := "name=" + urla
-	rqb, err := pmCmn.Encoder(ccf.encType, data)
-	if err != nil {
-		log.Error("failed to encode data: ", err)
-		return err
-	}
-
-	rsb, err := ccf.request(rqb, url, false)
-	if err != nil {
-		log.Error("request failed: ", err)
-		return err
-	}
-	if rsb == nil {
-		return fmt.Errorf("failed to fetch response from control plane: %v", err)
-	}
-	err = pmCmn.Decoder(ccf.encType, rsb, resp)
-	if err != nil {
-		log.Error("failed to decode response in get: ", err)
-		return err
-	}
-	return nil
-}
-
 func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string) error {
 	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.CREATE_SNAP)
 
@@ -189,17 +164,6 @@ func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXM
 	return resp, nil
 }
 
-// TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
-	dev := make([]ctlplfl.Device, 0)
-	err := ccf.get(req, &dev, ctlplfl.GET_DEVICE)
-	if err != nil {
-		log.Error("failed to get device info: ", err)
-		return nil, err
-	}
-	return dev, nil
-}
-
 func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
@@ -210,29 +174,8 @@ func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, erro
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
-	ncfg := make([]ctlplfl.Nisd, 0)
-	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
-	if err != nil {
-		log.Error("failed to fet nisd info: ", err)
-		return nil, err
-	}
-	return ncfg, nil
-}
-
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
 	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
-}
-
-func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
-	vdevs := make([]ctlplfl.Vdev, 0)
-	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV)
-	if err != nil {
-		log.Error("GetHypervisor failed: ", err)
-		return nil, err
-	}
-
-	return vdevs, nil
 }
 
 func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.ResponseXML, error) {
@@ -245,16 +188,6 @@ func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.Resp
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartition, error) {
-	pts := make([]ctlplfl.DevicePartition, 0)
-	err := ccf.get(req, &pts, ctlplfl.GET_PARTITION)
-	if err != nil {
-		log.Error("Get Partition failed: ", err)
-		return nil, err
-	}
-	return pts, nil
-}
-
 func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(req, resp, ctlplfl.PUT_PDU)
@@ -263,16 +196,6 @@ func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
 		return nil, err
 	}
 	return resp, nil
-}
-
-func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
-	pdus := make([]ctlplfl.PDU, 0)
-	err := ccf.get(req, &pdus, ctlplfl.GET_PDU)
-	if err != nil {
-		log.Error("GetPDUs failed: ", err)
-		return nil, err
-	}
-	return pdus, nil
 }
 
 func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
@@ -285,16 +208,6 @@ func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
-	racks := make([]ctlplfl.Rack, 0)
-	err := ccf.get(req, &racks, ctlplfl.GET_RACK)
-	if err != nil {
-		log.Error("GetRacks failed: ", err)
-		return nil, err
-	}
-	return racks, nil
-}
-
 func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(req, resp, ctlplfl.PUT_HYPERVISOR)
@@ -304,114 +217,4 @@ func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseX
 	}
 
 	return resp, nil
-}
-
-func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, error) {
-	hypervisors := make([]ctlplfl.Hypervisor, 0)
-	err := ccf.get(req, &hypervisors, ctlplfl.GET_HYPERVISOR)
-	if err != nil {
-		log.Error("GetHypervisor failed: ", err)
-		return nil, err
-	}
-
-	return hypervisors, nil
-}
-
-func (ccf *CliCFuncs) GetVdevCont() (map[string]*ctlplfl.Vdev, error) {
-	req := ctlplfl.GetReq{
-		GetAll:       true,
-		IsConsistent: true,
-	}
-
-	vdevMap := make(map[string]*ctlplfl.Vdev)
-
-	for {
-		var res ctlplfl.Response
-		err := ccf.get(req, &res, ctlplfl.GET_VDEV_CONT)
-		if err != nil {
-			return vdevMap, err
-		}
-
-		payload := res.Result.(map[string]interface{})
-
-		for vdevID, data := range payload {
-			vd, ok := vdevMap[vdevID]
-			if !ok {
-				vd = &ctlplfl.Vdev{
-					VdevID:       vdevID,
-					NisdToChkMap: make([]ctlplfl.NisdChunk, 0),
-				}
-				vdevMap[vdevID] = vd
-			}
-
-			// persistent map for merging chunks per NISD
-			if vd.NisdToChkMap == nil {
-				vd.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
-			}
-
-			// local scratch map used only for current payload
-			scratch := make(map[string][]int)
-
-			for k, value := range data.(map[string]interface{}) {
-				switch k {
-				case ctlplfl.SIZE:
-					if sz, err := strconv.ParseInt(value.(string), 10, 64); err == nil {
-						vd.Size = sz
-					}
-
-				case ctlplfl.NUM_CHUNKS:
-					if sz, err := strconv.ParseInt(value.(string), 10, 64); err == nil {
-						vd.NumChunks = uint32(sz)
-					}
-
-				case ctlplfl.NUM_REPLICAS:
-					if sz, err := strconv.ParseInt(value.(string), 10, 64); err == nil {
-						vd.NumReplica = uint8(sz)
-					}
-
-				default:
-					rawList, ok := value.([]interface{})
-					if !ok {
-						continue
-					}
-
-					out := make([]int, 0, len(rawList))
-					for _, x := range rawList {
-						n, ok := x.(float64) // JSON numbers decode to float64
-						if !ok {
-							continue
-						}
-						out = append(out, int(n))
-					}
-
-					scratch[k] = append(scratch[k], out...)
-				}
-			}
-
-			// merge scratch into persistent vd.NisdToChkMap
-			for nisdID, chunks := range scratch {
-				merged := false
-				for i := range vd.NisdToChkMap {
-					if vd.NisdToChkMap[i].Nisd.ID == nisdID {
-						vd.NisdToChkMap[i].Chunk =
-							append(vd.NisdToChkMap[i].Chunk, chunks...)
-						merged = true
-					}
-				}
-				if !merged {
-					vd.NisdToChkMap = append(vd.NisdToChkMap, ctlplfl.NisdChunk{
-						Nisd:  ctlplfl.Nisd{ID: nisdID},
-						Chunk: chunks,
-					})
-				}
-			}
-		}
-		if res.LastKey == "" {
-			break
-		}
-		req.LastKey = res.LastKey
-		req.SeqNum = res.SeqNum
-	}
-
-	return vdevMap, nil
 }
