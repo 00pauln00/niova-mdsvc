@@ -820,6 +820,22 @@ func TestMultiCreateVdev(t *testing.T) {
 	log.Info("CreateMultiVdev Result 1: ", vdev1)
 	VDEV_ID = vdev1.VdevID
 
+	// Step 0: Create a NISD to allocate space for Vdevs
+	n := cpLib.Nisd{
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     15_000_000_000_000, 
+		AvailableSize: 15_000_000_000_000, 
+	}
+	_, err := c.PutNisd(&n)
+	assert.NoError(t, err)
+
 	// Step 1: Create first Vdev
 	vdev1 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -944,4 +960,23 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+}
+
+func TestPutAndGetNisdArgs(t *testing.T) {
+	c := newClient(t)
+	na := &cpLib.NisdArgs{
+		Defrag:               true,
+		MBCCnt:               8,
+		MergeHCnt:            4,
+		MCIBReadCache:        256,
+		S3:                   "s3://backup-bucket/data",
+		DSync:                "enabled",
+		AllowDefragMCIBCache: false,
+	}
+	resp, err := c.PutNisdArgs(na)
+	log.Info("created na: ", resp)
+	assert.NoError(t, err)
+	nisdArgs, err := c.GetNisdArgs()
+	assert.NoError(t, err)
+	log.Info("Get na: ", nisdArgs)
 }
