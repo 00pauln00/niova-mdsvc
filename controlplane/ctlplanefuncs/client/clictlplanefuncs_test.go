@@ -589,8 +589,8 @@ func TestVdevLifecycle(t *testing.T) {
 		FailureDomain: "fd-01",
 		IPAddr:        "192.168.1.10",
 		InitDev:       true,
-		TotalSize:     15_000_000_000_000, // 1 TB
-		AvailableSize: 15_000_000_000_000, // 750 GB
+		TotalSize:     15_000_000_000_000, 
+		AvailableSize: 15_000_000_000_000, 
 	}
 	_, err := c.PutNisd(&n)
 	assert.NoError(t, err)
@@ -614,12 +614,34 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.NoError(t, err)
 
 	vdev3 := &cpLib.Vdev{
-		Size: 800 * 1024 * 1024 * 1024}        // 400 GB
+		Size: 800 * 1024 * 1024 * 1024}        // 800 GB
 	err = c.CreateVdev(vdev3)
 	assert.NoError(t, err)
 	assert.Greater(t, vdev3.Size, int64(0), "Vdev size must be greater than 0")
 	log.Info("CreateMultiVdev Result 3: ", vdev3)
 	assert.NoError(t, err)
+
+		// Step 3: Fetch all Vdevs and validate both exist
+	getAllReq := &cpLib.GetReq{GetAll: true}
+
+	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
+	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
+	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
+	log.Info("All vdevs with chunk mapping response: ", allCResp)
+
+	// Step 4: Fetch specific Vdev (vdev1)
+	getSpecificReq := &cpLib.GetReq{
+		ID:     vdev1.VdevID,
+		GetAll: false,
+	}
+	resp, err := c.GetVdevs(req)
+	log.Info("vdevs response: ", resp)
+	assert.NoError(t, err)
+
+	v := resp[0]
+	assert.Equal(t, VDEV_ID, v.VdevID, "Mismatch in Vdev ID")
+	assert.Greater(t, v.Size, int64(0), "Vdev size must be valid")
+	assert.NotEmpty(t, v.NisdToChkMap, "Vdev should have at least one NISD mapping")
 
 	// Verify that IDs are unique
 	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
@@ -695,34 +717,6 @@ func TestGetAllVdev(t *testing.T) {
 
 	assert.True(t, found, "Expected VDEV_ID %s to be returned in GetAllVdev", VDEV_ID)
 }
-		Size: 400 * 1024 * 1024 * 1024,
-	}
-	err = c.CreateVdev(vdev2)
-	assert.NoError(t, err, "failed to create vdev2")
-	assert.NotEmpty(t, vdev2.VdevID, "vdev2 ID should not be empty")
-	log.Info("Created vdev2: ", vdev2)
-
-	// Step 3: Fetch all Vdevs and validate both exist
-	getAllReq := &cpLib.GetReq{GetAll: true}
-
-	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
-	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
-	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
-	log.Info("All vdevs with chunk mapping response: ", allCResp)
-
-	// Step 4: Fetch specific Vdev (vdev1)
-	getSpecificReq := &cpLib.GetReq{
-		ID:     vdev1.VdevID,
-		GetAll: false,
-	}
-	resp, err := c.GetVdevs(req)
-	log.Info("vdevs response: ", resp)
-	assert.NoError(t, err)
-
-	v := resp[0]
-	assert.Equal(t, VDEV_ID, v.VdevID, "Mismatch in Vdev ID")
-	assert.Greater(t, v.Size, int64(0), "Vdev size must be valid")
-	assert.NotEmpty(t, v.NisdToChkMap, "Vdev should have at least one NISD mapping")
 
 	for _, chunk := range v.NisdToChkMap {
 		n := chunk.Nisd
@@ -815,7 +809,6 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
-}
 }
 
 func TestPutAndGetNisdArgs(t *testing.T) {
