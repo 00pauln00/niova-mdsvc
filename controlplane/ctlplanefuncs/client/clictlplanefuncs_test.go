@@ -30,13 +30,12 @@ var (
 	Nisds = make(map[string]cpLib.Nisd)
 )
 
-// Global maps to store test results for reuse between tests
 var (
-	PDUs  = make(map[string]cpLib.PDU)
-	Racks = make(map[string]cpLib.Rack)
-	Hypervisors = make(map[string]cpLib.Hypervisor)
-	Devices = make(map[string]cpLib.Device)
-	Nisds = make(map[string]cpLib.Nisd)
+	TestPDUs  = make(map[string]cpLib.PDU)
+	TestRacks = make(map[string]cpLib.Rack)
+	TestHypervisors = make(map[string]cpLib.Hypervisor)
+	TestDevices = make(map[string]cpLib.Device)
+	TestNisds = make(map[string]cpLib.Nisd)
 )
 
 var VDEV_ID string
@@ -817,12 +816,12 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	}
 
 	// PUT single device
-	resp, err := c.PutDeviceInfo(&device)
+	resp, err := c.PutDevice(&device)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET device
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
+	res, err := c.GetDevices(cpLib.GetReq{ID: device.ID})
 	log.Infof("fetch single device info: %s", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -873,12 +872,12 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	}
 
 	// PUT operation 
-	resp, err := c.PutNisdCfg(&nisd)
+	resp, err := c.PutNisd(&nisd)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET operation 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: nisd.ID})
+	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -944,13 +943,13 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 	// PUT multiple NISDs
 	for _, n := range mockNisd {
-		resp, err := c.PutNisdCfg(&n)
+		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
 	// GET all NISDs
-	res, err := c.GetNisdCfg(cpLib.GetReq{})
+	res, err := c.GetNisds(cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -1036,6 +1035,10 @@ func TestMultiCreateVdev(t *testing.T) {
 	// Verify that IDs are unique
 	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
 
+	// Verify that IDs are unique
+	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
+
+	// Step 3: Fetch all Vdevs and validate both exist
 	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
@@ -1048,8 +1051,65 @@ func TestMultiCreateVdev(t *testing.T) {
 		ID:     vdev1.VdevID,
 		GetAll: false,
 	}
+	specificResp, err := c.GetVdevs(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev")
+	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
+	log.Info("Specific vdev response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+
+	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
+	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+
+	v := allCResp[0]
+
+	// Validate internal structure and cross-object references
+	for _, v := range []*cpLib.Vdev{vdev1, vdev2} {
+		assert.NotEmpty(t, v.NisdToChkMap, "Each Vdev must have at least one NISD")
+	
+		for _, chunk := range v.NisdToChkMap {
+			n := chunk.Nisd
+			var nisdExists bool
+			// Cross-validate 
+			for _, nisd := range Nisds {
+				if n.ID == nisd.ID {
+					nisdExists = true
+					log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
+					// GET nisd 
+					res, err := c.GetNisds(cpLib.GetReq{ID: n.ID})
+					assert.NoError(t, err)
+					assert.NotEmpty(t, res)
+					returnedNisd := res[0]
+					log.Info("Available Capacity of Nisd", nisd.ID, ": ", returnedNisd.AvailableSize)
+					// ensure available capacity decreased after vdev creation
+					assert.Lessf(t, returnedNisd.AvailableSize, nisd.AvailableSize,
+						"Nisd %s AvailableSize (%d) did not decrease after vdev creation; original was %d",
+						n.ID, returnedNisd.AvailableSize, nisd.AvailableSize)
+					break
+				}
+			}
+			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
+
+			assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
+		}
+	}
+}
+
+func TestGetAllVdev(t *testing.T) {
+	c := newClient(t)
+	req := &cpLib.GetReq{
+		GetAll: true,
+	}
 	resp, err := c.GetVdevs(req)
-	log.Info("vdevs response: ", resp)
+	log.Info("fetch all vdevs response: ", resp)
 	assert.NoError(t, err)
 
 	v := resp[0]
