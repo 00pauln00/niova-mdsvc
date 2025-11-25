@@ -30,6 +30,14 @@ var (
 	Nisds = make(map[string]cpLib.Nisd)
 )
 
+var (
+	TestPDUs  = make(map[string]cpLib.PDU)
+	TestRacks = make(map[string]cpLib.Rack)
+	TestHypervisors = make(map[string]cpLib.Hypervisor)
+	TestDevices = make(map[string]cpLib.Device)
+	TestNisds = make(map[string]cpLib.Nisd)
+)
+
 var VDEV_ID string
 
 func newClient(t *testing.T) *CliCFuncs {
@@ -449,6 +457,66 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 func TestPutAndGetMultipleDevices(t *testing.T) {
 	c := newClient(t)
 
+	mockDevices := []cpLib.Device{
+		{
+			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+			SerialNumber:  "SN123456789",
+			State:         1,
+			HypervisorID:  "hv-1",
+			FailureDomain: "fd-01",
+			DevicePath:    "/temp/path1",
+			Name:          "dev-1",
+		},
+		{
+			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
+			SerialNumber:  "SN987654321",
+			State:         0,
+			HypervisorID:  "hv-2",
+			FailureDomain: "fd-01",
+			DevicePath:    "/temp/path2",
+			Name:          "dev-2",
+			Size:          12345689,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c34qwe-9775558a141a",
+				PartitionPath: "/part/path1",
+				NISDUUID:      "1",
+				DevID:         "60447cdsad0-ab3e-1342340dd976538",
+				Size:          123467,
+			}, cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
+				PartitionPath: "/part/path2",
+				NISDUUID:      "1",
+				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
+				Size:          123467,
+			},
+			},
+		},
+		{
+			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+			SerialNumber:  "SN112233445",
+			State:         2,
+			HypervisorID:  "hv-1",
+			FailureDomain: "fd-02",
+			DevicePath:    "/temp/path3",
+			Name:          "dev-3",
+			Size:          9999999,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+				PartitionPath: "/part/path3",
+				NISDUUID:      "1",
+				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				Size:          123467,
+			},
+			},
+		},
+	}
+
+	// PUT multiple devices
+	for _, d := range mockDevices {
+		resp, err := c.PutDevice(&d)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
 		ClientPort: 7001,
@@ -471,10 +539,19 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
+	// GET all devices
+	res, err := c.GetDevices(cpLib.GetReq{})
+	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 	// GET operation 
 	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+
+	// Store results in the map
+	for _, d := range res {
+		Devices[d.ID] = d
+	}
 	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
 
 	// Validate each PDU field-by-field
@@ -533,12 +610,12 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	}
 
 	// PUT operation 
-	resp, err := c.PutNisdCfg(&nisd)
+	resp, err := c.PutNisd(&nisd)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET operation 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: nisd.ID})
+	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -605,11 +682,13 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	// PUT multiple NISDs
 	for _, n := range mockNisd {
 		resp, err := c.PutNisd(&n)
+		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
 	// GET all NISDs
+	res, err := c.GetNisds(cpLib.GetReq{})
 	res, err := c.GetNisds(cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
@@ -723,11 +802,12 @@ func TestMultiCreateVdev(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Greater(t, vdev3.Size, int64(0), "Vdev size must be greater than 0")
 	log.Info("CreateMultiVdev Result 3: ", vdev3)
-	assert.NoError(t, err)
 
-		// Step 3: Fetch all Vdevs and validate both exist
+	// Verify that IDs are unique
+	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
+
+	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
-
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
 	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
@@ -738,14 +818,19 @@ func TestMultiCreateVdev(t *testing.T) {
 		ID:     vdev1.VdevID,
 		GetAll: false,
 	}
-	resp, err := c.GetVdevs(req)
-	log.Info("vdevs response: ", resp)
-	assert.NoError(t, err)
+	specificResp, err := c.GetVdevs(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev")
+	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
+	log.Info("Specific vdev response: ", specificResp)
 
-	v := resp[0]
-	assert.Equal(t, VDEV_ID, v.VdevID, "Mismatch in Vdev ID")
-	assert.Greater(t, v.Size, int64(0), "Vdev size must be valid")
-	assert.NotEmpty(t, v.NisdToChkMap, "Vdev should have at least one NISD mapping")
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+
+	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
+	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", specificResp)
 
 	// Verify that IDs are unique
 	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
@@ -815,7 +900,6 @@ func TestMultiCreateVdev(t *testing.T) {
 			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
 
 			assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
-			
 		}
 	}
 }
