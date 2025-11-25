@@ -3,6 +3,7 @@ package clictlplanefuncs
 import (
 	"os"
 	"testing"
+	"fmt"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/google/uuid"
@@ -17,6 +18,14 @@ var (
 	Hypervisors = make(map[string]cpLib.Hypervisor)
 	Devices = make(map[string]cpLib.Device)
 	Nisds = make(map[string]cpLib.Nisd)
+)
+
+var (
+	TestPDUs  = make(map[string]cpLib.PDU)
+	TestRacks = make(map[string]cpLib.Rack)
+	TestHypervisors = make(map[string]cpLib.Hypervisor)
+	TestDevices = make(map[string]cpLib.Device)
+	TestNisds = make(map[string]cpLib.Nisd)
 )
 
 var VDEV_ID string
@@ -93,8 +102,9 @@ func TestPutAndGetMultiplePDUs(t *testing.T) {
 		},
 	}
 
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
+	// PUT all PDUs
+	for _, p := range pdus {
+		resp, err := c.PutPDU(&p)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
@@ -298,16 +308,13 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	}
 
 	// PUT single device
-	resp, err := c.PutDeviceInfo(&device)
+	resp, err := c.PutDevice(&device)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET device
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
+	res, err := c.GetDevices(cpLib.GetReq{ID: device.ID})
 	log.Infof("fetch single device info: %s", res)
-	res, err := c.GetNisds(cpLib.GetReq{ID: "nisd-002"})
-	log.Info("GetNisds: ", res)
-	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
 	returned := res[0]
@@ -392,16 +399,13 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 
 	// PUT multiple devices
 	for _, d := range mockDevices {
-		resp, err := c.PutDeviceInfo(&d)
-	for _, p := range mockDevices {
-		resp, err := c.PutDevice(&p)
+		resp, err := c.PutDevice(&d)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
 	// GET all devices
-	res, err := c.GetDeviceInfo(cpLib.GetReq{})
-	res, err := c.GetDevices(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
+	res, err := c.GetDevices(cpLib.GetReq{})
 	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -410,9 +414,6 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	for _, d := range res {
 		Devices[d.ID] = d
 	}
-	res, err = c.GetDevices(cpLib.GetReq{GetAll: true})
-	log.Infof("fetech all device list: %s,%v", res[0].ID, res[0].Partitions)
-	assert.NoError(t, err)
 
 	// Validation: Device ↔ Hypervisor
 	for _, device := range Devices {
@@ -449,12 +450,12 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	}
 
 	// PUT operation 
-	resp, err := c.PutNisdCfg(&nisd)
+	resp, err := c.PutNisd(&nisd)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET operation 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: nisd.ID})
+	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -520,13 +521,13 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 	// PUT multiple NISDs
 	for _, n := range mockNisd {
-		resp, err := c.PutNisdCfg(&n)
+		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
 	// GET all NISDs
-	res, err := c.GetNisdCfg(cpLib.GetReq{})
+	res, err := c.GetNisds(cpLib.GetReq{})
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -571,13 +572,6 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 func TestVdevLifecycle(t *testing.T) {
 	c := newClient(t)
-	vdev1 := &cpLib.Vdev{
-		Size: 700 * 1024 * 1024 * 1024}         // 700 GB
-	err := c.CreateVdev(vdev1)
-	assert.NoError(t, err)
-	assert.Greater(t, vdev1.Size, int64(0), "Vdev size must be greater than 0")
-	log.Info("CreateMultiVdev Result 1: ", vdev1)
-	VDEV_ID = vdev1.VdevID
 
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
@@ -611,7 +605,6 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Greater(t, vdev2.Size, int64(0), "Vdev size must be greater than 0")
 	log.Info("CreateMultiVdev Result 2: ", vdev2)
-	assert.NoError(t, err)
 
 	vdev3 := &cpLib.Vdev{
 		Size: 800 * 1024 * 1024 * 1024}        // 800 GB
@@ -619,11 +612,12 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Greater(t, vdev3.Size, int64(0), "Vdev size must be greater than 0")
 	log.Info("CreateMultiVdev Result 3: ", vdev3)
-	assert.NoError(t, err)
 
-		// Step 3: Fetch all Vdevs and validate both exist
+	// Verify that IDs are unique
+	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
+
+	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
-
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
 	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
@@ -634,17 +628,25 @@ func TestVdevLifecycle(t *testing.T) {
 		ID:     vdev1.VdevID,
 		GetAll: false,
 	}
-	resp, err := c.GetVdevs(req)
-	log.Info("vdevs response: ", resp)
-	assert.NoError(t, err)
+	specificResp, err := c.GetVdevs(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev")
+	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
+	log.Info("Specific vdev response: ", specificResp)
 
-	v := resp[0]
-	assert.Equal(t, VDEV_ID, v.VdevID, "Mismatch in Vdev ID")
-	assert.Greater(t, v.Size, int64(0), "Vdev size must be valid")
-	assert.NotEmpty(t, v.NisdToChkMap, "Vdev should have at least one NISD mapping")
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
 
-	// Verify that IDs are unique
-	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
+	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
+	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", specificResp)
+
+	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
+	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+
+	v := allCResp[0]
 
 	// Validate internal structure and cross-object references
 	for _, v := range []*cpLib.Vdev{vdev1, vdev2} {
@@ -659,7 +661,7 @@ func TestVdevLifecycle(t *testing.T) {
 					nisdExists = true
 					log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
 					// GET nisd 
-					res, err := c.GetNisdCfg(cpLib.GetReq{ID: n.ID})
+					res, err := c.GetNisds(cpLib.GetReq{ID: n.ID})
 					assert.NoError(t, err)
 					assert.NotEmpty(t, res)
 					returnedNisd := res[0]
@@ -674,7 +676,6 @@ func TestVdevLifecycle(t *testing.T) {
 			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
 
 			assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
-			
 		}
 	}
 }
@@ -716,41 +717,6 @@ func TestGetAllVdev(t *testing.T) {
 	}
 
 	assert.True(t, found, "Expected VDEV_ID %s to be returned in GetAllVdev", VDEV_ID)
-}
-
-	for _, chunk := range v.NisdToChkMap {
-		n := chunk.Nisd
-		var nisdExists bool
-		assert.NotEmpty(t, n.ID, "NISD ID should not be empty")
-		assert.NotEmpty(t, n.DevID, "Device ID should not be empty")
-		assert.NotEmpty(t, n.HyperVisorID, "Hypervisor ID should not be empty")
-
-		for _, nisd := range Nisds {
-			if n.ID == nisd.ID {
-				nisdExists = true
-				log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
-				break
-			}
-		}
-		assert.True(t, nisdExists,"Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
-	}
-	specificResp, err := c.GetVdevs(getSpecificReq)
-	assert.NoError(t, err, "failed to fetch specific vdev")
-	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
-	log.Info("Specific vdev response: ", specificResp)
-
-	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
-	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
-
-	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
-	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
-	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
-	log.Info("Specific vdev with chunk mapping response: ", specificResp)
-
-	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
-	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
 }
 
 func TestPutAndGetSinglePartition(t *testing.T) {
@@ -829,3 +795,99 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	assert.NoError(t, err)
 	log.Info("Get na: ", nisdArgs)
 }
+
+func TestBulkPDUsAndRacks(t *testing.T) {
+	c := newClient(t)
+
+	// -------------------------
+	// 1) Create 10 PDUs
+	// -------------------------
+	locations := []string{
+		"us-east", "us-west", "us-central", "us-south", "us-north",
+		"eu-west", "eu-east", "ap-south", "ap-north", "africa-east",
+	}
+
+	var pduList []cpLib.PDU
+
+	for i := 1; i <= 10; i++ {
+		pdu := cpLib.PDU{
+			ID:            fmt.Sprintf("pdu-%02d-uuid", i),
+			Name:          fmt.Sprintf("pdu-%d", i),
+			Location:      locations[i-1],
+			PowerCapacity: "20Kw",
+			Specification: fmt.Sprintf("spec-%d", i),
+		}
+
+		resp, err := c.PutPDU(&pdu)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+
+		pduList = append(pduList, pdu)
+	}
+
+	// GET all PDUs
+	allPdus, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
+	assert.NoError(t, err)
+	assert.Equal(t, len(pduList), len(allPdus), "Mismatch PDU count")
+
+	// Store in global PDUs map
+	for _, p := range allPdus {
+		TestPDUs[p.ID] = p
+	}
+
+	log.Infof("Successfully created and validated %d PDUs", len(allPdus))
+
+	// -------------------------
+	// 2) Create 10 racks for each PDU (100 racks total)
+	// -------------------------
+	totalRacks := 0
+	for _, pdu := range allPdus {
+
+		for r := 1; r <= 10; r++ {
+			rack := cpLib.Rack{
+				ID:            fmt.Sprintf("%s-rack-%02d", pdu.ID, r),
+				PDUID:         pdu.ID,
+				Name:          fmt.Sprintf("%s-rack-%d", pdu.Name, r),
+				Location:      pdu.Location,
+				Specification: fmt.Sprintf("spec-%s-%d", pdu.Name, r),
+			}
+
+			resp, err := c.PutRack(&rack)
+			assert.NoError(t, err)
+			assert.True(t, resp.Success)
+			totalRacks++
+		}
+	}
+
+	// GET all racks
+	rackResp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
+	assert.NoError(t, err)
+	assert.Equal(t, totalRacks, len(rackResp), "Mismatch total rack count")
+
+	// Store in global Racks map
+	for _, r := range rackResp {
+		TestRacks[r.ID] = r
+	}
+
+	log.Infof("Successfully created and validated %d racks", len(rackResp))
+
+	// -------------------------
+	// 3) Validation: Rack ↔ PDU mapping and metadata checks
+	// -------------------------
+	for _, rack := range TestRacks {
+		pdu, ok := TestPDUs[rack.PDUID]
+		assert.True(t, ok, "Rack %s references missing PDUID %s", rack.Name, rack.PDUID)
+
+		// Location validation
+		assert.Equal(t, pdu.Location, rack.Location,
+			"Location mismatch Rack=%s (%s) PDU=%s (%s)",
+			rack.Name, rack.Location, pdu.Name, pdu.Location)
+
+		// Non-empty rack fields
+		assert.NotEmpty(t, rack.Specification)
+		assert.NotEmpty(t, rack.Name)
+	}
+
+	log.Infof("Validated all %d Rack↔PDU associations successfully", len(TestRacks))
+}
+
