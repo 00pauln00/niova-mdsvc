@@ -42,7 +42,8 @@ func GetReqStruct(name string) any {
 	case cpLib.CREATE_VDEV:
 		var size int64
 		return &size
-
+	default:
+		return &cpLib.GetReq{}
 	}
 	return nil
 }
