@@ -385,6 +385,27 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
+func getNisdListForDevices(vdev ctlplfl.Vdev, cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
+	var nisdList []ctlplfl.Nisd
+	key := getConfKey(ptKey, vdev.NisdToChkMap[0].Nisd.DevID)
+	log.Infof("DevID '%s' provided — fetching NISD using alternate logic", vdev.NisdToChkMap[0].Nisd.DevID)
+	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure: ", err)
+		return nil, err
+	}
+	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
+	nisd_Key := getConfKey(nisdCfgKey, pt[0].NISDUUID)
+	readResult, err = PumiceDBServer.RangeReadKV(cbArgs.UserID, nisd_Key, int64(len(nisd_Key)), nisd_Key, cbArgs.ReplySize, false, 0, colmfamily)
+	if err != nil {
+		log.Error("Range read failure: ", err)
+		return nil, err
+	}
+	nisdList = ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+
+	return nisdList, nil
+}
+
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
 func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
@@ -408,21 +429,11 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		}
 
 	} else {
-		key := getConfKey(ptKey, vdev.NisdToChkMap[0].Nisd.DevID)
-		log.Infof("DevID '%s' provided — fetching NISD using alternate logic", vdev.NisdToChkMap[0].Nisd.DevID)
-		readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
+		nisdList, err = getNisdListForDevices(vdev, cbArgs)
 		if err != nil {
-			log.Error("Range read failure: ", err)
+			log.Error("Failed to get NISD list from device: ", err)
 			return nil, err
 		}
-		pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
-		nisd_Key := getConfKey(nisdCfgKey, pt[0].NISDUUID)
-		readResult, err = PumiceDBServer.RangeReadKV(cbArgs.UserID, nisd_Key, int64(len(nisd_Key)), nisd_Key, cbArgs.ReplySize, false, 0, colmfamily)
-		if err != nil {
-			log.Error("Range read failure: ", err)
-			return nil, err
-		}
-		nisdList = ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
 	}
 
 	allocNisds = allocateNisd(&vdev, nisdList)
