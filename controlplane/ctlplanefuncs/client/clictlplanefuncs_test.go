@@ -897,6 +897,7 @@ func TestMultiCreateVdev(t *testing.T) {
 
 	v := allCResp[0]
 	log.Info("Validating Vdev from allCResp: ", v)
+	log.Info("Validating Vdev from allCResp: ", v)
 
 	// Validate internal structure and cross-object references
 	for _, v := range []*cpLib.Vdev{vdev1, vdev2} {
