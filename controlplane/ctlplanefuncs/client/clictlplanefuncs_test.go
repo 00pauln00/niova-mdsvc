@@ -775,12 +775,15 @@ func TestMultiCreateVdev(t *testing.T) {
 
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "nisd-001",
+		ParentID: []string{
+			"pdu-01",
+			"rack-01",
+			"hv-01",
+			"dev-006",
+		},
 		IPAddr:        "192.168.1.10",
 		InitDev:       true,
 		TotalSize:     15_000_000_000_000, 
