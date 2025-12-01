@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
@@ -46,6 +45,11 @@ const (
 	RUNNING       = 3
 	FAILED        = 4
 	STOPPED       = 5
+
+	PDU_IDX    = 0
+	RACK_IDX   = 1
+	HV_IDX     = 2
+	DEVICE_IDX = 3
 )
 
 // Define Snapshot XML structure
@@ -107,17 +111,12 @@ type NisdArgs struct {
 }
 
 type Nisd struct {
-	InitDev       bool   `yaml:"init"`
-	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
-	PDUID         string `xml:"PDUID" json:"PDUID"`
-	RackID        string `xml:"RackID" json:"RackID"`
-	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
-	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
+	XMLName       xml.Name `xml:"NisdInfo"`
+	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
+	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
+	ParentID      []string
 	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
-	Args          string `yaml:"cmdline_args"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
 }
@@ -188,18 +187,6 @@ func (vdev *Vdev) Init() error {
 	vdev.Cfg.NumDataBlk = 0
 	vdev.Cfg.NumParityBlk = 0
 	return nil
-}
-
-type s3Config struct {
-	URL  string `yaml:"url"`
-	Opts string `yaml:"opts"`
-	Auth string `yaml:"auth"`
-}
-
-type NisdCntrConfig struct {
-	S3Config   s3Config         `yaml:"s3_config"`
-	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
-	NisdConfig []Nisd           `yaml:"nisd_config"`
 }
 
 // String returns a string representation of the Device

@@ -163,7 +163,7 @@ type nisdParser struct{}
 func (nisdParser) GetRootKey() string { return nisdCfgKey }
 
 func (nisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{ID: id}
+	return &ctlplfl.Nisd{ID: id, ParentID: make([]string, 4)}
 }
 
 func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
@@ -171,7 +171,7 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case DEVICE_ID:
-			nisd.DevID = string(value)
+			nisd.ParentID[ctlplfl.DEVICE_IDX] = string(value)
 		case CLIENT_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.ClientPort = uint16(p)
@@ -179,9 +179,11 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
 		case hvKey:
-			nisd.HyperVisorID = string(value)
-		case FAILURE_DOMAIN:
-			nisd.FailureDomain = string(value)
+			nisd.ParentID[ctlplfl.HV_IDX] = string(value)
+		case pduKey:
+			nisd.ParentID[ctlplfl.PDU_IDX] = string(value)
+		case rackKey:
+			nisd.ParentID[ctlplfl.RACK_IDX] = string(value)
 		case IP_ADDR:
 			nisd.IPAddr = string(value)
 		case TOTAL_SPACE:
