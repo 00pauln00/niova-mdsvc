@@ -52,6 +52,17 @@ func newClient(t *testing.T) *CliCFuncs {
 func TestPutAndGetSinglePDU(t *testing.T) {
 	c := newClient(t) 
 
+	mockNisd := []cpLib.Nisd{
+		{
+			ClientPort: 7001,
+			PeerPort:   8001,
+			ID:         "nisd-001",
+			ParentID: []string{
+				"pdu-01",
+				"rack-01",
+				"hv-01",
+				"dev-001",
+			},
 	nisd := cpLib.Nisd{
 			ClientPort:    7001,
 			PeerPort:      8001,
@@ -60,9 +71,113 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.10",
-			InitDev:       true,
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
+		},
+		{
+			ClientPort: 7002,
+			PeerPort:   8002,
+			ID:         "nisd-002",
+			ParentID: []string{
+				"pdu-02",
+				"rack-02",
+				"hv-02",
+				"dev-002",
+			},
+			IPAddr:        "192.168.1.11",
+			TotalSize:     500_000_000_000, // 500 GB
+			AvailableSize: 200_000_000_000, // 200 GB
+		},
+		{
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-003",
+			ParentID: []string{
+				"pdu-03",
+				"rack-03",
+				"hv-03",
+				"dev-003",
+			},
+			IPAddr:        "192.168.1.12",
+			TotalSize:     2_000_000_000_000, // 2 TB
+			AvailableSize: 1_500_000_000_000, // 1.5 TB
+		},
+	}
+
+	for _, n := range mockNisd {
+		resp, err := c.PutNisd(&n)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
+
+	res, err := c.GetNisd(cpLib.GetReq{ID: "nisd-002"})
+	log.Info("GetNisds: ", res)
+	assert.NoError(t, err)
+
+}
+
+func TestPutAndGetDevice(t *testing.T) {
+	c := newClient(t)
+
+	mockDevices := []cpLib.Device{
+		{
+			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+			SerialNumber:  "SN123456789",
+			State:         1,
+			HypervisorID:  "hv-01",
+			FailureDomain: "fd-01",
+			DevicePath:    "/temp/path1",
+			Name:          "dev-1",
+		},
+		{
+			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
+			SerialNumber:  "SN987654321",
+			State:         0,
+			HypervisorID:  "hv-02",
+			FailureDomain: "fd-01",
+			DevicePath:    "/temp/path2",
+			Name:          "dev-2",
+			Size:          12345689,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c34qwe-9775558a141a",
+				PartitionPath: "/part/path1",
+				NISDUUID:      "1",
+				DevID:         "60447cdsad0-ab3e-1342340dd976538",
+				Size:          123467,
+			}, cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
+				PartitionPath: "/part/path2",
+				NISDUUID:      "1",
+				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
+				Size:          123467,
+			},
+			},
+		},
+		{
+			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+			SerialNumber:  "SN112233445",
+			State:         2,
+			HypervisorID:  "hv-01",
+			FailureDomain: "fd-02",
+			DevicePath:    "/temp/path3",
+			Name:          "dev-3",
+			Size:          9999999,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+				PartitionPath: "/part/path3",
+				NISDUUID:      "1",
+				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				Size:          123467,
+			},
+			},
+		},
+	}
+
+	for _, p := range mockDevices {
+		resp, err := c.PutDevice(&p)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
 	}
 
 	// PUT single PDU
@@ -808,14 +923,16 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	// create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "nisd-001",
+		ParentID: []string{
+			"pdu-05",
+			"rack-04",
+			"hv-07",
+			"dev-004",
+		},
 		IPAddr:        "192.168.1.10",
-		InitDev:       true,
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
 	}
