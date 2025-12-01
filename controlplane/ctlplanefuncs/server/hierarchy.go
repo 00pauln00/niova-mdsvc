@@ -1,15 +1,24 @@
 package srvctlplanefuncs
 
 import (
+	"errors"
+
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	cbtree "github.com/tidwall/btree"
+)
+
+const (
+	PDU    = 0
+	RACK   = 1
+	HV     = 2
+	DEVICE = 3
 )
 
 // Nisds is a Counted B-tree containing pointers to Nisd objects, ordered by Nisd.ID.
 // Entity maps a single entity to the set of Nisd objects associated with it.
 type Entities struct {
 	ID    string
-	Nisds cbtree.BTree
+	Nisds *cbtree.BTreeG[*cpLib.Nisd]
 }
 
 // FailureDomain groups entities under a specific failure-isolation class.
@@ -17,7 +26,7 @@ type Entities struct {
 // Tree stores entities ordered by their Entity.ID using a Counted B-tree.
 type FailureDomain struct {
 	Type uint8
-	Tree cbtree.BTree
+	Tree *cbtree.BTreeG[Entities]
 }
 
 // stores the Hierarchy Information
@@ -29,32 +38,144 @@ type Hierarchy struct {
 	FD []FailureDomain
 }
 
+func compareEntity(a, b Entities) bool  { return a.ID < b.ID }
+func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
+
 // Initialize the Hierarchy Struct
 func (hr *Hierarchy) Init() error {
+	hr.FD = make([]FailureDomain, 4)
+	for i := 0; i < 4; i++ {
+		hr.FD[i] = FailureDomain{
+			Type: uint8(i),
+			Tree: cbtree.NewBTreeG[Entities](compareEntity),
+		}
+	}
 	return nil
 }
 
+func (fd *FailureDomain) getOrCreateEntity(id string) *Entities {
+	e, ok := fd.Tree.Get(Entities{ID: id})
+	if ok {
+		return &e
+	}
+	n := Entities{
+		ID:    id,
+		Nisds: cbtree.NewBTreeG[*cpLib.Nisd](compareNisd),
+	}
+	fd.Tree.Set(n)
+	return &n
+}
+
+func (fd *FailureDomain) deleteEmptyEntity(id string) {
+	e, ok := fd.Tree.Get(Entities{ID: id})
+	if !ok {
+		return
+	}
+	if e.Nisds.Len() == 0 {
+		fd.Tree.Delete(e)
+	}
+}
+
+func GetIndex(hash uint64, size int) (int, error) {
+	if size <= 0 {
+		return 0, errors.New("invalid size")
+	}
+	return int(hash % uint64(size)), nil
+}
+
 // Add NISD and the corresponding parent entities to the Hierarchy
-func (hr *Hierarchy) AddNisd(nisd *cpLib.Nisd) error {
+func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
+	// Tier 0: PDU
+	{
+		e := hr.FD[PDU].getOrCreateEntity(n.PDUID)
+		e.Nisds.Set(n)
+	}
+
+	// Tier 1: Rack
+	{
+		e := hr.FD[RACK].getOrCreateEntity(n.RackID)
+		e.Nisds.Set(n)
+	}
+
+	// Tier 2: Hypervisor
+	{
+		e := hr.FD[HV].getOrCreateEntity(n.HyperVisorID)
+		e.Nisds.Set(n)
+	}
+
+	// Tier 3: Device
+	{
+		e := hr.FD[DEVICE].getOrCreateEntity(n.DevID)
+		e.Nisds.Set(n)
+	}
+
 	return nil
 }
 
 // Delete NISD and the corresponding parent entities from the Hierarchy
-func (hr *Hierarchy) DeleteNisd(nisd *cpLib.Nisd) error {
+func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
+	tier := []string{n.PDUID, n.RackID, n.HyperVisorID, n.DevID}
+
+	for i, id := range tier {
+		fd := &hr.FD[i]
+		e, ok := fd.Tree.Get(Entities{ID: id})
+		if !ok {
+			continue
+		}
+		e.Nisds.Delete(n)
+		fd.deleteEmptyEntity(id)
+	}
 	return nil
 }
 
 // Get the Failure Domain Based on the Nisd Count
-func (hr *Hierarchy) GetFDLevel(fltTlrnc uint8) int {
-	return 0
+func (hr *Hierarchy) GetFDLevel(fltTlrnc int) int {
+	for i := PDU; i <= DEVICE; i++ {
+		if fltTlrnc < hr.FD[i].Tree.Len() {
+			return i
+		}
+	}
+	return -1
 }
 
 // Get the total number of elements in a Failure Domain.
 func (hr *Hierarchy) GetEntityLen(entity int) int {
-	return 0
+	if entity >= len(hr.FD) {
+		return 0
+	}
+	return hr.FD[entity].Tree.Len()
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
 func (hr *Hierarchy) PickNISD(fd uint8, hash uint64) (*cpLib.Nisd, error) {
-	return nil, nil
+
+	if int(fd) >= len(hr.FD) {
+		return nil, errors.New("invalid fd tier")
+	}
+
+	fdRef := hr.FD[fd]
+
+	// select entity by index
+	entityIDX, err := GetIndex(hash, fdRef.Tree.Len())
+	if err != nil {
+		return nil, err
+	}
+
+	ent, ok := fdRef.Tree.GetAt(entityIDX)
+	if !ok {
+		return nil, errors.New("entity missing")
+	}
+
+	// select NISD inside entity
+	idx, err := GetIndex(hash, ent.Nisds.Len())
+	if err != nil {
+		return nil, err
+	}
+
+	nisd, ok := ent.Nisds.GetAt(idx)
+	if !ok {
+		return nil, errors.New("selection failure")
+	}
+
+	return nisd, nil
 }
