@@ -107,18 +107,19 @@ type NisdArgs struct {
 }
 
 type Nisd struct {
-	XMLName       xml.Name `xml:"NisdInfo"`
-	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
-	DevID         string   `xml:"DevID" json:"DevID" yaml:"name"`
-	HyperVisorID  string   `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
-	FailureDomain string   `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
-	IPAddr        string   `xml:"IPAddr" json:"IPAddr" yaml:"-"`
-	InitDev       bool     `yaml:"init"`
-	TotalSize     int64    `xml:"TotalSize" yaml:"-"`
-	AvailableSize int64    `xml:"AvailableSize" yaml:"-"`
-	Args          string   `yaml:"cmdline_args"`
+	InitDev       bool   `yaml:"init"`
+	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
+	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
+	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
+	PDUID         string `xml:"PDUID" json:"PDUID"`
+	RackID        string `xml:"RackID" json:"RackID"`
+	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
+	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
+	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
+	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
+	Args          string `yaml:"cmdline_args"`
+	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
+	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
 }
 
 type PDU struct {
