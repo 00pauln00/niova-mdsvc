@@ -40,38 +40,44 @@ func TestPutAndGetNisd(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-001",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-01",
+			ClientPort: 7001,
+			PeerPort:   8001,
+			ID:         "nisd-001",
+			ParentID: []string{
+				"pdu-01",
+				"rack-01",
+				"hv-01",
+				"dev-001",
+			},
 			IPAddr:        "192.168.1.10",
-			InitDev:       true,
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
 		},
 		{
-			ClientPort:    7002,
-			PeerPort:      8002,
-			ID:            "nisd-002",
-			DevID:         "dev-002",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-02",
+			ClientPort: 7002,
+			PeerPort:   8002,
+			ID:         "nisd-002",
+			ParentID: []string{
+				"pdu-02",
+				"rack-02",
+				"hv-02",
+				"dev-002",
+			},
 			IPAddr:        "192.168.1.11",
-			InitDev:       false,
 			TotalSize:     500_000_000_000, // 500 GB
 			AvailableSize: 200_000_000_000, // 200 GB
 		},
 		{
-			ClientPort:    7003,
-			PeerPort:      8003,
-			ID:            "nisd-003",
-			DevID:         "dev-003",
-			HyperVisorID:  "hv-02",
-			FailureDomain: "fd-01",
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-003",
+			ParentID: []string{
+				"pdu-03",
+				"rack-03",
+				"hv-03",
+				"dev-003",
+			},
 			IPAddr:        "192.168.1.12",
-			InitDev:       true,
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
 		},
@@ -234,14 +240,16 @@ func TestVdevLifecycle(t *testing.T) {
 
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "nisd-001",
+		ParentID: []string{
+			"pdu-01",
+			"rack-01",
+			"hv-01",
+			"dev-006",
+		},
 		IPAddr:        "192.168.1.10",
-		InitDev:       true,
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
 	}
@@ -348,14 +356,16 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	// create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "nisd-001",
+		ParentID: []string{
+			"pdu-05",
+			"rack-04",
+			"hv-07",
+			"dev-004",
+		},
 		IPAddr:        "192.168.1.10",
-		InitDev:       true,
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
 	}

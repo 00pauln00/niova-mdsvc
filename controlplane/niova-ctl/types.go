@@ -387,7 +387,7 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {
-					if nisd.HyperVisorID == hypervisorUUID {
+					if nisd.ParentID[ctlplfl.HV_IDX] == hypervisorUUID {
 						// Mark the server port as allocated (NISD uses this)
 						allocatedPorts[int(nisd.PeerPort)] = true
 						// Mark the client port as allocated

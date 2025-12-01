@@ -87,9 +87,11 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
 		case hvKey:
-			value = nisd.HyperVisorID
-		case FAILURE_DOMAIN:
-			value = nisd.FailureDomain
+			value = nisd.ParentID[cpLib.HV_IDX]
+		case pduKey:
+			value = nisd.ParentID[cpLib.PDU_IDX]
+		case rackKey:
+			value = nisd.ParentID[cpLib.RACK_IDX]
 		case IP_ADDR:
 			value = nisd.IPAddr
 		case TOTAL_SPACE:
@@ -97,7 +99,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 		case AVAIL_SPACE:
 			value = strconv.Itoa(int(nisd.AvailableSize))
 		case DEVICE_ID:
-			value = nisd.DevID
+			value = nisd.ParentID[cpLib.DEVICE_IDX]
 		default:
 			continue
 		}

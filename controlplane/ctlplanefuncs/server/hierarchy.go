@@ -7,13 +7,6 @@ import (
 	cbtree "github.com/tidwall/btree"
 )
 
-const (
-	PDU    = 0
-	RACK   = 1
-	HV     = 2
-	DEVICE = 3
-)
-
 // Nisds is a Counted B-tree containing pointers to Nisd objects, ordered by Nisd.ID.
 // Entity maps a single entity to the set of Nisd objects associated with it.
 type Entities struct {
@@ -87,25 +80,25 @@ func GetIndex(hash uint64, size int) (int, error) {
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	// Tier 0: PDU
 	{
-		e := hr.FD[PDU].getOrCreateEntity(n.PDUID)
+		e := hr.FD[cpLib.PDU_IDX].getOrCreateEntity(n.ParentID[cpLib.PDU_IDX])
 		e.Nisds.Set(n)
 	}
 
 	// Tier 1: Rack
 	{
-		e := hr.FD[RACK].getOrCreateEntity(n.RackID)
+		e := hr.FD[cpLib.RACK_IDX].getOrCreateEntity(n.ParentID[cpLib.RACK_IDX])
 		e.Nisds.Set(n)
 	}
 
 	// Tier 2: Hypervisor
 	{
-		e := hr.FD[HV].getOrCreateEntity(n.HyperVisorID)
+		e := hr.FD[cpLib.HV_IDX].getOrCreateEntity(n.ParentID[cpLib.HV_IDX])
 		e.Nisds.Set(n)
 	}
 
 	// Tier 3: Device
 	{
-		e := hr.FD[DEVICE].getOrCreateEntity(n.DevID)
+		e := hr.FD[cpLib.DEVICE_IDX].getOrCreateEntity(n.ParentID[cpLib.DEVICE_IDX])
 		e.Nisds.Set(n)
 	}
 
@@ -114,9 +107,7 @@ func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 
 // Delete NISD and the corresponding parent entities from the Hierarchy
 func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
-	tier := []string{n.PDUID, n.RackID, n.HyperVisorID, n.DevID}
-
-	for i, id := range tier {
+	for i, id := range n.ParentID {
 		fd := &hr.FD[i]
 		e, ok := fd.Tree.Get(Entities{ID: id})
 		if !ok {
@@ -130,7 +121,7 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 
 // Get the Failure Domain Based on the Nisd Count
 func (hr *Hierarchy) GetFDLevel(fltTlrnc int) int {
-	for i := PDU; i <= DEVICE; i++ {
+	for i := cpLib.PDU_IDX; i <= cpLib.DEVICE_IDX; i++ {
 		if fltTlrnc < hr.FD[i].Tree.Len() {
 			return i
 		}
