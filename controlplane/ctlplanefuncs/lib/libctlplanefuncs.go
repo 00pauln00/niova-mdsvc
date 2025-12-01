@@ -2,6 +2,7 @@ package libctlplanefuncs
 
 import (
 	"encoding/gob"
+	"encoding/xml"
 	"fmt"
 	"strconv"
 	"strings"
@@ -31,10 +32,14 @@ const (
 	PUT_HYPERVISOR      = "PutHypervisor"
 	PUT_PARTITION       = "PutPartition"
 	GET_PARTITION       = "GetPartition"
-	PUT_NISD_ARGS       = "PutNisdArgs"
-	GET_NISD_ARGS       = "GetNisdArgs"
-	CHUNK_SIZE          = 8 * 1024 * 1024 * 1024
-	NAME                = "name"
+	GET_VDEV_INFO       = "get_vdev_info" // new
+	GET_CHUNK_NISD      = "get_chunk_nisd"
+	GET_NISD_INFO       = "get_nisd_info"
+
+	PUT_NISD_ARGS = "PutNisdArgs"
+	GET_NISD_ARGS = "GetNisdArgs"
+	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
+	NAME          = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -102,19 +107,18 @@ type NisdArgs struct {
 }
 
 type Nisd struct {
-	InitDev       bool   `yaml:"init"`
-	ClientPort    uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
-	PDUID         string `xml:"PDUID" json:"PDUID"`
-	RackID        string `xml:"RackID" json:"RackID"`
-	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
-	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
-	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
-	Args          string `yaml:"cmdline_args"`
-	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
-	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	XMLName       xml.Name `xml:"NisdInfo"`
+	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
+	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
+	DevID         string   `xml:"DevID" json:"DevID" yaml:"name"`
+	HyperVisorID  string   `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
+	FailureDomain string   `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
+	IPAddr        string   `xml:"IPAddr" json:"IPAddr" yaml:"-"`
+	InitDev       bool     `yaml:"init"`
+	TotalSize     int64    `xml:"TotalSize" yaml:"-"`
+	AvailableSize int64    `xml:"AvailableSize" yaml:"-"`
+	Args          string   `yaml:"cmdline_args"`
 }
 
 type PDU struct {
@@ -150,14 +154,19 @@ type NisdChunk struct {
 	Chunk []int
 }
 
-type Vdev struct {
-	VdevID       string
-	NisdToChkMap []NisdChunk
+type VdevCfg struct {
+	XMLName      xml.Name `xml:"Vdev"`
+	ID           string
 	Size         int64
 	NumChunks    uint32
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+}
+
+type Vdev struct {
+	Cfg          VdevCfg
+	NisdToChkMap []NisdChunk
 }
 
 type GetReq struct {
@@ -172,11 +181,11 @@ func (vdev *Vdev) Init() error {
 		log.Error("failed to generate uuid:", err)
 		return err
 	}
-	vdev.VdevID = id.String()
-	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
-	vdev.NumReplica = 1
-	vdev.NumDataBlk = 0
-	vdev.NumParityBlk = 0
+	vdev.Cfg.ID = id.String()
+	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
+	vdev.Cfg.NumReplica = 1
+	vdev.Cfg.NumDataBlk = 0
+	vdev.Cfg.NumParityBlk = 0
 	return nil
 }
 
@@ -230,6 +239,12 @@ func Count8GBChunks(size int64) int64 {
 	return count + 1
 }
 
+type ChunkNisd struct {
+	XMLName     xml.Name `xml:"ChunkNisd"`
+	NumReplicas uint8    `xml:"NREPLICAS"`
+	NisdUUID    []string `xml:"NISD"`
+}
+
 func RegisterGOBStructs() {
 	gob.Register(Rack{})
 	gob.Register(GetReq{})
@@ -243,7 +258,17 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
+	gob.Register(VdevCfg{})
+	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
+}
+
+func (req *GetReq) ValidateRequest() error {
+	if req.ID == "" {
+		return fmt.Errorf("Invalid Request: Recieved empty ID")
+	}
+	return nil
+
 }
 
 func (a *NisdArgs) BuildCmdArgs() string {

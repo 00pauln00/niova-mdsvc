@@ -1276,7 +1276,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				deviceInfo := ctlplfl.Device{
 					ID:            updatedDevice.ID,
 					SerialNumber:  updatedDevice.SerialNumber,
-					State:        ctlplfl.INITIALIZED, // Active status
+					State:         ctlplfl.INITIALIZED, // Active status
 					HypervisorID:  hv.ID,
 					FailureDomain: updatedDevice.FailureDomain,
 				}
@@ -6523,11 +6523,7 @@ func (m model) viewAllNISDs() string {
 		s.WriteString("Press any key to return to NISD management")
 		return s.String()
 	}
-
-	// Create request to get all NISDs (empty ID means get all)
-	req := ctlplfl.GetReq{ID: ""}
-
-	nisds, err := m.cpClient.GetNisds(req)
+	nisds, err := m.cpClient.GetNisds()
 	if err != nil {
 		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query NISDs from control plane: %v", err)) + "\n\n")
 		s.WriteString("Please check:\n")
@@ -6752,8 +6748,9 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 
 			// Create Vdev
 			vdev := &ctlplfl.Vdev{
-				Size: size,
-			}
+				Cfg: ctlplfl.VdevCfg{
+					Size: size,
+				}}
 
 			// Initialize the Vdev (generates ID)
 			if err := vdev.Init(); err != nil {
@@ -6763,13 +6760,13 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 
 			// Call CreateVdev from control plane client
 			if m.cpClient != nil && m.cpConnected {
-				log.Info("Creating Vdev with size: ", vdev.Size)
+				log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
 				if err := m.cpClient.CreateVdev(vdev); err != nil {
 					log.Error("CreateVdev failed: ", err)
 					m.message = fmt.Sprintf("Failed to create Vdev: %v", err)
 					return m, nil
 				}
-				log.Info("Vdev created successfully: ", vdev.VdevID)
+				log.Info("Vdev created successfully: ", vdev.Cfg.ID)
 				m.currentVdev = *vdev
 				m.state = stateShowAddedVdev
 				m.message = "Vdev created successfully"
@@ -6873,7 +6870,7 @@ func (m model) viewViewVdev() string {
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
 		req := &ctlplfl.GetReq{ID: "", GetAll: true}
-		vdevs, err := m.cpClient.GetVdevs(req)
+		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -6881,10 +6878,10 @@ func (m model) viewViewVdev() string {
 		} else {
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
 			for i, vdev := range vdevs {
-				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.VdevID))
-				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
-				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
-				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
+				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.Cfg.ID))
+				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Cfg.Size))
+				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.Cfg.NumChunks))
+				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.Cfg.NumReplica))
 				s.WriteString("\n")
 			}
 		}
@@ -6909,7 +6906,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
 				req := &ctlplfl.GetReq{ID: "", GetAll: true}
-				vdevs, err := m.cpClient.GetVdevs(req)
+				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err == nil && m.vdevDeleteCursor < len(vdevs)-1 {
 					m.vdevDeleteCursor++
 				}
@@ -6918,7 +6915,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 			// Delete selected Vdev
 			if m.cpClient != nil && m.cpConnected {
 				req := &ctlplfl.GetReq{ID: "", GetAll: true}
-				vdevs, err := m.cpClient.GetVdevs(req)
+				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to query Vdevs: %v", err)
 					return m, nil
@@ -6931,7 +6928,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 					selectedVdev := vdevs[m.vdevDeleteCursor]
 					// TODO: Implement actual DeleteVdev function when available
 					// For now, show a placeholder message
-					m.message = fmt.Sprintf("Delete functionality for Vdev %s is not yet implemented in the backend", selectedVdev.VdevID)
+					m.message = fmt.Sprintf("Delete functionality for Vdev %s is not yet implemented in the backend", selectedVdev.Cfg.ID)
 					return m, nil
 				}
 			} else {
@@ -6965,7 +6962,7 @@ func (m model) viewDeleteVdev() string {
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
 		req := &ctlplfl.GetReq{ID: "", GetAll: true}
-		vdevs, err := m.cpClient.GetVdevs(req)
+		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -6976,9 +6973,9 @@ func (m model) viewDeleteVdev() string {
 				cursor := "  "
 				if m.vdevDeleteCursor == i {
 					cursor = "▶ "
-					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. ID: %s (Size: %d bytes)", cursor, i+1, vdev.VdevID, vdev.Size)))
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. ID: %s (Size: %d bytes)", cursor, i+1, vdev.Cfg.ID, vdev.Cfg.Size)))
 				} else {
-					s.WriteString(fmt.Sprintf("%s%d. ID: %s (Size: %d bytes)", cursor, i+1, vdev.VdevID, vdev.Size))
+					s.WriteString(fmt.Sprintf("%s%d. ID: %s (Size: %d bytes)", cursor, i+1, vdev.Cfg.ID, vdev.Cfg.Size))
 				}
 				s.WriteString("\n")
 			}
@@ -7012,10 +7009,10 @@ func (m model) viewShowAddedVdev() string {
 	s.WriteString(title + "\n\n")
 
 	s.WriteString("Vdev Details:\n")
-	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.VdevID))
-	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Size))
-	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.NumChunks))
-	s.WriteString(fmt.Sprintf("Replicas: %d\n", m.currentVdev.NumReplica))
+	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.Cfg.ID))
+	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Cfg.Size))
+	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.Cfg.NumChunks))
+	s.WriteString(fmt.Sprintf("Replicas: %d\n", m.currentVdev.Cfg.NumReplica))
 
 	s.WriteString("\n\nPress any key to return to Vdev management")
 
