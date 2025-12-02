@@ -72,6 +72,28 @@ type pmdbServerHandler struct {
 	portRange         []uint16
 }
 
+func PopulateHierarchy() error {
+	log.Info("range query")
+	nisdCfgKey := "n_cfg"
+	time.Sleep(5 * time.Second)
+	readResult, err := PumiceDBServer.RangeReadKV(nil, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, 4*1024*1024*1024, false, 0, "PMDBTS_CF")
+	if err != nil {
+		log.Error("PopulateHierarchy():RangeReadKV()", err)
+	}
+	log.Info("fetching read result:", readResult)
+	nisdList := srvctlplanefuncs.ParseEntities[cpLib.Nisd](readResult.ResultMap, srvctlplanefuncs.NisdParser{})
+	for i := 0; i < len(nisdList); i++ {
+		err = srvctlplanefuncs.HR.AddNisd(&nisdList[i])
+		if err != nil {
+			log.Error("PopulateHierarchy():AddNisd()", err)
+		}
+		log.Info("added nisd:", nisdList[i])
+
+	}
+	log.Infof("successfully intialized hierarchy: %+v ", srvctlplanefuncs.HR)
+	return nil
+}
+
 func main() {
 	serverHandler := pmdbServerHandler{}
 	cpLib.RegisterGOBStructs()
@@ -181,8 +203,18 @@ func main() {
 	//TODO Check error
 	go nso.pso.Run()
 
+	log.Info("Intializing the in memory struct")
+	srvctlplanefuncs.HR.Init()
+	log.Info("populating the in memory struct")
+
+	err = PopulateHierarchy()
+	if err != nil {
+		log.Error("Failed to Created Hierarchy struct:", err)
+	}
+
 	serverHandler.checkPMDBLiveness()
 	serverHandler.exportTags()
+
 }
 
 func (handler *pmdbServerHandler) checkPMDBLiveness() {
