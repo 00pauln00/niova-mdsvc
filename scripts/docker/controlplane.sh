@@ -1,10 +1,14 @@
 #!/bin/bash
 
 #Create configuration files
-./raft-config.sh $1
+if [ "$2" = "new" ]; then
+    ./raft-config.sh $1
+fi
 
 RAFT_UUID=$(ls configs | awk -F. '/\.raft$/ { print $1 }')
-mkdir logs
+if [ "$2" = "new" ]; then
+    mkdir logs
+fi
 
 
 # Extract peer UUIDs from the configs directory
@@ -22,7 +26,11 @@ done
 
 sleep 5
 
-CUUID="$(uuidgen)"
+if [ "$2" = "new" ]; then
+    CUUID="$(uuidgen)"
+else
+    CUUID="$3"
+fi
 
 # Run the proxy
 ./libexec/niova/CTLPlane_proxy \
