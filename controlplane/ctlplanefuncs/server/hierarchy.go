@@ -31,6 +31,8 @@ type Hierarchy struct {
 	FD []FailureDomain
 }
 
+var HR Hierarchy
+
 func compareEntity(a, b Entities) bool  { return a.ID < b.ID }
 func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
 

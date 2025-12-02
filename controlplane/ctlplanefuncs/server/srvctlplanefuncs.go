@@ -214,7 +214,7 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
 	return pmCmn.Encoder(pmCmn.GOB, nisdList)
 }
 
@@ -233,7 +233,7 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
 	return pmCmn.Encoder(pmCmn.GOB, nisdList[0])
 }
 
@@ -243,7 +243,7 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
 	return nisdList, nil
 }
 
@@ -610,7 +610,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	// ParseEntitiesMap now returns map[string]Entity
-	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, nisdParser{})
+	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, NisdParser{})
 
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {

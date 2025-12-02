@@ -158,15 +158,15 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
 
 // nisd parser
-type nisdParser struct{}
+type NisdParser struct{}
 
-func (nisdParser) GetRootKey() string { return nisdCfgKey }
+func (NisdParser) GetRootKey() string { return nisdCfgKey }
 
-func (nisdParser) NewEntity(id string) Entity {
+func (NisdParser) NewEntity(id string) Entity {
 	return &ctlplfl.Nisd{ID: id, ParentID: make([]string, 4)}
 }
 
-func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
+func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	nisd := entity.(*ctlplfl.Nisd)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
@@ -195,7 +195,7 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
-func (nisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
+func (NisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
 
 type pduParser struct{}
 
