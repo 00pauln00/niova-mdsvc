@@ -31,7 +31,7 @@ RAFT         ${RAFT_UUID}
 IPADDR       127.0.0.1
 PORT         ${PEER_PORT}
 CLIENT_PORT  ${PEER_CLIENT_PORT}
-STORE        /home/controlplane/${PEER_UUID}.raftdb
+STORE        ./${PEER_UUID}.raftdb
 EOF
 
     echo "Generated config: $PEER_FILE"
