@@ -90,7 +90,8 @@ func PopulateHierarchy() error {
 		log.Info("added nisd:", nisdList[i])
 
 	}
-	log.Infof("successfully intialized hierarchy: %+v ", srvctlplanefuncs.HR)
+	log.Infof("successfully intialized hierarchy")
+	srvctlplanefuncs.HR.Dump()
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	log "github.com/sirupsen/logrus"
 	cbtree "github.com/tidwall/btree"
 )
 
@@ -19,7 +20,7 @@ type Entities struct {
 // Tree stores entities ordered by their Entity.ID using a Counted B-tree.
 type FailureDomain struct {
 	Type uint8
-	Tree *cbtree.BTreeG[Entities]
+	Tree *cbtree.BTreeG[*Entities]
 }
 
 // stores the Hierarchy Information
@@ -33,7 +34,7 @@ type Hierarchy struct {
 
 var HR Hierarchy
 
-func compareEntity(a, b Entities) bool  { return a.ID < b.ID }
+func compareEntity(a, b *Entities) bool { return a.ID < b.ID }
 func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
 
 // Initialize the Hierarchy Struct
@@ -42,27 +43,27 @@ func (hr *Hierarchy) Init() error {
 	for i := 0; i < 4; i++ {
 		hr.FD[i] = FailureDomain{
 			Type: uint8(i),
-			Tree: cbtree.NewBTreeG[Entities](compareEntity),
+			Tree: cbtree.NewBTreeG[*Entities](compareEntity),
 		}
 	}
 	return nil
 }
 
 func (fd *FailureDomain) getOrCreateEntity(id string) *Entities {
-	e, ok := fd.Tree.Get(Entities{ID: id})
+	e, ok := fd.Tree.Get(&Entities{ID: id})
 	if ok {
-		return &e
+		return e
 	}
 	n := Entities{
 		ID:    id,
 		Nisds: cbtree.NewBTreeG[*cpLib.Nisd](compareNisd),
 	}
-	fd.Tree.Set(n)
+	fd.Tree.Set(&n)
 	return &n
 }
 
 func (fd *FailureDomain) deleteEmptyEntity(id string) {
-	e, ok := fd.Tree.Get(Entities{ID: id})
+	e, ok := fd.Tree.Get(&Entities{ID: id})
 	if !ok {
 		return
 	}
@@ -80,7 +81,7 @@ func GetIndex(hash uint64, size int) (int, error) {
 
 // Add NISD and the corresponding parent entities to the Hierarchy
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
-	// Tier 0: PDU
+	//Tier 0: PDU
 	{
 		e := hr.FD[cpLib.PDU_IDX].getOrCreateEntity(n.ParentID[cpLib.PDU_IDX])
 		e.Nisds.Set(n)
@@ -111,7 +112,7 @@ func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 	for i, id := range n.ParentID {
 		fd := &hr.FD[i]
-		e, ok := fd.Tree.Get(Entities{ID: id})
+		e, ok := fd.Tree.Get(&Entities{ID: id})
 		if !ok {
 			continue
 		}
@@ -171,4 +172,36 @@ func (hr *Hierarchy) PickNISD(fd uint8, hash uint64) (*cpLib.Nisd, error) {
 	}
 
 	return nisd, nil
+}
+
+func (h *Hierarchy) Dump() {
+	if h == nil {
+		return
+	}
+	if h.FD == nil {
+		return
+	}
+
+	for i := range h.FD {
+		fd := &h.FD[i]
+		log.Infof("FD Type: %d", fd.Type)
+
+		fd.Tree.Scan(func(ent *Entities) bool {
+			if ent == nil {
+				return true
+			}
+
+			log.Infof("  Entity: %s\n", ent.ID)
+
+			ent.Nisds.Scan(func(n *cpLib.Nisd) bool {
+				if n == nil {
+					return true
+				}
+				log.Infof("    Nisd: %s\n", n.ID)
+				return true
+			})
+
+			return true
+		})
+	}
 }
