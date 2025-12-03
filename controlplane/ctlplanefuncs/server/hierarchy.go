@@ -141,7 +141,7 @@ func (hr *Hierarchy) GetEntityLen(entity int) int {
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd uint8, hash uint64) (*cpLib.Nisd, error) {
+func (hr *Hierarchy) PickNISD(fd int, hash uint64) (*cpLib.Nisd, error) {
 
 	if int(fd) >= len(hr.FD) {
 		return nil, errors.New("invalid fd tier")

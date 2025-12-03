@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 import (
+	"encoding/binary"
 	"path"
 	"strconv"
 	"strings"
@@ -325,58 +326,46 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 }
 
 // Allocates Nisd to the Requested VDEV
-func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
-	allocatedNisd := make([]*ctlplfl.Nisd, 0)
-	remainingVdevSize := vdev.Cfg.Size
-	vdev.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
-	for _, nisd := range nisds {
-		if (nisd.AvailableSize > int64(vdev.Cfg.Size)) && remainingVdevSize > 0 {
-			nisdChunk := ctlplfl.NisdChunk{
-				Nisd:  nisd,
-				Chunk: make([]int, vdev.Cfg.NumChunks),
-			}
-			allocatedNisd = append(allocatedNisd, &nisd)
-			for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
-				nisdChunk.Chunk[i] = i
-				remainingVdevSize -= ctlplfl.CHUNK_SIZE
-				nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
-			}
-			vdev.NisdToChkMap = append(vdev.NisdToChkMap, nisdChunk)
-		}
-	}
-	return allocatedNisd
-}
+// func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
+// 	allocatedNisd := make([]*ctlplfl.Nisd, 0)
+// 	remainingVdevSize := vdev.Cfg.Size
+// 	vdev.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
+// 	for _, nisd := range nisds {
+// 		if (nisd.AvailableSize > int64(vdev.Cfg.Size)) && remainingVdevSize > 0 {
+// 			nisdChunk := ctlplfl.NisdChunk{
+// 				Nisd:  nisd,
+// 				Chunk: make([]int, vdev.Cfg.NumChunks),
+// 			}
+// 			allocatedNisd = append(allocatedNisd, &nisd)
+// 			for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
+// 				nisdChunk.Chunk[i] = i
+// 				remainingVdevSize -= ctlplfl.CHUNK_SIZE
+// 				nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
+// 			}
+// 			vdev.NisdToChkMap = append(vdev.NisdToChkMap, nisdChunk)
+// 		}
+// 	}
+// 	return allocatedNisd
+// }
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
-func genVdevKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	vcKey := getVdevChunkKey(vdev.Cfg.ID)
-	for _, nisd := range nisdList {
-		for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
-			*commitChgs = append(*commitChgs, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%d", vcKey, i)),
-				Value: []byte(nisd.ID),
-			})
-		}
+func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
+	vcKey := getVdevChunkKey(ID)
+	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, ID)
 
-	}
-}
-
-// Generates all the Keys and Values that needs to be inserted into NISD key space on vdev generation
-func genNisdKV(vdev *ctlplfl.Vdev, nisdList []*ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
-	for _, nisd := range nisdList {
-		key := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, vdev.Cfg.ID)
-		for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
-			*commitChgs = append(*commitChgs, funclib.CommitChg{
-				Key:   []byte(key),
-				Value: []byte(fmt.Sprintf("R.0.%d", i)),
-			})
-		}
-		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
-			Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
-		})
-
-	}
+	*commitChgs = append(*commitChgs, funclib.CommitChg{
+		Key:   []byte(fmt.Sprintf("%s/%d", vcKey, chunk)),
+		Value: []byte(nisd.ID),
+	})
+	// TODO: how do we update the replication details
+	*commitChgs = append(*commitChgs, funclib.CommitChg{
+		Key:   []byte(nKey),
+		Value: []byte(fmt.Sprintf("R.0.%d", chunk)),
+	})
+	*commitChgs = append(*commitChgs, funclib.CommitChg{
+		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
+		Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
+	})
 
 }
 
@@ -420,6 +409,37 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
+func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg) error {
+	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
+	for i := 0; i < int(vdev.NumReplica); i++ {
+		nisd, err := HR.PickNISD(fd, hash)
+		if err != nil {
+			return err
+		}
+		nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
+		if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
+			HR.DeleteNisd(nisd)
+		}
+		genAllocationKV(vdev.ID, chunk, nisd, commitChgs)
+		var hashByte []byte
+		binary.BigEndian.PutUint64(hashByte, hash)
+		hash = ctlplfl.Hash64(hashByte)
+	}
+	return nil
+}
+
+func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) error {
+	fd := HR.GetFDLevel(int(vdev.NumReplica))
+	for i := 0; i <= int(vdev.NumChunks); i++ {
+		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
+		if err != nil {
+			log.Error("failed to allocate nisd:", err)
+			return err
+		}
+	}
+	return nil
+}
+
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
 func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
@@ -430,20 +450,12 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Debug("allocating vdev: ", vdev.Cfg.ID)
-	nisdList, err := getNisdList(cbArgs)
+	// allocate nisd chunks to vdev
+	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
-		log.Error("failed to get nisd list:", err)
+		log.Error("Failed to Allocate NISD: ", err)
 		return nil, err
 	}
-	// allocate nisd chunks to vdev
-	allocNisds := allocateNisd(&vdev, nisdList)
-	if len(allocNisds) == 0 {
-		log.Error("failed to allocate nisd")
-		return nil, fmt.Errorf("failed to allocate nisd: not enough space avialable")
-	}
-
-	genVdevKV(&vdev, allocNisds, &funcIntrm.Changes)
-	genNisdKV(&vdev, allocNisds, &funcIntrm.Changes)
 
 	r, err := pmCmn.Encoder(pmCmn.GOB, vdev)
 	if err != nil {
