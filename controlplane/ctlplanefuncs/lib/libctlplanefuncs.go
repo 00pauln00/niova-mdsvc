@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"hash/fnv"
+
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
@@ -285,4 +287,10 @@ func (a *NisdArgs) BuildCmdArgs() string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+func Hash64(data []byte) uint64 {
+	h := fnv.New64a()
+	h.Write(data)
+	return h.Sum64()
 }
