@@ -845,3 +845,101 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	assert.NoError(t, err)
 	log.Info("Get na: ", nisdArgs)
 }
+
+func TestHierachy(t *testing.T) {
+	c := newClient(t)
+
+	mockNisd := []cpLib.Nisd{
+		{
+			ClientPort: 7001,
+			PeerPort:   8001,
+			ID:         "nisd-1",
+			FailureDomain: []string{
+				"pdu-01",
+				"rack-01",
+				"hv-01",
+				"dev-01",
+			},
+			IPAddr:        "192.168.1.10",
+			TotalSize:     1_000_000_000_000, // 1 TB
+			AvailableSize: 1_000_000_000_000, // 750 GB
+		},
+		{
+			ClientPort: 7001,
+			PeerPort:   8001,
+			ID:         "nisd-2",
+			FailureDomain: []string{
+				"pdu-01",
+				"rack-01",
+				"hv-01",
+				"dev-02",
+			},
+			IPAddr:        "192.168.1.10",
+			TotalSize:     1_000_000_000_000, // 1 TB
+			AvailableSize: 1_000_000_000_000, // 750 GB
+		},
+		{
+			ClientPort: 7002,
+			PeerPort:   8002,
+			ID:         "nisd-3",
+			FailureDomain: []string{
+				"pdu-02",
+				"rack-02",
+				"hv-02",
+				"dev-03",
+			},
+			IPAddr:        "192.168.1.11",
+			TotalSize:     1_000_000_000_000, // 500 GB
+			AvailableSize: 1_000_000_000_000, // 200 GB
+		},
+		{
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-4",
+			FailureDomain: []string{
+				"pdu-02",
+				"rack-03",
+				"hv-03",
+				"dev-04",
+			},
+			IPAddr:        "192.168.1.12",
+			TotalSize:     1_000_000_000_000, // 2 TB
+			AvailableSize: 1_000_000_000_000, // 1.5 TB
+		},
+		{
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-4",
+			FailureDomain: []string{
+				"pdu-02",
+				"rack-03",
+				"hv-04",
+				"dev-05",
+			},
+			IPAddr:        "192.168.1.12",
+			TotalSize:     1_000_000_000_000, // 2 TB
+			AvailableSize: 1_000_000_000_000, // 1.5 TB
+		},
+	}
+	for _, n := range mockNisd {
+		resp, err := c.PutNisd(&n)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
+
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       500 * 1024 * 1024 * 1024,
+			NumReplica: 3,
+		}}
+	err := c.CreateVdev(vdev)
+	assert.NoError(t, err)
+
+}
+
+func TestGetNisd(t *testing.T) {
+	c := newClient(t)
+	res, err := c.GetNisds()
+	log.Info("GetNisds: ", res)
+	assert.NoError(t, err)
+}

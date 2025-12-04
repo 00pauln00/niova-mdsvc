@@ -185,7 +185,7 @@ func (vdev *Vdev) Init() error {
 	}
 	vdev.Cfg.ID = id.String()
 	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
-	vdev.Cfg.NumReplica = 1
+	vdev.Cfg.NumReplica = 0
 	vdev.Cfg.NumDataBlk = 0
 	vdev.Cfg.NumParityBlk = 0
 	return nil
