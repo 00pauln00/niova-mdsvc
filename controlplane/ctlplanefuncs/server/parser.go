@@ -192,6 +192,7 @@ func (NisdParser) GetRootKey() string { return NisdCfgKey }
 
 func (NisdParser) NewEntity(id string) Entity {
 	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4)}
+	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4)}
 }
 
 func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
