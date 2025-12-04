@@ -325,29 +325,6 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
-// Allocates Nisd to the Requested VDEV
-// func allocateNisd(vdev *ctlplfl.Vdev, nisds []ctlplfl.Nisd) []*ctlplfl.Nisd {
-// 	allocatedNisd := make([]*ctlplfl.Nisd, 0)
-// 	remainingVdevSize := vdev.Cfg.Size
-// 	vdev.NisdToChkMap = make([]ctlplfl.NisdChunk, 0)
-// 	for _, nisd := range nisds {
-// 		if (nisd.AvailableSize > int64(vdev.Cfg.Size)) && remainingVdevSize > 0 {
-// 			nisdChunk := ctlplfl.NisdChunk{
-// 				Nisd:  nisd,
-// 				Chunk: make([]int, vdev.Cfg.NumChunks),
-// 			}
-// 			allocatedNisd = append(allocatedNisd, &nisd)
-// 			for i := 0; i < int(vdev.Cfg.NumChunks); i++ {
-// 				nisdChunk.Chunk[i] = i
-// 				remainingVdevSize -= ctlplfl.CHUNK_SIZE
-// 				nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
-// 			}
-// 			vdev.NisdToChkMap = append(vdev.NisdToChkMap, nisdChunk)
-// 		}
-// 	}
-// 	return allocatedNisd
-// }
-
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
 	vcKey := getVdevChunkKey(ID)

@@ -117,7 +117,7 @@ type Nisd struct {
 	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
 	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
 	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
-	ParentID      []string
+	FailureDomain []string
 	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
 	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
 	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
