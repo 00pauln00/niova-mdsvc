@@ -57,7 +57,7 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 			ClientPort: 7001,
 			PeerPort:   8001,
 			ID:         "nisd-001",
-			ParentID: []string{
+			FailureDomain: []string{
 				"pdu-01",
 				"rack-01",
 				"hv-01",
@@ -78,7 +78,7 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 			ClientPort: 7002,
 			PeerPort:   8002,
 			ID:         "nisd-002",
-			ParentID: []string{
+			FailureDomain: []string{
 				"pdu-02",
 				"rack-02",
 				"hv-02",
@@ -92,7 +92,7 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 			ClientPort: 7003,
 			PeerPort:   8003,
 			ID:         "nisd-003",
-			ParentID: []string{
+			FailureDomain: []string{
 				"pdu-03",
 				"rack-03",
 				"hv-03",
@@ -926,7 +926,7 @@ func TestVdevNisdChunk(t *testing.T) {
 		ClientPort: 7001,
 		PeerPort:   8001,
 		ID:         "nisd-001",
-		ParentID: []string{
+		FailureDomain: []string{
 			"pdu-05",
 			"rack-04",
 			"hv-07",
