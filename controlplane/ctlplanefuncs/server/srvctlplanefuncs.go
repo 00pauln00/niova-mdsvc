@@ -331,13 +331,13 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, commitChgs *[]funclib
 	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, ID)
 
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("%s/%d", vcKey, chunk)),
+		Key:   []byte(fmt.Sprintf("%s/%s", vcKey, chunk)),
 		Value: []byte(nisd.ID),
 	})
 	// TODO: how do we update the replication details
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(nKey),
-		Value: []byte(fmt.Sprintf("R.0.%d", chunk)),
+		Value: []byte(fmt.Sprintf("R.0.%s", chunk)),
 	})
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
@@ -388,19 +388,38 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 
 func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg) error {
 	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
+
+	log.Infof("hash generated for chunk: %d", hash)
+	// select entity by index
+	// TODO: handle scenario when there is only one element
+	entityIDX, err := GetIndex(hash, HR.FD[fd].Tree.Len())
+	if err != nil {
+		return err
+	}
+	log.Infof("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
+
 	for i := 0; i < int(vdev.NumReplica); i++ {
-		nisd, err := HR.PickNISD(fd, hash)
+		if entityIDX >= HR.FD[fd].Tree.Len() {
+			entityIDX = 0
+		}
+		nisd, err := HR.PickNISD(fd, entityIDX, hash)
 		if err != nil {
 			return err
 		}
+		log.Infof("picked nisd: %+v", nisd.ID)
 		nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
 		if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
 			HR.DeleteNisd(nisd)
+			log.Debug("Deleting NISD: ", nisd.ID)
 		}
+
+		// TODO: Don't upate the same nisd-space multiple times
 		genAllocationKV(vdev.ID, chunk, nisd, commitChgs)
-		var hashByte []byte
+		// update hash
+		hashByte := make([]byte, 8)
 		binary.BigEndian.PutUint64(hashByte, hash)
 		hash = ctlplfl.Hash64(hashByte)
+		entityIDX += 1
 	}
 	return nil
 }
@@ -408,6 +427,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) error {
 	fd := HR.GetFDLevel(int(vdev.NumReplica))
 	for i := 0; i <= int(vdev.NumChunks); i++ {
+		log.Trace("allocating nisd for chunk: ", i)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
 			log.Error("failed to allocate nisd:", err)
@@ -421,12 +441,11 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	var funcIntrm funclib.FuncIntrm
-
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
-	log.Debug("allocating vdev: ", vdev.Cfg.ID)
+	log.Debug("Allocating vdev for ID: ", vdev.Cfg.ID)
 	// allocate nisd chunks to vdev
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
