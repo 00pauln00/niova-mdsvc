@@ -83,25 +83,25 @@ func GetIndex(hash uint64, size int) (int, error) {
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	//Tier 0: PDU
 	{
-		e := hr.FD[cpLib.PDU_IDX].getOrCreateEntity(n.ParentID[cpLib.PDU_IDX])
+		e := hr.FD[cpLib.PDU_IDX].getOrCreateEntity(n.FailureDomain[cpLib.PDU_IDX])
 		e.Nisds.Set(n)
 	}
 
 	// Tier 1: Rack
 	{
-		e := hr.FD[cpLib.RACK_IDX].getOrCreateEntity(n.ParentID[cpLib.RACK_IDX])
+		e := hr.FD[cpLib.RACK_IDX].getOrCreateEntity(n.FailureDomain[cpLib.RACK_IDX])
 		e.Nisds.Set(n)
 	}
 
 	// Tier 2: Hypervisor
 	{
-		e := hr.FD[cpLib.HV_IDX].getOrCreateEntity(n.ParentID[cpLib.HV_IDX])
+		e := hr.FD[cpLib.HV_IDX].getOrCreateEntity(n.FailureDomain[cpLib.HV_IDX])
 		e.Nisds.Set(n)
 	}
 
 	// Tier 3: Device
 	{
-		e := hr.FD[cpLib.DEVICE_IDX].getOrCreateEntity(n.ParentID[cpLib.DEVICE_IDX])
+		e := hr.FD[cpLib.DEVICE_IDX].getOrCreateEntity(n.FailureDomain[cpLib.DEVICE_IDX])
 		e.Nisds.Set(n)
 	}
 
@@ -110,7 +110,7 @@ func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 
 // Delete NISD and the corresponding parent entities from the Hierarchy
 func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
-	for i, id := range n.ParentID {
+	for i, id := range n.FailureDomain {
 		fd := &hr.FD[i]
 		e, ok := fd.Tree.Get(&Entities{ID: id})
 		if !ok {
