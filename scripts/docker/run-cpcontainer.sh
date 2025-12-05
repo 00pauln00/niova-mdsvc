@@ -1,6 +1,6 @@
 #Provide start of the port range as command line arg
 #I.e sudo ./run-cpcontainer.sh 5000
-if [ "$2" = "new" ]; then
+if [ "$2" = "init" ]; then
         rm -rf *.raftdb configs ctl-interface logs
 fi
 
