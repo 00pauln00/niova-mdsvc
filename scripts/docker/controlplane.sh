@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #Create configuration files
-if [ "$2" = "new" ]; then
+if [ "$2" = "init" ]; then
     ./raft-config.sh $1
 fi
 
 RAFT_UUID=$(ls configs | awk -F. '/\.raft$/ { print $1 }')
-if [ "$2" = "new" ]; then
+if [ "$2" = "init" ]; then
     mkdir logs
 fi
 
@@ -26,7 +26,7 @@ done
 
 sleep 5
 
-if [ "$2" = "new" ]; then
+if [ "$2" = "init" ]; then
     CUUID="$(uuidgen)"
 else
     CUUID="$3"
