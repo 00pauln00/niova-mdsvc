@@ -358,7 +358,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	vdev.Cfg.Size = args[0].(int64)
+	vdev = args[0].(ctlplfl.Vdev)
 	vdev.Init()
 	log.Debug("Initializing vdev with size: ", vdev)
 	key := getConfKey(vdevKey, vdev.Cfg.ID)
@@ -403,7 +403,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		return err
 	}
 	log.Debugf("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
-	for i := 0; i < int(vdev.NumReplica); i++ {
+	for i := 0; i <= int(vdev.NumReplica); i++ {
 		if entityIDX >= HR.FD[fd].Tree.Len() {
 			entityIDX = 0
 		}

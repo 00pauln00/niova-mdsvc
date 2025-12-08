@@ -186,7 +186,6 @@ func (vdev *Vdev) Init() error {
 	}
 	vdev.Cfg.ID = id.String()
 	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
-	vdev.Cfg.NumReplica = 3
 	vdev.Cfg.NumDataBlk = 0
 	vdev.Cfg.NumParityBlk = 0
 	return nil
@@ -304,8 +303,8 @@ func (n *Nisd) Validate() error {
 	if len(n.FailureDomain) != 4 {
 		return errors.New("invalid NISD failure domain info")
 	}
-	for i, v := range n.FailureDomain {
-		if _, err := uuid.Parse(v); err != nil {
+	for i := 0; i < DEVICE_IDX; i++ {
+		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
 			return errors.New("invalid FailureDomain[" + string(rune(i)) + "] uuid")
 		}
 	}

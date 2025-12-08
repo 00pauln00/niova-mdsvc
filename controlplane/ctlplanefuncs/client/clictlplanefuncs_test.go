@@ -846,95 +846,115 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	log.Info("Get na: ", nisdArgs)
 }
 
-func TestHierachy(t *testing.T) {
+func TestHierachy1(t *testing.T) {
 	c := newClient(t)
+
+	pduA := "00983c9c-d459-11f0-9e91-fff7c5a196f1"
+	pduB := "00983c9c-d459-11f0-9e91-fff7c5a196f2"
+
+	rackA := "d573e318-d458-11f0-ae93-fb6358168960"
+	rackB := "d573e318-d458-11f0-ae93-fb6358168961"
+	rackC := "d573e318-d458-11f0-ae93-fb6358168963"
+
+	hvA := "edc570e4-d458-11f0-8cd5-c70d6a7a56e0"
+	hvB := "edc570e4-d458-11f0-8cd5-c70d6a7a56e1"
+	hvC := "edc570e4-d458-11f0-8cd5-c70d6a7a56e2"
+	hvD := "edc570e4-d458-11f0-8cd5-c70d6a7a56e4"
+
+	dev1 := "nvme-01a1"
+	dev2 := "nvme-01a2"
+	dev3 := "nvme-02b1"
+	dev4 := "nvme-03c1"
+	dev5 := "nvme-03c2"
+	dev6 := "nvme-03c3"
 
 	mockNisd := []cpLib.Nisd{
 		{
 			ClientPort: 7001,
 			PeerPort:   8001,
-			ID:         "nisd-1",
+			ID:         "8de9d104-b154-47b0-82c1-83b1c51bc001",
 			FailureDomain: []string{
-				"pdu-01",
-				"rack-01",
-				"hv-01",
-				"dev-01",
+				pduA,
+				rackA,
+				hvA,
+				dev1,
 			},
 			IPAddr:        "192.168.1.10",
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 1_000_000_000_000, // 750 GB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 1_000_000_000_000,
 		},
 		{
 			ClientPort: 7001,
 			PeerPort:   8001,
-			ID:         "nisd-2",
+			ID:         "8de9d104-b154-47b0-82c1-83b1c51bc002",
 			FailureDomain: []string{
-				"pdu-01",
-				"rack-01",
-				"hv-01",
-				"dev-02",
+				pduA,
+				rackA,
+				hvA,
+				dev2,
 			},
 			IPAddr:        "192.168.1.10",
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 1_000_000_000_000, // 750 GB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 1_000_000_000_000,
 		},
 		{
 			ClientPort: 7002,
 			PeerPort:   8002,
-			ID:         "nisd-3",
+			ID:         "d2ea4bb4-4f5f-4df5-ae29-cb391aa3e113",
 			FailureDomain: []string{
-				"pdu-02",
-				"rack-02",
-				"hv-02",
-				"dev-03",
+				pduB,
+				rackB,
+				hvB,
+				dev3,
 			},
 			IPAddr:        "192.168.1.11",
-			TotalSize:     1_000_000_000_000, // 500 GB
-			AvailableSize: 1_000_000_000_000, // 200 GB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 1_000_000_000_000,
 		},
 		{
 			ClientPort: 7003,
 			PeerPort:   8003,
-			ID:         "nisd-4",
+			ID:         "f91cbb9b-94ea-4d16-81b1-5f8148dfd771",
 			FailureDomain: []string{
-				"pdu-02",
-				"rack-03",
-				"hv-03",
-				"dev-04",
+				pduB,
+				rackC,
+				hvC,
+				dev4,
 			},
 			IPAddr:        "192.168.1.12",
-			TotalSize:     1_000_000_000_000, // 2 TB
-			AvailableSize: 1_000_000_000_000, // 1.5 TB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 1_000_000_000_000,
 		},
 		{
 			ClientPort: 7003,
 			PeerPort:   8003,
-			ID:         "nisd-5",
+			ID:         "f91cbb9b-94ea-4d16-81b1-5f8148dfd772",
 			FailureDomain: []string{
-				"pdu-02",
-				"rack-03",
-				"hv-04",
-				"dev-05",
+				pduB,
+				rackC,
+				hvD,
+				dev5,
 			},
 			IPAddr:        "192.168.1.12",
-			TotalSize:     1_000_000_000_000, // 2 TB
-			AvailableSize: 1_000_000_000_000, // 1.5 TB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 1_000_000_000_000,
 		},
 		{
 			ClientPort: 7003,
 			PeerPort:   8003,
-			ID:         "nisd-6",
+			ID:         "f91cbb9b-94ea-4d16-81b1-5f8148dfd773",
 			FailureDomain: []string{
-				"pdu-02",
-				"rack-03",
-				"hv-04",
-				"dev-06",
+				pduB,
+				rackC,
+				hvD,
+				dev6,
 			},
 			IPAddr:        "192.168.1.12",
-			TotalSize:     1_000_000_000_000, // 2 TB
-			AvailableSize: 1_000_000_000_000, // 1.5 TB
+			TotalSize:     1_000_000_000_000,
+			AvailableSize: 1_000_000_000_000,
 		},
 	}
+
 	for _, n := range mockNisd {
 		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
@@ -945,10 +965,12 @@ func TestHierachy(t *testing.T) {
 		Cfg: cpLib.VdevCfg{
 			Size:       1000 * 1024 * 1024 * 1024,
 			NumReplica: 3,
-		}}
+		},
+	}
+
 	err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
-
+	log.Info("successfully created vdev: ", vdev)
 }
 
 func TestGetNisd(t *testing.T) {
