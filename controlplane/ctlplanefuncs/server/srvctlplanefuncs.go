@@ -326,7 +326,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 }
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
-func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, commitChgs *[]funclib.CommitChg) {
+func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, i int, commitChgs *[]funclib.CommitChg) {
 	vcKey := getVdevChunkKey(ID)
 	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, ID)
 
@@ -337,7 +337,7 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, commitChgs *[]funclib
 	// TODO: how do we update the replication details
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(nKey),
-		Value: []byte(fmt.Sprintf("R.0.%s", chunk)),
+		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
 	})
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
@@ -389,14 +389,14 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg) error {
 	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
 
-	log.Infof("hash generated for chunk: %d", hash)
+	log.Debugf("hash generated for chunk: %d", hash)
 	// select entity by index
 	// TODO: handle scenario when there is only one element
 	entityIDX, err := GetIndex(hash, HR.FD[fd].Tree.Len())
 	if err != nil {
 		return err
 	}
-	log.Infof("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
+	log.Debugf("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
 
 	for i := 0; i < int(vdev.NumReplica); i++ {
 		if entityIDX >= HR.FD[fd].Tree.Len() {
@@ -414,7 +414,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		}
 
 		// TODO: Don't upate the same nisd-space multiple times
-		genAllocationKV(vdev.ID, chunk, nisd, commitChgs)
+		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 		// update hash
 		hashByte := make([]byte, 8)
 		binary.BigEndian.PutUint64(hashByte, hash)
