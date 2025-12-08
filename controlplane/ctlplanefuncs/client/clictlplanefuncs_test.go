@@ -909,12 +909,26 @@ func TestHierachy(t *testing.T) {
 		{
 			ClientPort: 7003,
 			PeerPort:   8003,
-			ID:         "nisd-4",
+			ID:         "nisd-5",
 			FailureDomain: []string{
 				"pdu-02",
 				"rack-03",
 				"hv-04",
 				"dev-05",
+			},
+			IPAddr:        "192.168.1.12",
+			TotalSize:     1_000_000_000_000, // 2 TB
+			AvailableSize: 1_000_000_000_000, // 1.5 TB
+		},
+		{
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-6",
+			FailureDomain: []string{
+				"pdu-02",
+				"rack-03",
+				"hv-04",
+				"dev-06",
 			},
 			IPAddr:        "192.168.1.12",
 			TotalSize:     1_000_000_000_000, // 2 TB
@@ -929,7 +943,7 @@ func TestHierachy(t *testing.T) {
 
 	vdev := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
-			Size:       500 * 1024 * 1024 * 1024,
+			Size:       1000 * 1024 * 1024 * 1024,
 			NumReplica: 3,
 		}}
 	err := c.CreateVdev(vdev)
