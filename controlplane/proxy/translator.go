@@ -40,8 +40,7 @@ func GetReqStruct(name string) any {
 	case cpLib.CREATE_SNAP, cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
-		var size int64
-		return &size
+		return &cpLib.Vdev{}
 	default:
 		return &cpLib.GetReq{}
 	}

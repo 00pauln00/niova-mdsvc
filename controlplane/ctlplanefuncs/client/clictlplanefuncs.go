@@ -229,8 +229,9 @@ func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
 	return ncfg, nil
 }
 
+// TODO: fix this vdev parameter here
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev.Cfg.Size, vdev, ctlplfl.CREATE_VDEV)
+	return ccf.put(vdev, vdev, ctlplfl.CREATE_VDEV)
 }
 
 func (ccf *CliCFuncs) GetVdevsWithChunkInfo(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
