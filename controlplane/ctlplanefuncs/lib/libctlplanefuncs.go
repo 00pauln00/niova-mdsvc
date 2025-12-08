@@ -3,6 +3,7 @@ package libctlplanefuncs
 import (
 	"encoding/gob"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -114,13 +115,13 @@ type NisdArgs struct {
 
 type Nisd struct {
 	XMLName       xml.Name `xml:"NisdInfo"`
-	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
+	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
+	ID            string   `xml:"ID" json:"ID"`
 	FailureDomain []string
-	IPAddr        string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
-	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
-	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
+	TotalSize     int64  `xml:"TotalSize"`
+	AvailableSize int64  `xml:"AvailableSize"`
 }
 
 type PDU struct {
@@ -293,4 +294,25 @@ func Hash64(data []byte) uint64 {
 	h := fnv.New64a()
 	h.Write(data)
 	return h.Sum64()
+}
+
+func (n *Nisd) Validate() error {
+	if _, err := uuid.Parse(n.ID); err != nil {
+		return errors.New("invalid ID uuid")
+	}
+
+	if len(n.FailureDomain) != 4 {
+		return errors.New("invalid NISD failure domain info")
+	}
+	for i, v := range n.FailureDomain {
+		if _, err := uuid.Parse(v); err != nil {
+			return errors.New("invalid FailureDomain[" + string(rune(i)) + "] uuid")
+		}
+	}
+
+	if n.AvailableSize > n.TotalSize {
+		return errors.New("Available Size exceeds Total Size")
+	}
+
+	return nil
 }
