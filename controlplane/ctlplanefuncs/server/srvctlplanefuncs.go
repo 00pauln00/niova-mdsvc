@@ -335,8 +335,9 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, i int, commitChgs *[]
 	vcKey := getVdevChunkKey(ID)
 	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, ID)
 
+	// TODO: handle EC blocks
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("%s/%s", vcKey, chunk)),
+		Key:   []byte(fmt.Sprintf("%s/%s/R.%d", vcKey, chunk, i)),
 		Value: []byte(nisd.ID),
 	})
 	// TODO: how do we update the replication details
@@ -797,19 +798,24 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	}
 	keys := strings.Split(strings.Trim(req.ID, "/"), "/")
 	vdevID, chunk := keys[0], keys[1]
-	vcKey := getConfKey(vdevKey, path.Join(vdevID, chunkKey, chunk))
-	log.Info("searching for key:", vcKey)
 
-	rqResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, vcKey, int64(len(vcKey)), colmfamily)
+	vcKey := path.Clean(getConfKey(vdevKey, path.Join(vdevID, chunkKey, chunk))) + "/"
+
+	log.Debug("searching for key:", vcKey)
+
+	rqResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, vcKey, int64(len(vcKey)), vcKey, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
-	log.Info("result from :", rqResult)
-	// TODO: Add logic to fetch replicas
+
 	chunkInfo := ctlplfl.ChunkNisd{
-		NisdUUID: append([]string{}, string(rqResult)),
+		NisdUUID: make([]string, 0),
 	}
+	for _, v := range rqResult.ResultMap {
+		chunkInfo.NisdUUID = append(chunkInfo.NisdUUID, string(v))
+	}
+	chunkInfo.NumReplicas = uint8(len(chunkInfo.NisdUUID)) - 1
 
 	return pmCmn.Encoder(ENC_TYPE, chunkInfo)
 
