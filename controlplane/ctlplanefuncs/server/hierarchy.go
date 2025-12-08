@@ -76,6 +76,9 @@ func GetIndex(hash uint64, size int) (int, error) {
 	if size <= 0 {
 		return 0, errors.New("invalid size")
 	}
+	if size == 1 {
+		return 0, nil
+	}
 	return int(hash % uint64(size)), nil
 }
 
@@ -144,6 +147,7 @@ func (hr *Hierarchy) GetEntityLen(entity int) int {
 func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, error) {
 
 	if int(fd) >= len(hr.FD) {
+		log.Error("failed to get fd: ", fd)
 		return nil, errors.New("invalid fd tier")
 	}
 
@@ -151,17 +155,20 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, 
 
 	ent, ok := fdRef.Tree.GetAt(entityIDX)
 	if !ok {
+		log.Error("failed to get entitiy tree at idx: ", entityIDX)
 		return nil, errors.New("entity missing")
 	}
 
 	// select NISD inside entity
 	idx, err := GetIndex(hash, ent.Nisds.Len())
 	if err != nil {
+		log.Error("failed to get index for hash: ", hash)
 		return nil, err
 	}
 
 	nisd, ok := ent.Nisds.GetAt(idx)
 	if !ok {
+		log.Error("failed to get nisd from tree at idx: ", idx)
 		return nil, errors.New("selection failure")
 	}
 
