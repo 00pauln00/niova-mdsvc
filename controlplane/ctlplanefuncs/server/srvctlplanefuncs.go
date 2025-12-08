@@ -268,6 +268,11 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	nisd := args[0].(ctlplfl.Nisd)
+	err := nisd.Validate()
+	if err != nil {
+		log.Error("failed to validate nisd: ", err)
+		return nil, err
+	}
 	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, nisdCfgKey)
 
 	nisdResponse := ctlplfl.ResponseXML{
@@ -397,7 +402,6 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		return err
 	}
 	log.Debugf("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
-
 	for i := 0; i < int(vdev.NumReplica); i++ {
 		if entityIDX >= HR.FD[fd].Tree.Len() {
 			entityIDX = 0
