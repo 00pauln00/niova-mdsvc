@@ -801,7 +801,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 
 	vcKey := path.Clean(getConfKey(vdevKey, path.Join(vdevID, chunkKey, chunk))) + "/"
 
-	log.Debug("searching for key:", vcKey)
+	log.Info("searching for key:", vcKey)
 
 	rqResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, vcKey, int64(len(vcKey)), vcKey, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
@@ -809,13 +809,14 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	chunkInfo := ctlplfl.ChunkNisd{
-		NisdUUID: make([]string, 0),
-	}
+	var ids []string
 	for _, v := range rqResult.ResultMap {
-		chunkInfo.NisdUUID = append(chunkInfo.NisdUUID, string(v))
+		ids = append(ids, string(v))
 	}
-	chunkInfo.NumReplicas = uint8(len(chunkInfo.NisdUUID)) - 1
+	chunkInfo := ctlplfl.ChunkNisd{
+		NisdUUIDs:   strings.Join(ids, ","),
+		NumReplicas: uint8(len(rqResult.ResultMap)) - 1,
+	}
 
 	return pmCmn.Encoder(ENC_TYPE, chunkInfo)
 

@@ -232,7 +232,7 @@ func Count8GBChunks(size int64) int64 {
 type ChunkNisd struct {
 	XMLName     xml.Name `xml:"ChunkNisd"`
 	NumReplicas uint8    `xml:"NREPLICAS"`
-	NisdUUID    []string `xml:"NISD"`
+	NisdUUIDs   string   `xml:"NISDs"`
 }
 
 func RegisterGOBStructs() {
