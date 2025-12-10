@@ -360,6 +360,9 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	// Decode the input buffer into structure format
 	vdev = args[0].(ctlplfl.Vdev)
 	vdev.Init()
+	if HR.AvailableSize < uint64(vdev.Cfg.Size)*uint64(vdev.Cfg.NumReplica) {
+		return nil, fmt.Errorf("Not enough space available to allocate vdev")
+	}
 	log.Debug("Initializing vdev with size: ", vdev)
 	key := getConfKey(vdevKey, vdev.Cfg.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
@@ -417,7 +420,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 			HR.DeleteNisd(nisd)
 			log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
 		}
-
+		HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
 		// TODO: Don't upate the same nisd-space multiple times
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 		// update hash

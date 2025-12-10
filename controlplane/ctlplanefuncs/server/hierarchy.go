@@ -30,7 +30,8 @@ type FailureDomain struct {
 // Index 2 - HyperVisor
 // Index 3 - Device
 type Hierarchy struct {
-	FD []FailureDomain
+	FD            []FailureDomain
+	AvailableSize uint64
 }
 
 var HR Hierarchy
@@ -110,7 +111,7 @@ func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 		e := hr.FD[cpLib.DEVICE_IDX].getOrCreateEntity(n.FailureDomain[cpLib.DEVICE_IDX])
 		e.Nisds.Set(n)
 	}
-
+	hr.AvailableSize += uint64(n.AvailableSize)
 	return nil
 }
 
