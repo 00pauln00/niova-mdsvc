@@ -130,18 +130,18 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 		e.Nisds.Delete(n)
 		fd.deleteEmptyEntity(id)
 	}
+	HR.AvailableSize -= uint64(n.AvailableSize) // remove the nisd's available space as well
 	return nil
 }
 
 // Get the Failure Domain Based on the Nisd Count
 func (hr *Hierarchy) GetFDLevel(fltTlrnc int) (int, error) {
 	for i := cpLib.PDU_IDX; i <= cpLib.DEVICE_IDX; i++ {
-		log.Infof("level %d: length %d", i, hr.FD[i].Tree.Len())
 		if fltTlrnc <= hr.FD[i].Tree.Len() {
 			return i, nil
 		}
 	}
-	return -1, fmt.Errorf("failed to allocate vdev as the fault tolerance level cannot be met %d", fltTlrnc)
+	return -1, fmt.Errorf("failed to allocate vdev as the fault tolerance level %d cannot be met", fltTlrnc)
 }
 
 // Get the total number of elements in a Failure Domain.
