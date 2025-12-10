@@ -88,6 +88,10 @@ func GetIndex(hash uint64, size int) (int, error) {
 
 // Add NISD and the corresponding parent entities to the Hierarchy
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
+	if n.AvailableSize < cpLib.CHUNK_SIZE {
+		log.Info("skipping nisd addition %s, as the available size %d < 8GV", n.ID, n.AvailableSize)
+		return nil
+	}
 	//Tier 0: PDU
 	{
 		e := hr.FD[cpLib.PDU_IDX].getOrCreateEntity(n.FailureDomain[cpLib.PDU_IDX])
@@ -132,7 +136,8 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 // Get the Failure Domain Based on the Nisd Count
 func (hr *Hierarchy) GetFDLevel(fltTlrnc int) (int, error) {
 	for i := cpLib.PDU_IDX; i <= cpLib.DEVICE_IDX; i++ {
-		if fltTlrnc < hr.FD[i].Tree.Len() {
+		log.Infof("level %d: length %d", i, hr.FD[i].Tree.Len())
+		if fltTlrnc <= hr.FD[i].Tree.Len() {
 			return i, nil
 		}
 	}
