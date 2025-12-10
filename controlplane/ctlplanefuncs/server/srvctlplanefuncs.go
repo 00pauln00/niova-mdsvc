@@ -409,18 +409,21 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 	for i := 0; i < int(vdev.NumReplica); i++ {
 		if entityIDX >= HR.FD[fd].Tree.Len() {
 			entityIDX = 0
+			log.Info("resetting entity idx to zero")
 		}
 		nisd, err := HR.PickNISD(fd, entityIDX, hash)
 		if err != nil {
 			return err
 		}
-		log.Infof("picked nisd: %+v", nisd.ID)
+		log.Infof("picked nisd: %+v", nisd)
+
+		// Reduce nisd & hierarchy available space
 		nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
+		HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
 		if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
 			HR.DeleteNisd(nisd)
 			log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
 		}
-		HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
 		// TODO: Don't upate the same nisd-space multiple times
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 		// update hash
@@ -443,12 +446,14 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 		log.Info("allocating nisd for chunk: ", i, fd)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
-			log.Warn("failed to allocate nisd at fd", fd, err)
-			i--
-			fd, err = ctlplfl.IncFD(fd)
-			if err != nil {
-				return err
-			}
+			log.Errorf("failed to allocate nisd: %v", fd, err)
+			return err
+			// i--
+			// fd, err = ctlplfl.IncFD(fd)
+			// if err != nil {
+			// 	log.Errorf("failed to allocate nisd: ", fd)
+			// 	return err
+			// }
 		}
 	}
 	return nil
