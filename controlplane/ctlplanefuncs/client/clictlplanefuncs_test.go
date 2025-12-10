@@ -1,6 +1,7 @@
 package clictlplanefuncs
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -354,36 +355,36 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	c := newClient(t)
 
-	// create nisd
-	mockNisd := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "nisd-001",
-		FailureDomain: []string{
-			"pdu-05",
-			"rack-04",
-			"hv-07",
-			"dev-004",
-		},
-		IPAddr:        "192.168.1.10",
-		TotalSize:     1_000_000_000_000, // 1 TB
-		AvailableSize: 750_000_000_000,   // 750 GB
-	}
-	resp, err := c.PutNisd(&mockNisd)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
+	// // create nisd
+	// mockNisd := cpLib.Nisd{
+	// 	ClientPort: 7001,
+	// 	PeerPort:   8001,
+	// 	ID:         "nisd-001",
+	// 	FailureDomain: []string{
+	// 		"pdu-05",
+	// 		"rack-04",
+	// 		"hv-07",
+	// 		"dev-004",
+	// 	},
+	// 	IPAddr:        "192.168.1.10",
+	// 	TotalSize:     1_000_000_000_000, // 1 TB
+	// 	AvailableSize: 750_000_000_000,   // 750 GB
+	// }
+	// resp, err := c.PutNisd(&mockNisd)
+	// assert.NoError(t, err)
+	// assert.True(t, resp.Success)
 
-	// create vdev
-	vdev := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size: 500 * 1024 * 1024 * 1024,
-		}}
-	err = c.CreateVdev(vdev)
-	log.Info("Created Vdev Result: ", vdev)
-	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
-	log.Info("Read vdev:", readV)
-	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
+	// // create vdev
+	// vdev := &cpLib.Vdev{
+	// 	Cfg: cpLib.VdevCfg{
+	// 		Size: 500 * 1024 * 1024 * 1024,
+	// 	}}
+	// err = c.CreateVdev(vdev)
+	// log.Info("Created Vdev Result: ", vdev)
+	// assert.NoError(t, err)
+	// readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
+	// log.Info("Read vdev:", readV)
+	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
 
@@ -406,113 +407,150 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	log.Info("Get na: ", nisdArgs)
 }
 
-func TestHierachy1(t *testing.T) {
+func TestHierarchy2(t *testing.T) {
 	c := newClient(t)
 
-	pduA := "00983c9c-d459-11f0-9e91-fff7c5a196f1"
-	pduB := "00983c9c-d459-11f0-9e91-fff7c5a196f2"
+	pdus := []string{
+		"11111111-d458-11f0-ae93-fb6358160001",
+		"11111111-d458-11f0-ae93-fb6358160002",
+		"11111111-d458-11f0-ae93-fb6358160003",
+		"11111111-d458-11f0-ae93-fb6358160004",
+		"11111111-d458-11f0-ae93-fb6358160005",
+	}
 
-	rackA := "d573e318-d458-11f0-ae93-fb6358168960"
-	rackB := "d573e318-d458-11f0-ae93-fb6358168961"
-	rackC := "d573e318-d458-11f0-ae93-fb6358168963"
+	// 10 RACKS
+	racks := []string{
+		"22222222-d458-11f0-ae93-fb6358161001",
+		"22222222-d458-11f0-ae93-fb6358161002",
+		"22222222-d458-11f0-ae93-fb6358161003",
+		"22222222-d458-11f0-ae93-fb6358161004",
+		"22222222-d458-11f0-ae93-fb6358161005",
+		"22222222-d458-11f0-ae93-fb6358161006",
+		"22222222-d458-11f0-ae93-fb6358161007",
+		"22222222-d458-11f0-ae93-fb6358161008",
+		"22222222-d458-11f0-ae93-fb6358161009",
+		"22222222-d458-11f0-ae93-fb6358161010",
+	}
 
-	hvA := "edc570e4-d458-11f0-8cd5-c70d6a7a56e0"
-	hvB := "edc570e4-d458-11f0-8cd5-c70d6a7a56e1"
-	hvC := "edc570e4-d458-11f0-8cd5-c70d6a7a56e2"
-	hvD := "edc570e4-d458-11f0-8cd5-c70d6a7a56e4"
+	// 20 HVs
+	hvs := []string{
+		"33333333-d458-11f0-ae93-fb6358162001",
+		"33333333-d458-11f0-ae93-fb6358162002",
+		"33333333-d458-11f0-ae93-fb6358162003",
+		"33333333-d458-11f0-ae93-fb6358162004",
+		"33333333-d458-11f0-ae93-fb6358162005",
+		"33333333-d458-11f0-ae93-fb6358162006",
+		"33333333-d458-11f0-ae93-fb6358162007",
+		"33333333-d458-11f0-ae93-fb6358162008",
+		"33333333-d458-11f0-ae93-fb6358162009",
+		"33333333-d458-11f0-ae93-fb6358162010",
+		"33333333-d458-11f0-ae93-fb6358162011",
+		"33333333-d458-11f0-ae93-fb6358162012",
+		"33333333-d458-11f0-ae93-fb6358162013",
+		"33333333-d458-11f0-ae93-fb6358162014",
+		"33333333-d458-11f0-ae93-fb6358162015",
+		"33333333-d458-11f0-ae93-fb6358162016",
+		"33333333-d458-11f0-ae93-fb6358162017",
+		"33333333-d458-11f0-ae93-fb6358162018",
+		"33333333-d458-11f0-ae93-fb6358162019",
+		"33333333-d458-11f0-ae93-fb6358162020",
+	}
 
-	dev1 := "nvme-01a1"
-	dev2 := "nvme-01a2"
-	dev3 := "nvme-02b1"
-	dev4 := "nvme-03c1"
-	dev5 := "nvme-03c2"
-	dev6 := "nvme-03c3"
+	// 40 Devices
+	devices := []string{
+		"nvme-fb6358163001",
+		"nvme-fb6358163002",
+		"nvme-fb6358163003",
+		"nvme-fb6358163004",
+		"nvme-fb6358163005",
+		"nvme-fb6358163006",
+		"nvme-fb6358163007",
+		"nvme-fb6358163008",
+		"nvme-fb6358163009",
+		"nvme-fb6358163010",
+		"nvme-fb6358163011",
+		"nvme-fb6358163012",
+		"nvme-fb6358163013",
+		"nvme-fb6358163014",
+		"nvme-fb6358163015",
+		"nvme-fb6358163016",
+		"nvme-fb6358163017",
+		"nvme-fb6358163018",
+		"nvme-fb6358163019",
+		"nvme-fb6358163020",
+		"nvme-fb6358163021",
+		"nvme-fb6358163022",
+		"nvme-fb6358163023",
+		"nvme-fb6358163024",
+		"nvme-fb6358163025",
+		"nvme-fb6358163026",
+		"nvme-fb6358163027",
+		"nvme-fb6358163028",
+		"nvme-fb6358163029",
+		"nvme-fb6358163030",
+		"nvme-fb6358163031",
+		"nvme-fb6358163032",
+		"nvme-fb6358163033",
+		"nvme-fb6358163034",
+		"nvme-fb6358163035",
+		"nvme-fb6358163036",
+		"nvme-fb6358163037",
+		"nvme-fb6358163038",
+		"nvme-fb6358163039",
+		"nvme-fb6358163040",
+	}
 
-	mockNisd := []cpLib.Nisd{
-		{
-			ClientPort: 7001,
-			PeerPort:   8001,
-			ID:         "8de9d104-b154-47b0-82c1-83b1c51bc001",
-			FailureDomain: []string{
-				pduA,
-				rackA,
-				hvA,
-				dev1,
-			},
-			IPAddr:        "192.168.1.10",
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 1_000_000_000_000,
-		},
-		{
-			ClientPort: 7001,
-			PeerPort:   8001,
-			ID:         "8de9d104-b154-47b0-82c1-83b1c51bc002",
-			FailureDomain: []string{
-				pduA,
-				rackA,
-				hvA,
-				dev2,
-			},
-			IPAddr:        "192.168.1.10",
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 1_000_000_000_000,
-		},
-		{
-			ClientPort: 7002,
-			PeerPort:   8002,
-			ID:         "d2ea4bb4-4f5f-4df5-ae29-cb391aa3e113",
-			FailureDomain: []string{
-				pduB,
-				rackB,
-				hvB,
-				dev3,
-			},
-			IPAddr:        "192.168.1.11",
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 1_000_000_000_000,
-		},
-		{
-			ClientPort: 7003,
-			PeerPort:   8003,
-			ID:         "f91cbb9b-94ea-4d16-81b1-5f8148dfd771",
-			FailureDomain: []string{
-				pduB,
-				rackC,
-				hvC,
-				dev4,
-			},
-			IPAddr:        "192.168.1.12",
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 1_000_000_000_000,
-		},
-		{
-			ClientPort: 7003,
-			PeerPort:   8003,
-			ID:         "f91cbb9b-94ea-4d16-81b1-5f8148dfd772",
-			FailureDomain: []string{
-				pduB,
-				rackC,
-				hvD,
-				dev5,
-			},
-			IPAddr:        "192.168.1.12",
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 1_000_000_000_000,
-		},
-		{
-			ClientPort: 7003,
-			PeerPort:   8003,
-			ID:         "f91cbb9b-94ea-4d16-81b1-5f8148dfd773",
-			FailureDomain: []string{
-				pduB,
-				rackC,
-				hvD,
-				dev6,
-			},
-			IPAddr:        "192.168.1.12",
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 1_000_000_000_000,
-		},
+	mockNisd := make([]cpLib.Nisd, 0, 160)
+
+	pduCount := len(pdus)
+	rackPerPdu := 2
+	hvPerRack := 2
+	devPerHv := 2
+	nisdPerDev := 4
+
+	rackIdx := 0
+	hvIdx := 0
+	devIdx := 0
+
+	nisdID := 1
+
+	for p := 0; p < pduCount; p++ {
+		pdu := pdus[p]
+
+		for r := 0; r < rackPerPdu; r++ {
+			rack := racks[rackIdx]
+			rackIdx++
+
+			for h := 0; h < hvPerRack; h++ {
+				hv := hvs[hvIdx]
+				hvIdx++
+
+				for d := 0; d < devPerHv; d++ {
+					dev := devices[devIdx]
+					devIdx++
+
+					for n := 0; n < nisdPerDev; n++ {
+						nisd := cpLib.Nisd{
+							ClientPort: 7000 + uint16(nisdID),
+							PeerPort:   8000 + uint16(nisdID),
+							ID:         fmt.Sprintf("ed7914c3-2e96-4f3e-8e0d-%012x", nisdID),
+							FailureDomain: []string{
+								pdu,
+								rack,
+								hv,
+								dev,
+							},
+							IPAddr:        fmt.Sprintf("192.168.1.%d", ((nisdID-1)%250)+1),
+							TotalSize:     1_000_000_000_000,
+							AvailableSize: 1_000_000_000_000,
+						}
+
+						mockNisd = append(mockNisd, nisd)
+						nisdID++
+					}
+				}
+			}
+		}
 	}
 
 	for _, n := range mockNisd {
@@ -521,10 +559,141 @@ func TestHierachy1(t *testing.T) {
 		assert.True(t, resp.Success)
 	}
 
+}
+
+func TestHierarchyNew(t *testing.T) {
+	c := newClient(t)
+
+	pdus := []string{
+		"11111111-d458-11f0-ae93-fb6358160001",
+		"11111111-d458-11f0-ae93-fb6358160002",
+	}
+
+	// 10 RACKS
+	racks := []string{
+		"22222222-d458-11f0-ae93-fb6358161001",
+		"22222222-d458-11f0-ae93-fb6358161002",
+	}
+
+	// 20 HVs
+	hvs := []string{
+		"33333333-d458-11f0-ae93-fb6358162001",
+		"33333333-d458-11f0-ae93-fb6358162002",
+		"33333333-d458-11f0-ae93-fb6358162003",
+		"33333333-d458-11f0-ae93-fb6358162004",
+		"33333333-d458-11f0-ae93-fb6358162005",
+	}
+
+	// 40 Devices
+	devices := []string{
+		"nvme-fb6358163001",
+		"nvme-fb6358163002",
+		"nvme-fb6358163003",
+		"nvme-fb6358163004",
+		"nvme-fb6358163005",
+		"nvme-fb6358163006",
+	}
+
+	mockNisd := []cpLib.Nisd{
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5661",
+			FailureDomain: []string{
+				pdus[0],
+				racks[0],
+				hvs[0],
+				devices[0],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5662",
+			FailureDomain: []string{
+				pdus[0],
+				racks[0],
+				hvs[0],
+				devices[1],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5663",
+			FailureDomain: []string{
+				pdus[0],
+				racks[0],
+				hvs[1],
+				devices[2],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5664",
+			FailureDomain: []string{
+				pdus[1],
+				racks[1],
+				hvs[2],
+				devices[3],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5665",
+			FailureDomain: []string{
+				pdus[1],
+				racks[1],
+				hvs[3],
+				devices[4],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5666",
+			FailureDomain: []string{
+				pdus[1],
+				racks[1],
+				hvs[4],
+				devices[5],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+	}
+	for _, n := range mockNisd {
+		resp, err := c.PutNisd(&n)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
+
+}
+
+func TestCreateVdev(t *testing.T) {
+	c := newClient(t)
 	vdev := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
-			Size:       1000 * 1024 * 1024 * 1024,
-			NumReplica: 3,
+			Size:       268435456000,
+			NumReplica: 2,
 		},
 	}
 
@@ -533,9 +702,17 @@ func TestHierachy1(t *testing.T) {
 	log.Info("successfully created vdev: ", vdev)
 }
 
+func usagePercent(n cpLib.Nisd) int64 {
+	used := n.TotalSize - n.AvailableSize
+	return (used * 100) / n.TotalSize
+}
+
 func TestGetNisd(t *testing.T) {
 	c := newClient(t)
 	res, err := c.GetNisds()
-	log.Info("GetNisds: ", res)
+	for _, n := range res {
+		log.Infof("Nisd ID: %s, usage: %d", n.ID, usagePercent(n))
+	}
+	log.Info("total number of nisd's : ", len(res))
 	assert.NoError(t, err)
 }
