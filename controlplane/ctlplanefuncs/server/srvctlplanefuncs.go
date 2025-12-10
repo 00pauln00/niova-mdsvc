@@ -395,15 +395,15 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg) error {
 	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
 
-	log.Debugf("hash generated for chunk: %d", hash)
+	log.Infof("hash generated for chunk: %d, fd: %d", hash, fd)
 	// select entity by index
-	// TODO: handle scenario when there is only one element
 	entityIDX, err := GetIndex(hash, HR.FD[fd].Tree.Len())
 	if err != nil {
+		log.Error("failed to get entity: ", err)
 		return err
 	}
-	log.Debugf("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
-	for i := 0; i <= int(vdev.NumReplica); i++ {
+	log.Infof("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
+	for i := 0; i < int(vdev.NumReplica); i++ {
 		if entityIDX >= HR.FD[fd].Tree.Len() {
 			entityIDX = 0
 		}
@@ -415,7 +415,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
 		if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
 			HR.DeleteNisd(nisd)
-			log.Debug("Deleting NISD: ", nisd.ID)
+			log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
 		}
 
 		// TODO: Don't upate the same nisd-space multiple times
@@ -430,13 +430,21 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 }
 
 func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) error {
-	fd := HR.GetFDLevel(int(vdev.NumReplica))
+	fd, err := HR.GetFDLevel(int(vdev.NumReplica))
+	if err != nil {
+		log.Error("failed to get fd:", err)
+		return err
+	}
 	for i := 0; i <= int(vdev.NumChunks); i++ {
-		log.Trace("allocating nisd for chunk: ", i)
+		log.Info("allocating nisd for chunk: ", i, fd)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
-			log.Error("failed to allocate nisd:", err)
-			return err
+			log.Warn("failed to allocate nisd at fd", fd, err)
+			i--
+			fd, err = ctlplfl.IncFD(fd)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -815,7 +823,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	}
 	chunkInfo := ctlplfl.ChunkNisd{
 		NisdUUIDs:   strings.Join(ids, ","),
-		NumReplicas: uint8(len(rqResult.ResultMap)) - 1,
+		NumReplicas: uint8(len(rqResult.ResultMap)),
 	}
 
 	return pmCmn.Encoder(ENC_TYPE, chunkInfo)

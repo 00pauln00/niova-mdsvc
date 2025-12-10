@@ -315,3 +315,11 @@ func (n *Nisd) Validate() error {
 
 	return nil
 }
+
+func IncFD(fd int) (int, error) {
+	if fd <= DEVICE_IDX {
+		fd++
+		return fd, nil
+	}
+	return fd, errors.New("No device's available to allocate data")
+}

@@ -2,6 +2,7 @@ package srvctlplanefuncs
 
 import (
 	"errors"
+	"fmt"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
@@ -128,13 +129,13 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 }
 
 // Get the Failure Domain Based on the Nisd Count
-func (hr *Hierarchy) GetFDLevel(fltTlrnc int) int {
+func (hr *Hierarchy) GetFDLevel(fltTlrnc int) (int, error) {
 	for i := cpLib.PDU_IDX; i <= cpLib.DEVICE_IDX; i++ {
 		if fltTlrnc < hr.FD[i].Tree.Len() {
-			return i
+			return i, nil
 		}
 	}
-	return -1
+	return -1, fmt.Errorf("failed to allocate vdev as the fault tolerance level cannot be met %d", fltTlrnc)
 }
 
 // Get the total number of elements in a Failure Domain.
