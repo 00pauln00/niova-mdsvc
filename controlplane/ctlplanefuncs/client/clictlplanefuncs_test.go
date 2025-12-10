@@ -54,8 +54,8 @@ func newClient(t *testing.T) *CliCFuncs {
 	return c
 }
 
-func TestPutAndGetSinglePDU(t *testing.T) {
-	c := newClient(t) 
+func TestPutAndGetNisd(t *testing.T) {
+	c := newClient(t)
 
 	pdu := cpLib.PDU{
 		ID: "95f62aee-997e-11f0-9f1b-a70cff4b660b",
@@ -446,7 +446,7 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	log.Infof("Single Device PUT/GET validation successful for %s", device.ID)
 }
 
-func TestPutAndGetMultipleDevices(t *testing.T) {
+func TestPutAndGetDevice(t *testing.T) {
 	c := newClient(t)
 
 	mockDevices := []cpLib.Device{
@@ -869,7 +869,7 @@ func TestMultiCreateVdev(t *testing.T) {
 
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetReq{
-		ID:     vdev1.Cfg.ID,
+		ID:     vdev1.VdevID,
 		GetAll: false,
 	}
 	specificResp, err := c.GetVdevs(getSpecificReq)
@@ -1076,6 +1076,43 @@ func TestVdevNisdChunk(t *testing.T) {
 	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
 	log.Info("Read vdev:", readV)
 	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
+	log.Info("Read Nisd Chunk:", nc)
+}
+
+func TestVdevNisdChunk(t *testing.T) {
+
+	c := newClient(t)
+
+	// // create nisd
+	// mockNisd := cpLib.Nisd{
+	// 	ClientPort: 7001,
+	// 	PeerPort:   8001,
+	// 	ID:         "nisd-001",
+	// 	FailureDomain: []string{
+	// 		"pdu-05",
+	// 		"rack-04",
+	// 		"hv-07",
+	// 		"dev-004",
+	// 	},
+	// 	IPAddr:        "192.168.1.10",
+	// 	TotalSize:     1_000_000_000_000, // 1 TB
+	// 	AvailableSize: 750_000_000_000,   // 750 GB
+	// }
+	// resp, err := c.PutNisd(&mockNisd)
+	// assert.NoError(t, err)
+	// assert.True(t, resp.Success)
+
+	// // create vdev
+	// vdev := &cpLib.Vdev{
+	// 	Cfg: cpLib.VdevCfg{
+	// 		Size: 500 * 1024 * 1024 * 1024,
+	// 	}}
+	// err = c.CreateVdev(vdev)
+	// log.Info("Created Vdev Result: ", vdev)
+	// assert.NoError(t, err)
+	// readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
+	// log.Info("Read vdev:", readV)
+	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
 
