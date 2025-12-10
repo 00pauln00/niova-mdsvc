@@ -438,6 +438,7 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 		log.Error("failed to get fd:", err)
 		return err
 	}
+	log.Infof("Selected Failure Domain %d, for vdev ID: %s & fault tolerance: %d.", fd, vdev.ID, vdev.NumReplica)
 	for i := 0; i <= int(vdev.NumChunks); i++ {
 		log.Info("allocating nisd for chunk: ", i, fd)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
