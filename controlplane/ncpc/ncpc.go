@@ -26,7 +26,6 @@ import (
 	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
-	maps "golang.org/x/exp/maps"
 )
 
 type clientReq struct {
@@ -404,7 +403,7 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 	creq.Request.Operation = op
 	creq.Request.Consistent = !co.relaxedConsistency
 	creq.Request.Key = key
-	resultMap := make(map[string][]byte)
+	resultSlice := make([]PumiceDBCommon.Data, 0)
 	for {
 		var rqb bytes.Buffer
 		var rsb []byte
@@ -441,7 +440,7 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 		}
 
 		// copy result to global result variable
-		maps.Copy(resultMap, rso.ResultMap)
+		resultSlice = append(resultSlice, rso.Result...)
 		//Change sequence number and key for next iteration
 		seqNum = rso.SeqNum
 		key = rso.Key
@@ -450,8 +449,7 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 		}
 	}
 	co.clientReqArr = append(co.clientReqArr, creq)
-	maps.Clear(co.clientReqArr[0].Response.ResultMap)
-	maps.Copy(co.clientReqArr[0].Response.ResultMap, resultMap)
+	co.clientReqArr[0].Response.Result = resultSlice
 
 	return json.MarshalIndent(co.clientReqArr, "", " ")
 }

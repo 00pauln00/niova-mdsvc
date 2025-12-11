@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 )
 
 const ( // Key Prefixes
@@ -25,10 +26,12 @@ type ParseEntity interface {
 	GetEntity(entity Entity) Entity
 }
 
-func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
+func ParseEntities[T Entity](readResult []pmCmn.Data, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
-	for k, v := range readResult {
+	for _, entry := range readResult {
+		k := entry.Key
+		v := entry.Value
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
 			continue

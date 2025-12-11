@@ -1,5 +1,9 @@
 package requestResponseLib
 
+import (
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+)
+
 const (
 	KV_WRITE      int = 0
 	KV_READ           = 1
@@ -20,7 +24,7 @@ type KVRequest struct {
 type KVResponse struct {
 	Status       int
 	Key          string
-	ResultMap    map[string][]byte
+	Result       []pmCmn.Data
 	ContinueRead bool
 	Prefix       string
 	SeqNum       uint64
