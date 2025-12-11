@@ -259,7 +259,17 @@ func main() {
 		var response requestResponseLib.KVResponse
 		dec := gob.NewDecoder(bytes.NewBuffer(value))
 		dec.Decode(&response)
-		fmt.Println("Value : ", string(response.ResultMap[appHandler.raftUUID+"_Port_Range"]))
+
+		// Search for the key in the result slice
+		targetKey := appHandler.raftUUID + "_Port_Range"
+		var portRangeValue string
+		for _, entry := range response.Result {
+			if entry.Key == targetKey {
+				portRangeValue = string(entry.Value)
+				break
+			}
+		}
+		fmt.Println("Value : ", portRangeValue)
 	}
 	fmt.Println("Error in operation : ", err)
 }

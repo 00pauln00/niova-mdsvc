@@ -559,11 +559,14 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		log.Trace("read - ", reqStruct.SeqNum)
 		readResult, err := nso.pso.ReadKV(readArgs.UserID, reqStruct.Key,
 			int64(keyLen), colmfamily)
-		singleReadMap := make(map[string][]byte)
-		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
-			Key:       reqStruct.Key,
-			ResultMap: singleReadMap,
+			Key: reqStruct.Key,
+			Result: []PumiceDBCommon.Data{
+				{
+					Key:   reqStruct.Key,
+					Value: readResult,
+				},
+			},
 		}
 		readErr = err
 
@@ -583,7 +586,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		}
 		resultResponse = requestResponseLib.KVResponse{
 			Prefix:       reqStruct.Key,
-			ResultMap:    readResult.ResultMap,
+			Result:       readResult.Result,
 			ContinueRead: cRead,
 			Key:          readResult.LastKey,
 			SeqNum:       readResult.SeqNum,
