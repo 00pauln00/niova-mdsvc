@@ -331,20 +331,20 @@ func (co *clientHandler) write(wresult bool) ([]byte, error) {
 		wg.Add(1)
 		requestLimiter <- 1
 		co.clientReqArr[i].Request.Operation = requestResponseLib.KV_WRITE
-		go func(itr int) {
+		go func(itr int, rncui string) {
 			defer func() {
 				wg.Done()
 				<-requestLimiter
 			}()
 
 			err = func() error {
-				err := co.prepNSendReq(uuid.NewV4().String()+":0:0:0:0", true, itr)
+				err := co.prepNSendReq(rncui, true, itr)
 				return err
 			}()
 			if err != nil {
 				return
 			}
-		}(i)
+		}(i, uuid.NewV4().String()+":0:0:0:0")
 	}
 	wg.Wait()
 	file, err := json.MarshalIndent(co.clientReqArr, "", " ")
@@ -414,14 +414,15 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 		creq.Request.SeqNum = seqNum
 
 		rso := &creq.Response
-		err = PumiceDBCommon.PrepareAppPumiceRequest(creq.Request, "", &rqb)
+
+		encoder := gob.NewEncoder(&rqb)
+		err = encoder.Encode(creq.Request)
 		if err != nil {
-			log.Error("Pumice request creation error : ", err)
-			break
+			log.Error("Encoding error : ", err)
 		}
 
-		//Send the range request
-		rsb, err = co.clientAPIObj.Request(rqb.Bytes(), "", false)
+		//Send the request
+		rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app", false)
 		if err != nil {
 			log.Error("Error while sending request : ", err)
 		}
