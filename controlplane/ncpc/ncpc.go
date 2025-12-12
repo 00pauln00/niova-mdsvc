@@ -306,7 +306,7 @@ func (co *clientHandler) prepNSendReq(rncui string, isWrite bool, itr int) error
 	}
 
 	//Send the request
-	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app?rncui="+rncui, isWrite)
+	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app?rncui="+rncui+"&wsn=0", isWrite)
 	if err != nil {
 		return err
 	}
@@ -696,7 +696,7 @@ func (clientObj *clientHandler) performLeaseReq(resource, client string) ([]byte
 		log.Error("Error while preparing lease handlers : ", err)
 		return nil, err
 	}
-	err = lrh.InitLeaseReq(client, resource, uuid.NewV4().String()+":0:0:0:0", op)
+	err = lrh.InitLeaseReq(client, resource, op)
 	if err != nil {
 		log.Error("error while initializing lease req : ", err)
 		return nil, err

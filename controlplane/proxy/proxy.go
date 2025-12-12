@@ -423,13 +423,14 @@ func (handler *proxyHandler) dumpConfigToFile(outfilepath string) error {
 	return nil
 }
 
-func (handler *proxyHandler) PutLeaseHandlerCB(rncui string, request []byte, response *[]byte) error {
+func (handler *proxyHandler) PutLeaseHandlerCB(rncui string, wsn int64, request []byte, response *[]byte) error {
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:      rncui,
 		ReqType:	PumiceDBCommon.LEASE_REQ,
 		Request:  	request,
 		GetReply: 	0,
 		Reply:    response,
+		WriteSeqNum: wsn,
 	}
 
 	err := handler.pmdbClientObj.Put(reqArgs)
@@ -457,13 +458,14 @@ func (handler *proxyHandler) GetLeaseHandlerCB(request []byte, response *[]byte)
 	return res
 }
 
-func (handler *proxyHandler) PutKVHandlerCB(rncui string, request []byte, response *[]byte) error {
+func (handler *proxyHandler) PutKVHandlerCB(rncui string, wsn int64, request []byte, response *[]byte) error {
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:      rncui,
 		ReqType:	PumiceDBCommon.APP_REQ,
 		Request:  	request,
 		GetReply: 	0,
 		Reply:    response,
+		WriteSeqNum: wsn,
 	}
 
 	// The KV write only needs to send data to PMDB
@@ -554,7 +556,7 @@ Return(s) : error
 
 Description : Call back for PMDB write func requests to HTTP server.
 */
-func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, body []byte, response *[]byte, reader *http.Request) error {
+func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string,  wsn int64, body []byte, response *[]byte, reader *http.Request) error {
 	log.Info("FuncHandlerCB called with name: ", name)
 	encType := GetEncodingType(reader)
 	res, err := DecodeRequest(encType, name, body)
@@ -568,6 +570,8 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, body []
 		Request:  	 encode(r),
 		GetReply: 	 1,
 		Reply:    	 response,
+		WriteSeqNum: wsn,
+		ReqType:	 PumiceDBCommon.FUNC_REQ,
 	}
 	err = handler.pmdbClientObj.Put(reqArgs)
 	if err != nil {
