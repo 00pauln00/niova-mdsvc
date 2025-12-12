@@ -45,7 +45,7 @@ type clientHandler struct {
 	configPath         string
 	logPath            string
 	resultFile         string
-	rncui              string
+	lookoutID          string
 	rangeQuery         bool
 	relaxedConsistency bool
 	count              int
@@ -207,7 +207,7 @@ func (handler *clientHandler) getCmdParams() {
 	flag.StringVar(&handler.logPath, "l", "/tmp/temp.log", "Log path")
 	flag.StringVar(&handler.operation, "o", "rw", "Specify the opeation to perform")
 	flag.StringVar(&handler.resultFile, "j", "json_output", "Path along with file name for the resultant json file")
-	flag.StringVar(&handler.rncui, "u", uuid.NewV4().String()+":0:0:0:0", "RNCUI for request / Lookout uuid")
+	flag.StringVar(&handler.lookoutID, "u", "", "Lookout uuid")
 	flag.IntVar(&handler.count, "n", 1, "Write number of key/value pairs per key type (Default 1 will write the passed key/value)")
 	flag.BoolVar(&handler.relaxedConsistency, "r", false, "Set this flag if range could be performed with relaxed consistency")
 	flag.IntVar(&handler.seed, "s", 10, "Seed value")
@@ -609,7 +609,7 @@ func (clientObj *clientHandler) processProxyStat() ([]byte, error) {
 
 func (clientObj *clientHandler) processLookoutInfo() ([]byte, error) {
 	clientObj.clientAPIObj.ServerChooseAlgorithm = 2
-	clientObj.clientAPIObj.UseSpecificServerName = clientObj.rncui
+	clientObj.clientAPIObj.UseSpecificServerName = clientObj.lookoutID
 
 	var b bytes.Buffer
 	var r []byte
