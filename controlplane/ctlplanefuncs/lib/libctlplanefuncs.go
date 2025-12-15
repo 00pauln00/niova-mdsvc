@@ -157,6 +157,11 @@ type NisdChunk struct {
 	Chunk []int
 }
 
+type NisdCopy struct {
+	AvailableSize int64
+	Ptr           *Nisd
+}
+
 type VdevCfg struct {
 	XMLName      xml.Name `xml:"Vdev"`
 	ID           string

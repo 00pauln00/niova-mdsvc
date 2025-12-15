@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
 	cbtree "github.com/tidwall/btree"
 )
@@ -32,6 +33,7 @@ type FailureDomain struct {
 type Hierarchy struct {
 	FD            []FailureDomain
 	AvailableSize uint64
+	NisdMap       map[string]*ctlplfl.NisdCopy
 }
 
 var HR Hierarchy
@@ -152,9 +154,19 @@ func (hr *Hierarchy) GetEntityLen(entity int) int {
 	return hr.FD[entity].Tree.Len()
 }
 
+func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
+	if nisdPtr, exists := hr.NisdMap[nisd.ID]; exists {
+		return nisdPtr
+	}
+	hr.NisdMap[nisd.ID] = &ctlplfl.NisdCopy{
+		AvailableSize: (nisd.AvailableSize),
+		Ptr:           nisd,
+	}
+	return hr.NisdMap[nisd.ID]
+}
+
 // Pick a  NISD using the hash from a specific failure domain.
 func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, error) {
-
 	if int(fd) >= len(hr.FD) {
 		log.Error("failed to get fd: ", fd)
 		return nil, errors.New("invalid fd tier")
@@ -175,13 +187,30 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, 
 		return nil, err
 	}
 
-	nisd, ok := ent.Nisds.GetAt(idx)
-	if !ok {
-		log.Error("failed to get nisd from tree at idx: ", idx)
-		return nil, errors.New("selection failure")
-	}
+	for i := 0; i < ent.Nisds.Len(); i++ {
+		nisd, ok := ent.Nisds.GetAt(idx)
+		if !ok {
+			log.Error("failed to get nisd from tree at idx: ", idx)
+			return nil, errors.New("selection failure")
+		}
 
-	return nisd, nil
+		// update the map details here
+		nCopy := HR.UpdateNisdCopy(nisd)
+
+		// check if the nisd can be picked or not by checking the nisd available space from the nisd map,
+		// if the space is available then pick the nisd
+		if nCopy.AvailableSize >= ctlplfl.CHUNK_SIZE {
+			nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
+			HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
+			return nisd, nil
+		}
+		idx++
+		if idx >= ent.Nisds.Len() {
+			idx = 0
+		}
+
+	}
+	return nil, fmt.Errorf("failed to pick nisd from the entity: ", entityIDX)
 }
 
 func (h *Hierarchy) Dump() {

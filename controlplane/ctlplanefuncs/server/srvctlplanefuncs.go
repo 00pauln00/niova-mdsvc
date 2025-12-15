@@ -345,10 +345,10 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, i int, commitChgs *[]
 		Key:   []byte(nKey),
 		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
 	})
-	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
-		Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
-	})
+	// *commitChgs = append(*commitChgs, funclib.CommitChg{
+	// 	Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
+	// 	Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
+	// })
 
 }
 
@@ -411,6 +411,8 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 			entityIDX = 0
 			log.Info("resetting entity idx to zero")
 		}
+
+		// TODO: needs to fixed on error what are we goinf to do here?
 		nisd, err := HR.PickNISD(fd, entityIDX, hash)
 		if err != nil {
 			return err
@@ -418,12 +420,11 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		log.Infof("picked nisd: %+v", nisd)
 
 		// Reduce nisd & hierarchy available space
-		nisd.AvailableSize -= ctlplfl.CHUNK_SIZE
-		HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
-		if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
-			HR.DeleteNisd(nisd)
-			log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
-		}
+
+		// if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
+		// 	HR.DeleteNisd(nisd)
+		// 	log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
+		// }
 		// TODO: Don't upate the same nisd-space multiple times
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 		// update hash
@@ -468,6 +469,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Debug("Allocating vdev for ID: ", vdev.Cfg.ID)
+	HR.NisdMap = make(map[string]*ctlplfl.NisdCopy, 0)
 	// allocate nisd chunks to vdev
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
@@ -481,7 +483,20 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
 	}
 
+	for k, v := range HR.NisdMap {
+		funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, k), AVAIL_SPACE)),
+			Value: []byte(strconv.Itoa(int(v.AvailableSize))),
+		})
+	}
 	applyKV(funcIntrm.Changes, cbArgs)
+
+	for _, v := range HR.NisdMap {
+		v.Ptr.AvailableSize = v.AvailableSize
+		if v.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
+			HR.DeleteNisd(v.Ptr)
+		}
+	}
 
 	return r, nil
 }
