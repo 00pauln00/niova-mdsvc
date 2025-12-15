@@ -583,7 +583,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		}
 		resultResponse = requestResponseLib.KVResponse{
 			Prefix:       reqStruct.Key,
-			ResultMap:    readResult.ResultMap,
+			Result:       readResult.Result,
 			ContinueRead: cRead,
 			Key:          readResult.LastKey,
 			SeqNum:       readResult.SeqNum,

@@ -110,8 +110,8 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	log.Info("Read result by Vdev", readResult)
-	for key, _ := range readResult.ResultMap {
-		c := strings.Split(key, "/")
+	for _, entry := range readResult.Result {
+		c := strings.Split(entry.Key, "/")
 
 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
 		seq, err := strconv.ParseUint(c[len(c)-1], 10, 64)
@@ -214,7 +214,7 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.Result, nisdParser{})
 	return pmCmn.Encoder(pmCmn.GOB, nisdList)
 }
 
@@ -233,7 +233,7 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.Result, nisdParser{})
 	return pmCmn.Encoder(pmCmn.GOB, nisdList[0])
 }
 
@@ -243,7 +243,7 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, nisdParser{})
+	nisdList := ParseEntities[ctlplfl.Nisd](readResult.Result, nisdParser{})
 	return nisdList, nil
 }
 
@@ -275,7 +275,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceWithPartitionParser{})
+	deviceList := ParseEntities[ctlplfl.Device](readResult.Result, deviceWithPartitionParser{})
 	return pmCmn.Encoder(pmCmn.GOB, deviceList)
 }
 
@@ -470,7 +470,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
+	pt := ParseEntities[ctlplfl.DevicePartition](readResult.Result, ptParser{})
 	return pmCmn.Encoder(pmCmn.GOB, pt)
 }
 
@@ -505,7 +505,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure: ", err)
 		return nil, err
 	}
-	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
+	pduList := ParseEntities[ctlplfl.PDU](readResult.Result, pduParser{})
 
 	return pmCmn.Encoder(pmCmn.GOB, pduList)
 
@@ -544,7 +544,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
+	rackList := ParseEntities[ctlplfl.Rack](readResult.Result, rackParser{})
 	response, err := pmCmn.Encoder(pmCmn.GOB, rackList)
 	if err != nil {
 		log.Error("failed to encode rack info:", err)
@@ -590,7 +590,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
+	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.Result, hvParser{})
 
 	return pmCmn.Encoder(pmCmn.GOB, hvList)
 }
@@ -610,7 +610,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	// ParseEntitiesMap now returns map[string]Entity
-	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, nisdParser{})
+	nisdEntityMap := ParseEntitiesMap(nisdResult.Result, nisdParser{})
 
 	readResult, err := PumiceDBServer.RangeReadKV(cbArgs.UserID, key, int64(len(key)), key, cbArgs.ReplySize, false, 0, colmfamily)
 	if err != nil {
@@ -622,8 +622,9 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	// top-level map: vdevID -> (nisdID -> *NisdChunk)
 	vdevNisdChunkMap := make(map[string]map[string]*ctlplfl.NisdChunk)
 
-	for k, value := range readResult.ResultMap {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
+	for _, entry := range readResult.Result {
+		value := entry.Value
+		parts := strings.Split(strings.Trim(entry.Key, "/"), "/")
 		vdevID := parts[BASE_UUID_PREFIX]
 		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
 		if _, ok := vdevMap[vdevID]; !ok {
@@ -729,8 +730,9 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	// TODO: move this to parsing file
-	for k, v := range rqResult.ResultMap {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
+	for _, entry := range rqResult.Result {
+		v := entry.Value
+		parts := strings.Split(strings.Trim(entry.Key, "/"), "/")
 		if parts[BASE_UUID_PREFIX] != vdevInfo.ID {
 			continue
 		}
@@ -813,8 +815,9 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	var nisdArgs ctlplfl.NisdArgs
-	for k, v := range readResult.ResultMap {
-		parts := strings.Split(strings.Trim(k, "/"), "/")
+	for _, entry := range readResult.Result {
+		v := entry.Value
+		parts := strings.Split(strings.Trim(entry.Key, "/"), "/")
 		if len(parts) < 2 {
 			continue
 		}
