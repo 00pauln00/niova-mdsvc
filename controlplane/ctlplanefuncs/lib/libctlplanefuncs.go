@@ -78,6 +78,8 @@ type SnapXML struct {
 
 type ResponseXML struct {
 	Name    string `xml:"name"`
+	ID      string `xml:"ID"`
+	Error   string
 	Success bool
 }
 

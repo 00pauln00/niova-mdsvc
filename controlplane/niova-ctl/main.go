@@ -6757,12 +6757,14 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			// Call CreateVdev from control plane client
 			if m.cpClient != nil && m.cpConnected {
 				log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
-				if err := m.cpClient.CreateVdev(vdev); err != nil {
+				resp, err := m.cpClient.CreateVdev(vdev)
+				if err != nil {
 					log.Error("CreateVdev failed: ", err)
 					m.message = fmt.Sprintf("Failed to create Vdev: %v", err)
 					return m, nil
 				}
-				log.Info("Vdev created successfully: ", vdev.Cfg.ID)
+				log.Info("Vdev created successfully: ", resp.ID)
+				// TODO: Remove this here
 				m.currentVdev = *vdev
 				m.state = stateShowAddedVdev
 				m.message = "Vdev created successfully"

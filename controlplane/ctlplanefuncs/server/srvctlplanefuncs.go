@@ -360,9 +360,9 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	// Decode the input buffer into structure format
 	vdev = args[0].(ctlplfl.Vdev)
 	vdev.Init()
-	if HR.AvailableSize < uint64(vdev.Cfg.Size)*uint64(vdev.Cfg.NumReplica) {
-		return nil, fmt.Errorf("Not enough space available to allocate vdev")
-	}
+	// if HR.AvailableSize < uint64(vdev.Cfg.Size)*uint64(vdev.Cfg.NumReplica) {
+	// 	return nil, fmt.Errorf("Not enough space available to allocate vdev")
+	// }
 	log.Debug("Initializing vdev with size: ", vdev)
 	key := getConfKey(vdevKey, vdev.Cfg.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
@@ -412,9 +412,11 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 			log.Info("resetting entity idx to zero")
 		}
 
-		// TODO: needs to fixed on error what are we goinf to do here?
+		// TODO: On failing to pick nisd, what are we going to do?
+		// if we have failure's to pick a nisd, what should we do here?
 		nisd, err := HR.PickNISD(fd, entityIDX, hash)
 		if err != nil {
+			log.Errorf("failed to pick nisd")
 			return err
 		}
 		log.Infof("picked nisd: %+v", nisd)
@@ -425,7 +427,6 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		// 	HR.DeleteNisd(nisd)
 		// 	log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
 		// }
-		// TODO: Don't upate the same nisd-space multiple times
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 		// update hash
 		hashByte := make([]byte, 8)
@@ -464,6 +465,10 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var vdev ctlplfl.Vdev
 	var funcIntrm funclib.FuncIntrm
+	resp := ctlplfl.ResponseXML{
+		Name:    "vdev",
+		Success: true,
+	}
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
@@ -474,31 +479,28 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
 		log.Error("Failed to Allocate NISD: ", err)
-		return nil, err
+		resp.Success = false
+		resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
 	}
-
-	r, err := pmCmn.Encoder(pmCmn.GOB, vdev)
-	if err != nil {
-		log.Error("Failed to marshal vdev response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-	}
-
-	for k, v := range HR.NisdMap {
-		funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, k), AVAIL_SPACE)),
-			Value: []byte(strconv.Itoa(int(v.AvailableSize))),
-		})
-	}
-	applyKV(funcIntrm.Changes, cbArgs)
-
-	for _, v := range HR.NisdMap {
-		v.Ptr.AvailableSize = v.AvailableSize
-		if v.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
-			HR.DeleteNisd(v.Ptr)
+	if resp.Success {
+		for k, v := range HR.NisdMap {
+			funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
+				Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, k), AVAIL_SPACE)),
+				Value: []byte(strconv.Itoa(int(v.AvailableSize))),
+			})
+		}
+		applyKV(funcIntrm.Changes, cbArgs)
+		for _, v := range HR.NisdMap {
+			v.Ptr.AvailableSize = v.AvailableSize
+			if v.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
+				HR.DeleteNisd(v.Ptr)
+			}
 		}
 	}
 
-	return r, nil
+	HR.NisdMap = nil
+
+	return pmCmn.Encoder(pmCmn.GOB, resp)
 }
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {

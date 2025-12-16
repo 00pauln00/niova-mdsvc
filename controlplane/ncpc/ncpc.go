@@ -884,12 +884,12 @@ func main() {
 		vdev := &cpLib.Vdev{Cfg: cpLib.VdevCfg{
 			Size: vdevSize,
 		}}
-		err = c.CreateVdev(vdev)
+		resp, err := c.CreateVdev(vdev)
 		if err != nil {
 			log.Error("failed to create vdev:", err)
 			os.Exit(-1)
 		}
-		log.Info("Vdev created successfully with UUID:", vdev)
+		log.Info("Vdev created successfully with UUID:", resp)
 		// case "GetVdev":
 		// 	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		// 	vdev, err := c.GetVdevCfg(&cpLib.GetReq{
