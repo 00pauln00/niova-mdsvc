@@ -396,43 +396,65 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 }
 
 func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg) error {
+
+	treeLen := HR.FD[fd].Tree.Len()
+	if treeLen == 0 {
+		return fmt.Errorf("no entities available in failure domain %s", fd)
+	}
+
 	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
 
 	log.Infof("hash generated for chunk: %d, fd: %d", hash, fd)
 	// select entity by index
-	entityIDX, err := GetIndex(hash, HR.FD[fd].Tree.Len())
+	entityIDX, err := GetIndex(hash, treeLen)
 	if err != nil {
 		log.Error("failed to get entity: ", err)
 		return err
 	}
-	log.Infof("selecting from entity: %d from %d", entityIDX, HR.FD[fd].Tree.Len())
+
+	log.Infof("selecting from entity: %d from %d", entityIDX, treeLen)
+
+	// track NISDs already selected for this allocation
+	picked := make(map[string]struct{})
 	for i := 0; i < int(vdev.NumReplica); i++ {
-		if entityIDX >= HR.FD[fd].Tree.Len() {
-			entityIDX = 0
-			log.Info("resetting entity idx to zero")
+		var (
+			nisd *ctlplfl.Nisd
+			err  error
+		)
+
+		attempts := 0
+
+		for attempts < treeLen {
+			nisd, err = HR.PickNISD(fd, entityIDX, hash, picked)
+			if err == nil {
+				break
+			}
+			log.Warnf(
+				"pick failed for replica=%d entityIDX=%d attempt=%d err=%v",
+				i, entityIDX, attempts, err,
+			)
+			entityIDX = (entityIDX + 1) % treeLen
+			attempts++
+
 		}
 
-		// TODO: On failing to pick nisd, what are we going to do?
-		// if we have failure's to pick a nisd, what should we do here?
-		nisd, err := HR.PickNISD(fd, entityIDX, hash)
 		if err != nil {
-			log.Errorf("failed to pick nisd")
-			return err
+			return fmt.Errorf(
+				"failed to allocate replica %d after trying %d entities",
+				i, treeLen,
+			)
 		}
+
 		log.Infof("picked nisd: %+v", nisd)
-
-		// Reduce nisd & hierarchy available space
-
-		// if nisd.AvailableSize < ctlplfl.CHUNK_SIZE {
-		// 	HR.DeleteNisd(nisd)
-		// 	log.Infof("Deleted NISD: Available size < 8GB: %s, size: %d", nisd.ID, nisd.AvailableSize)
-		// }
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
-		// update hash
-		hashByte := make([]byte, 8)
-		binary.BigEndian.PutUint64(hashByte, hash)
-		hash = ctlplfl.Hash64(hashByte)
-		entityIDX += 1
+
+		// advance base index only after success
+		entityIDX = (entityIDX + 1) % treeLen
+
+		// decorrelate next replica
+		var buf [8]byte
+		binary.BigEndian.PutUint64(buf[:], hash)
+		hash = ctlplfl.Hash64(buf[:])
 	}
 	return nil
 }
