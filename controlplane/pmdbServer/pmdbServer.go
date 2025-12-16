@@ -185,6 +185,11 @@ func main() {
 	serverHandler.exportTags()
 }
 
+func appdecode(payload []byte, op interface{}) error {
+	dec := gob.NewDecoder(bytes.NewBuffer(payload))
+	return dec.Decode(op)
+}
+
 func (handler *pmdbServerHandler) checkPMDBLiveness() {
 	for {
 		ok := handler.lookoutInstance.CheckLiveness(handler.peerUUID.String())
@@ -500,7 +505,7 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	// Decode the input buffer into structure format
 	applyNiovaKV := &requestResponseLib.KVRequest{}
 	// register datatypes for decoding interface
-	decodeErr := nso.pso.DecodeApplicationReq(applyArgs.Payload, applyNiovaKV)
+	decodeErr := appdecode(applyArgs.Payload, applyNiovaKV)
 	if decodeErr != nil {
 		log.Error("Failed to decode the application data")
 		return -1
@@ -518,7 +523,7 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	valLen := len(byteToStr)
 
 	log.Trace("Write the KeyValue by calling PmdbWriteKV")
-	rc := nso.pso.WriteKV(applyArgs.UserID, applyArgs.PmdbHandler,
+	rc := PumiceDBServer.PmdbWriteKV(applyArgs.UserID, applyArgs.PmdbHandler,
 		applyNiovaKV.Key,
 		int64(keyLength), byteToStr,
 		int64(valLen), colmfamily)
@@ -538,7 +543,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 
 	//Decode the request structure sent by client.
 	reqStruct := &requestResponseLib.KVRequest{}
-	decodeErr := nso.pso.DecodeApplicationReq(readArgs.Payload, reqStruct)
+	decodeErr := appdecode(readArgs.Payload, reqStruct)
 
 	if decodeErr != nil {
 		log.Error("Failed to decode the read request")
@@ -557,8 +562,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if reqStruct.Operation == requestResponseLib.KV_READ {
 
 		log.Trace("read - ", reqStruct.SeqNum)
-		readResult, err := nso.pso.ReadKV(readArgs.UserID, reqStruct.Key,
-			int64(keyLen), colmfamily)
+		readResult, err := PumiceDBServer.PmdbReadKV(reqStruct.Key, int64(keyLen), colmfamily)
 		singleReadMap := make(map[string][]byte)
 		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
@@ -570,7 +574,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult, err := nso.pso.RangeReadKV(readArgs.UserID,
+		readResult, err := PumiceDBServer.RangeReadKV(readArgs.UserID,
 			reqStruct.Key,
 			int64(keyLen), reqStruct.Prefix,
 			(readArgs.ReplySize - int64(encodingOverhead)),
