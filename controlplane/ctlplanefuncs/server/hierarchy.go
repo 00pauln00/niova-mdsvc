@@ -31,9 +31,9 @@ type FailureDomain struct {
 // Index 2 - HyperVisor
 // Index 3 - Device
 type Hierarchy struct {
-	FD            []FailureDomain
-	AvailableSize uint64
-	NisdMap       map[string]*ctlplfl.NisdCopy
+	FD []FailureDomain
+	// AvailableSize uint64
+	NisdMap map[string]*ctlplfl.NisdCopy
 }
 
 var HR Hierarchy
@@ -117,7 +117,7 @@ func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 		e := hr.FD[cpLib.DEVICE_IDX].getOrCreateEntity(n.FailureDomain[cpLib.DEVICE_IDX])
 		e.Nisds.Set(n)
 	}
-	hr.AvailableSize += uint64(n.AvailableSize)
+	// hr.AvailableSize += uint64(n.AvailableSize)
 	return nil
 }
 
@@ -132,7 +132,7 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 		e.Nisds.Delete(n)
 		fd.deleteEmptyEntity(id)
 	}
-	HR.AvailableSize -= uint64(n.AvailableSize) // remove the nisd's available space as well
+	// HR.AvailableSize -= uint64(n.AvailableSize) // remove the nisd's available space as well
 	return nil
 }
 
@@ -201,7 +201,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, 
 		// if the space is available then pick the nisd
 		if nCopy.AvailableSize >= ctlplfl.CHUNK_SIZE {
 			nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
-			HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
+			// HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
 			return nisd, nil
 		}
 		idx++
@@ -210,7 +210,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, 
 		}
 
 	}
-	return nil, fmt.Errorf("failed to pick nisd from the entity: ", entityIDX)
+	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", entityIDX)
 }
 
 func (h *Hierarchy) Dump() {
