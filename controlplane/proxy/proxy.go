@@ -428,7 +428,7 @@ func (handler *proxyHandler) PutLeaseHandlerCB(rncui string, wsn int64, request 
 		Rncui:      rncui,
 		ReqType:	PumiceDBCommon.LEASE_REQ,
 		Request:  	request,
-		GetReply: 	0,
+		GetReply: 	1,
 		Reply:    response,
 		WriteSeqNum: wsn,
 	}
@@ -436,13 +436,13 @@ func (handler *proxyHandler) PutLeaseHandlerCB(rncui string, wsn int64, request 
 	err := handler.pmdbClientObj.Put(reqArgs)
 	var responseObj requestResponseLib.KVResponse
 	if err != nil {
+		log.Error("Error in PutLeaseHandlerCB: ", err)
 		responseObj.Status = 1
+		var responseBuffer bytes.Buffer
+		enc := gob.NewEncoder(&responseBuffer)
+		err = enc.Encode(responseObj)
+		*response = responseBuffer.Bytes()
 	}
-
-	var responseBuffer bytes.Buffer
-	enc := gob.NewEncoder(&responseBuffer)
-	err = enc.Encode(responseObj)
-	*response = responseBuffer.Bytes()
 
 	return err
 }

@@ -696,6 +696,11 @@ func (clientObj *clientHandler) performLeaseReq(resource, client string) ([]byte
 		log.Error("Error while preparing lease handlers : ", err)
 		return nil, err
 	}
+
+	if (op != leaseLib.LOOKUP) && (op != leaseLib.LOOKUP_VALIDATE) {
+		lrh.Rncui, lrh.WSN = uuid.NewV4().String()+":0:0:0:0", 0
+	}
+
 	err = lrh.InitLeaseReq(client, resource, op)
 	if err != nil {
 		log.Error("error while initializing lease req : ", err)
