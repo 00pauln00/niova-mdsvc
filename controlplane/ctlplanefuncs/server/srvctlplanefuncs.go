@@ -448,14 +448,14 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 		log.Info("allocating nisd for chunk: ", i, fd)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
-			log.Errorf("failed to allocate nisd: %v", fd, err)
-			return err
-			// i--
-			// fd, err = ctlplfl.IncFD(fd)
-			// if err != nil {
-			// 	log.Errorf("failed to allocate nisd: ", fd)
-			// 	return err
-			// }
+			i--
+			fd, err = ctlplfl.IncFD(fd)
+			if err != nil {
+				log.Errorf("failed to allocate nisd: ", fd)
+				return err
+			}
+			log.Warn("failed to allocate nisd in the previous fd, retrying in: ", fd)
+
 		}
 	}
 	return nil
@@ -475,6 +475,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Debug("Allocating vdev for ID: ", vdev.Cfg.ID)
 	HR.NisdMap = make(map[string]*ctlplfl.NisdCopy, 0)
+	HR.Dump()
 	// allocate nisd chunks to vdev
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
@@ -497,7 +498,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 			}
 		}
 	}
-
+	HR.Dump()
 	HR.NisdMap = nil
 
 	return pmCmn.Encoder(pmCmn.GOB, resp)

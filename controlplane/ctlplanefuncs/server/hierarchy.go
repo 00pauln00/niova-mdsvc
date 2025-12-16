@@ -201,16 +201,16 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64) (*cpLib.Nisd, 
 		// if the space is available then pick the nisd
 		if nCopy.AvailableSize >= ctlplfl.CHUNK_SIZE {
 			nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
-			// HR.AvailableSize -= uint64(ctlplfl.CHUNK_SIZE)
 			return nisd, nil
 		}
-		idx++
-		if idx >= ent.Nisds.Len() {
-			idx = 0
-		}
 
+		idx = (idx + 1) % ent.Nisds.Len()
 	}
 	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", entityIDX)
+}
+func BytesToGB(b int64) float64 {
+	const gb = 1024 * 1024 * 1024
+	return float64(b) / float64(gb)
 }
 
 func (h *Hierarchy) Dump() {
@@ -236,7 +236,7 @@ func (h *Hierarchy) Dump() {
 				if n == nil {
 					return true
 				}
-				log.Infof("    Nisd: %s\n", n.ID)
+				log.Infof("    Nisd: %s: %f GB\n", n.ID, BytesToGB(n.AvailableSize))
 				return true
 			})
 

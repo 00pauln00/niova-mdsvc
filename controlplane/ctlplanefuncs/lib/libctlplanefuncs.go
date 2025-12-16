@@ -324,7 +324,7 @@ func (n *Nisd) Validate() error {
 }
 
 func IncFD(fd int) (int, error) {
-	if fd <= DEVICE_IDX {
+	if fd < DEVICE_IDX {
 		fd++
 		return fd, nil
 	}
