@@ -466,7 +466,7 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 		return err
 	}
 	log.Infof("Selected Failure Domain %d, for vdev ID: %s & fault tolerance: %d.", fd, vdev.ID, vdev.NumReplica)
-	for i := 0; i <= int(vdev.NumChunks); i++ {
+	for i := 0; i < int(vdev.NumChunks); i++ {
 		log.Info("allocating nisd for chunk: ", i, fd)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
@@ -497,7 +497,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Debug("Allocating vdev for ID: ", vdev.Cfg.ID)
 	HR.NisdMap = make(map[string]*ctlplfl.NisdCopy, 0)
-	// HR.Dump()
+	HR.Dump()
 	// allocate nisd chunks to vdev
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
@@ -514,7 +514,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 			}
 		}
 	}
-	// HR.Dump()
+	HR.Dump()
 	HR.NisdMap = nil
 
 	return pmCmn.Encoder(pmCmn.GOB, resp)
