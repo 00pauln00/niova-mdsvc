@@ -53,6 +53,7 @@ const (
 	RACK_IDX   = 1
 	HV_IDX     = 2
 	DEVICE_IDX = 3
+	MAX_FD     = 4
 )
 
 // Define Snapshot XML structure
