@@ -211,6 +211,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 		}
 
 		idx = (idx + 1) % ent.Nisds.Len()
+		log.Info("index : ", idx)
 	}
 	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", entityIDX)
 }
