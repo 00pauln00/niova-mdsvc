@@ -166,7 +166,7 @@ func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}) (*cpLib.Nisd, error) {
+func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}) (*cpLib.NisdCopy, error) {
 	if int(fd) >= len(hr.FD) {
 		log.Error("failed to get fd: ", fd)
 		return nil, errors.New("invalid fd tier")
@@ -206,7 +206,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 			if _, exists := picked[nCopy.Ptr.ID]; !exists {
 				// commit selection
 				picked[nCopy.Ptr.ID] = struct{}{}
-				return nisd, nil
+				return nCopy, nil
 			}
 		}
 
