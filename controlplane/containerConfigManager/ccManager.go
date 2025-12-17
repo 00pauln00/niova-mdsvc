@@ -19,11 +19,10 @@ const GEN_CONF_FILE = "config-gen.yaml"
 const ZERO_INDEX = 0
 
 type Nisd struct {
-	ClientPort uint16 `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort   uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID         string `xml:"ID" json:"ID" yaml:"uuid"`
-	DevID      string `xml:"DevID" json:"DevID" yaml:"name"`
-	IPAddr     string `xml:"IPAddr" json:"IPAddr" yaml:"-"`
+	ClientPort uint16 `yaml:"client_port"`
+	PeerPort   uint16 `yaml:"peer_port"`
+	ID         string `yaml:"uuid"`
+	DevID      string `yaml:"name"`
 	InitDev    bool   `yaml:"init"`
 	Args       string `yaml:"cmdline_args"`
 }
@@ -111,7 +110,7 @@ func main() {
 		conf.NisdConfig[i].ID = nisdInfo.ID
 		conf.NisdConfig[i].ClientPort = nisdInfo.ClientPort
 		conf.NisdConfig[i].PeerPort = nisdInfo.PeerPort
-		conf.NisdConfig[i].DevID = nisdInfo.DevID
+		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.DEVICE_IDX]
 		conf.NisdConfig[i].Args = naS
 		log.Info("fetched nisd info from control plane: ", nisdInfo)
 

@@ -7,14 +7,14 @@ import (
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
-	cbtree "github.com/tidwall/btree"
+	"github.com/tidwall/btree"
 )
 
 // Nisds is a Counted B-tree containing pointers to Nisd objects, ordered by Nisd.ID.
 // Entity maps a single entity to the set of Nisd objects associated with it.
 type Entities struct {
 	ID    string
-	Nisds *cbtree.BTreeG[*cpLib.Nisd]
+	Nisds *btree.BTreeG[*cpLib.Nisd]
 }
 
 // FailureDomain groups entities under a specific failure-isolation class.
@@ -22,7 +22,7 @@ type Entities struct {
 // Tree stores entities ordered by their Entity.ID using a Counted B-tree.
 type FailureDomain struct {
 	Type uint8
-	Tree *cbtree.BTreeG[*Entities]
+	Tree *btree.BTreeG[*Entities]
 }
 
 // stores the Hierarchy Information
@@ -42,15 +42,14 @@ func compareEntity(a, b *Entities) bool { return a.ID < b.ID }
 func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
 
 // Initialize the Hierarchy Struct
-func (hr *Hierarchy) Init() error {
-	hr.FD = make([]FailureDomain, 4)
+func (hr *Hierarchy) Init() {
+	hr.FD = make([]FailureDomain, cpLib.MAX_FD)
 	for i := 0; i < 4; i++ {
 		hr.FD[i] = FailureDomain{
 			Type: uint8(i),
-			Tree: cbtree.NewBTreeG[*Entities](compareEntity),
+			Tree: btree.NewBTreeG[*Entities](compareEntity),
 		}
 	}
-	return nil
 }
 
 func (fd *FailureDomain) getOrCreateEntity(id string) *Entities {
@@ -60,7 +59,7 @@ func (fd *FailureDomain) getOrCreateEntity(id string) *Entities {
 	}
 	n := Entities{
 		ID:    id,
-		Nisds: cbtree.NewBTreeG[*cpLib.Nisd](compareNisd),
+		Nisds: btree.NewBTreeG[*cpLib.Nisd](compareNisd),
 	}
 	fd.Tree.Set(&n)
 	return &n
@@ -92,37 +91,20 @@ func GetIndex(hash uint64, size int) (int, error) {
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	if n.AvailableSize < cpLib.CHUNK_SIZE {
 		log.Info("skipping nisd addition %s, as the available size %d < 8GV", n.ID, n.AvailableSize)
-		return nil
 	}
-	//Tier 0: PDU
-	{
-		e := hr.FD[cpLib.PDU_IDX].getOrCreateEntity(n.FailureDomain[cpLib.PDU_IDX])
+	if len(n.FailureDomain) != cpLib.MAX_FD {
+		log.Error("failed to add nisd: not enough failure domain info")
+		return fmt.Errorf("failed to add nisd: not enough failure domain info")
+	}
+	for i, id := range n.FailureDomain {
+		e := hr.FD[i].getOrCreateEntity(id)
 		e.Nisds.Set(n)
 	}
-
-	// Tier 1: Rack
-	{
-		e := hr.FD[cpLib.RACK_IDX].getOrCreateEntity(n.FailureDomain[cpLib.RACK_IDX])
-		e.Nisds.Set(n)
-	}
-
-	// Tier 2: Hypervisor
-	{
-		e := hr.FD[cpLib.HV_IDX].getOrCreateEntity(n.FailureDomain[cpLib.HV_IDX])
-		e.Nisds.Set(n)
-	}
-
-	// Tier 3: Device
-	{
-		e := hr.FD[cpLib.DEVICE_IDX].getOrCreateEntity(n.FailureDomain[cpLib.DEVICE_IDX])
-		e.Nisds.Set(n)
-	}
-	// hr.AvailableSize += uint64(n.AvailableSize)
 	return nil
 }
 
 // Delete NISD and the corresponding parent entities from the Hierarchy
-func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
+func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) {
 	for i, id := range n.FailureDomain {
 		fd := &hr.FD[i]
 		e, ok := fd.Tree.Get(&Entities{ID: id})
@@ -132,8 +114,6 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) error {
 		e.Nisds.Delete(n)
 		fd.deleteEmptyEntity(id)
 	}
-	// HR.AvailableSize -= uint64(n.AvailableSize) // remove the nisd's available space as well
-	return nil
 }
 
 // Get the Failure Domain Based on the Nisd Count
@@ -220,16 +200,16 @@ func BytesToGB(b int64) float64 {
 	return float64(b) / float64(gb)
 }
 
-func (h *Hierarchy) Dump() {
-	if h == nil {
+func (hr *Hierarchy) Dump() {
+	if hr == nil {
 		return
 	}
-	if h.FD == nil {
+	if hr.FD == nil {
 		return
 	}
 
-	for i := range h.FD {
-		fd := &h.FD[i]
+	for i := range hr.FD {
+		fd := &hr.FD[i]
 		log.Infof("FD Type: %d", fd.Type)
 
 		fd.Tree.Scan(func(ent *Entities) bool {
