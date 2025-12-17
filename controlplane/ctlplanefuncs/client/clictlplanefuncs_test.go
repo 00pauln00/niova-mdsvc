@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"sync"
+	"sync"
 	"testing"
 	"context"
     "time"
@@ -1120,11 +1121,35 @@ func TestHierarchy2(t *testing.T) {
 		}
 	}
 
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for _, n := range mockNisd {
+			resp, err := c.PutNisd(&n)
+			assert.NoError(t, err)
+			assert.True(t, resp.Success)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 150; i++ {
+			vdev := &cpLib.Vdev{
+				Cfg: cpLib.VdevCfg{
+					Size:       107374182400,
+					NumReplica: 1,
+				},
+			}
+			_, err := c.CreateVdev(vdev)
+			assert.NoError(t, err)
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
 
 }
 
@@ -1259,14 +1284,14 @@ func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
 	vdev := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
-			Size:       268435456000,
-			NumReplica: 2,
+			Size:       1700 * 1024 * 1024 * 1024,
+			NumReplica: 3,
 		},
 	}
 
-	err := c.CreateVdev(vdev)
+	resp, err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
-	log.Info("successfully created vdev: ", vdev)
+	log.Infof("vdev response status: %v", resp)
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
