@@ -345,10 +345,10 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, i int, commitChgs *[]
 		Key:   []byte(nKey),
 		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
 	})
-	// *commitChgs = append(*commitChgs, funclib.CommitChg{
-	// 	Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
-	// 	Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
-	// })
+	*commitChgs = append(*commitChgs, funclib.CommitChg{
+		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
+		Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
+	})
 
 }
 
@@ -471,9 +471,9 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
 			i--
+			log.Errorf("failed to allocate nisd from fd: %d", fd)
 			fd, err = ctlplfl.IncFD(fd)
 			if err != nil {
-				log.Errorf("failed to allocate nisd: ", fd)
 				return err
 			}
 			log.Warn("failed to allocate nisd in the previous fd, retrying in: ", fd)
@@ -497,7 +497,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Debug("Allocating vdev for ID: ", vdev.Cfg.ID)
 	HR.NisdMap = make(map[string]*ctlplfl.NisdCopy, 0)
-	HR.Dump()
+	// HR.Dump()
 	// allocate nisd chunks to vdev
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
 	if err != nil {
@@ -506,12 +506,6 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
 	}
 	if resp.Success {
-		for k, v := range HR.NisdMap {
-			funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, k), AVAIL_SPACE)),
-				Value: []byte(strconv.Itoa(int(v.AvailableSize))),
-			})
-		}
 		applyKV(funcIntrm.Changes, cbArgs)
 		for _, v := range HR.NisdMap {
 			v.Ptr.AvailableSize = v.AvailableSize
@@ -520,7 +514,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 			}
 		}
 	}
-	HR.Dump()
+	// HR.Dump()
 	HR.NisdMap = nil
 
 	return pmCmn.Encoder(pmCmn.GOB, resp)
