@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sync"
 	"testing"
+	"time"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/google/uuid"
@@ -262,10 +264,10 @@ func TestVdevLifecycle(t *testing.T) {
 		Cfg: cpLib.VdevCfg{
 			Size: 700 * 1024 * 1024 * 1024,
 		}}
-	err = c.CreateVdev(vdev1)
+	resp, err := c.CreateVdev(vdev1)
 	assert.NoError(t, err, "failed to create vdev1")
-	assert.NotEmpty(t, vdev1.Cfg.ID, "vdev1 ID should not be empty")
-	log.Info("Created vdev1: ", vdev1)
+	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
+	log.Info("Created vdev1: ", resp.ID)
 
 	// Step 2: Create second Vdev
 	vdev2 := &cpLib.Vdev{
@@ -273,10 +275,10 @@ func TestVdevLifecycle(t *testing.T) {
 			Size: 400 * 1024 * 1024 * 1024,
 		},
 	}
-	err = c.CreateVdev(vdev2)
+	resp, err = c.CreateVdev(vdev2)
 	assert.NoError(t, err, "failed to create vdev2")
-	assert.NotEmpty(t, vdev2.Cfg.ID, "vdev2 ID should not be empty")
-	log.Info("Created vdev2: ", vdev2)
+	assert.NotEmpty(t, resp, "vdev2 ID should not be empty")
+	log.Info("Created vdev2: ", resp.ID)
 
 	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
@@ -553,11 +555,35 @@ func TestHierarchy2(t *testing.T) {
 		}
 	}
 
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for _, n := range mockNisd {
+			resp, err := c.PutNisd(&n)
+			assert.NoError(t, err)
+			assert.True(t, resp.Success)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 150; i++ {
+			vdev := &cpLib.Vdev{
+				Cfg: cpLib.VdevCfg{
+					Size:       107374182400,
+					NumReplica: 1,
+				},
+			}
+			_, err := c.CreateVdev(vdev)
+			assert.NoError(t, err)
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
 
 }
 
@@ -692,14 +718,14 @@ func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
 	vdev := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
-			Size:       268435456000,
-			NumReplica: 2,
+			Size:       1700 * 1024 * 1024 * 1024,
+			NumReplica: 3,
 		},
 	}
 
-	err := c.CreateVdev(vdev)
+	resp, err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
-	log.Info("successfully created vdev: ", vdev)
+	log.Infof("vdev response status: %v", resp)
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
