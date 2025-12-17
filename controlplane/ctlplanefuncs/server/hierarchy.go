@@ -201,6 +201,8 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 		// if the space is available then pick the nisd
 		if nCopy.AvailableSize >= ctlplfl.CHUNK_SIZE {
 			nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
+
+			// TODO: move this to a separate filtering method
 			if _, exists := picked[nCopy.Ptr.ID]; !exists {
 				// commit selection
 				picked[nCopy.Ptr.ID] = struct{}{}
