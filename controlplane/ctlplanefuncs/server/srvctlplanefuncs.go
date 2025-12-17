@@ -331,14 +331,14 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 }
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
-func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, i int, commitChgs *[]funclib.CommitChg) {
+func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdCopy, i int, commitChgs *[]funclib.CommitChg) {
 	vcKey := getVdevChunkKey(ID)
-	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.ID, ID)
+	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.Ptr.ID, ID)
 
 	// TODO: handle EC blocks
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(fmt.Sprintf("%s/%s/R.%d", vcKey, chunk, i)),
-		Value: []byte(nisd.ID),
+		Value: []byte(nisd.Ptr.ID),
 	})
 	// TODO: how do we update the replication details
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
@@ -346,7 +346,7 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.Nisd, i int, commitChgs *[]
 		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
 	})
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.ID), AVAIL_SPACE)),
+		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.Ptr.ID), AVAIL_SPACE)),
 		Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
 	})
 
@@ -418,7 +418,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 	picked := make(map[string]struct{})
 	for i := 0; i < int(vdev.NumReplica); i++ {
 		var (
-			nisd *ctlplfl.Nisd
+			nisd *ctlplfl.NisdCopy
 			err  error
 		)
 
@@ -445,7 +445,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 			)
 		}
 
-		log.Infof("picked nisd: %+v", nisd)
+		log.Infof("picked nisd: %+v", nisd.Ptr)
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 
 		// advance base index only after success
