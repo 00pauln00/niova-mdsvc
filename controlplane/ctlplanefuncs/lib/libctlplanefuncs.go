@@ -54,6 +54,7 @@ const (
 	HV_IDX     = 2
 	DEVICE_IDX = 3
 	MAX_FD     = 4
+	HASH_SIZE  = 8
 )
 
 // Define Snapshot XML structure

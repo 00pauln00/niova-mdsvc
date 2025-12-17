@@ -363,9 +363,6 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	// Decode the input buffer into structure format
 	vdev = args[0].(ctlplfl.Vdev)
 	vdev.Init()
-	// if HR.AvailableSize < uint64(vdev.Cfg.Size)*uint64(vdev.Cfg.NumReplica) {
-	// 	return nil, fmt.Errorf("Not enough space available to allocate vdev")
-	// }
 	log.Debug("Initializing vdev with size: ", vdev)
 	key := getConfKey(vdevKey, vdev.Cfg.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
@@ -455,7 +452,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		entityIDX = (entityIDX + 1) % treeLen
 
 		// decorrelate next replica
-		var buf [8]byte
+		var buf [ctlplfl.HASH_SIZE]byte
 		binary.BigEndian.PutUint64(buf[:], hash)
 		hash = ctlplfl.Hash64(buf[:])
 	}
