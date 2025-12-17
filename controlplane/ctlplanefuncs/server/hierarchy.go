@@ -127,11 +127,11 @@ func (hr *Hierarchy) GetFDLevel(fltTlrnc int) (int, error) {
 }
 
 // Get the total number of elements in a Failure Domain.
-func (hr *Hierarchy) GetEntityLen(entity int) int {
-	if entity >= len(hr.FD) {
+func (hr *Hierarchy) GetEntityLen(tierIDX int) int {
+	if tierIDX >= len(hr.FD) {
 		return 0
 	}
-	return hr.FD[entity].Tree.Len()
+	return hr.FD[tierIDX].Tree.Len()
 }
 
 func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
