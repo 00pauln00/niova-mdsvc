@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"github.com/tidwall/btree"
 )
 
 var colmfamily string
@@ -176,7 +178,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
 	for _, chg := range chgs {
-		log.Info("applying change: ", string(chg.Key), " -> ", string(chg.Value))
+		log.Debug("applying change: ", string(chg.Key), " -> ", string(chg.Value))
 		rc := PumiceDBServer.PmdbWriteKV(cbargs.UserID, cbargs.PmdbHandler,
 			string(chg.Key),
 			int64(len(chg.Key)), string(chg.Value),
@@ -348,11 +350,7 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdCopy, i int, commitChgs
 		Key:   []byte(nKey),
 		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
 	})
-	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, nisd.Ptr.ID), AVAIL_SPACE)),
-		Value: []byte(strconv.Itoa(int(nisd.AvailableSize))),
-	})
-	log.Debugf("generated kv updates for chunk %d/%d", chunk, i)
+	log.Debugf("generated kv updates for chunk %s/R.%d", chunk, i)
 }
 
 // Initialize the VDEV during the write preparation stage.
@@ -408,7 +406,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 
 	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
 
-	log.Debugf("hash generated for chunk: %d, fd: %d", hash, fd)
+	log.Debugf("hash generated %d for chunk: %s, fd: %d", hash, chunk, fd)
 	// select entity by index
 	entityIDX, err := GetIndex(hash, treeLen)
 	if err != nil {
@@ -416,7 +414,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		return err
 	}
 
-	log.Debugf("selecting nisd from chunk %d, FD:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
+	log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
 
 	// track NISDs already selected for this allocation
 	picked := make(map[string]struct{})
@@ -434,7 +432,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 				break
 			}
 			log.Warnf(
-				"pick failed for chunk=%d replica=%d entityIDX=%d attempt=%d/%d err=%v", chunk,
+				"pick failed for chunk=%s replica=%d entityIDX=%d attempt=%d/%d err=%v", chunk,
 				i, entityIDX, attempts, treeLen, err,
 			)
 			entityIDX = (entityIDX + 1) % treeLen
@@ -449,7 +447,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 			)
 		}
 
-		log.Debugf("picked nisd: %s, for chunk %d/R.%d", nisd.Ptr.ID, chunk, i)
+		log.Debugf("picked nisd: %s, for chunk %s/R.%d", nisd.Ptr.ID, chunk, i)
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
 
 		// advance base index only after success
@@ -501,7 +499,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Infof("allocating vdev for ID: %s", vdev.Cfg.ID)
-	HR.NisdMap = make(map[string]*ctlplfl.NisdCopy, 0)
+	HR.NisdMap = btree.NewMap[string, *ctlplfl.NisdCopy](32)
 	HR.Dump()
 	// allocate nisd chunks to vdev
 	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
@@ -511,18 +509,26 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
 	}
 	if resp.Success {
+		HR.NisdMap.Ascend("", func(k string, v *ctlplfl.NisdCopy) bool {
+			funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
+				Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, v.Ptr.ID), AVAIL_SPACE)),
+				Value: []byte(strconv.Itoa(int(v.AvailableSize))),
+			})
+			return true
+		})
 		applyKV(funcIntrm.Changes, cbArgs)
-		for _, v := range HR.NisdMap {
+		HR.NisdMap.Ascend("", func(k string, v *ctlplfl.NisdCopy) bool {
 			log.Debugf("updating nisd %s available space %d from map -> tree", v.Ptr.ID, v.AvailableSize)
 			v.Ptr.AvailableSize = v.AvailableSize
 			if v.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
-				log.Debugf("deleting nisd %s from tree, as space %d GB is less than 8GB", v.Ptr.ID, BytesToGB(v.AvailableSize))
+				log.Debugf("deleting nisd %s from tree, as space %f GB is less than 8GB", v.Ptr.ID, BytesToGB(v.AvailableSize))
 				HR.DeleteNisd(v.Ptr)
 			}
-		}
+			return true
+		})
 	}
 	HR.Dump()
-	HR.NisdMap = nil
+	HR.NisdMap.Clear()
 	log.Infof("vdev %s, request successfully processed", vdev.Cfg.ID)
 	return pmCmn.Encoder(pmCmn.GOB, resp)
 }

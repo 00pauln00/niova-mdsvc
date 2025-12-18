@@ -33,7 +33,7 @@ type FailureDomain struct {
 type Hierarchy struct {
 	FD []FailureDomain
 	// AvailableSize uint64
-	NisdMap map[string]*ctlplfl.NisdCopy
+	NisdMap *btree.Map[string, *ctlplfl.NisdCopy]
 }
 
 var HR Hierarchy
@@ -91,7 +91,7 @@ func GetIndex(hash uint64, size int) (int, error) {
 // Add NISD and the corresponding parent entities to the Hierarchy
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	if n.AvailableSize < cpLib.CHUNK_SIZE {
-		log.Debugf("skipping nisd addition %s, as the available size %d GB < 8GB", n.ID, BytesToGB(n.AvailableSize))
+		log.Debugf("skipping nisd addition %s, as the available size %f GB < 8GB", n.ID, BytesToGB(n.AvailableSize))
 	}
 	if len(n.FailureDomain) != cpLib.MAX_FD {
 		err := fmt.Errorf("failed to add nisd: not enough failure domain info")
@@ -138,15 +138,24 @@ func (hr *Hierarchy) GetEntityLen(tierIDX int) int {
 }
 
 func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
-	if nisdPtr, exists := hr.NisdMap[nisd.ID]; exists {
+	if nisdPtr, ok := hr.NisdMap.Get(nisd.ID); ok {
 		return nisdPtr
 	}
-	hr.NisdMap[nisd.ID] = &ctlplfl.NisdCopy{
-		AvailableSize: (nisd.AvailableSize),
+
+	copy := &ctlplfl.NisdCopy{
+		AvailableSize: nisd.AvailableSize,
 		Ptr:           nisd,
 	}
-	log.Debug("added nisd copy to the temp nisd map: %d, with as: %d ", nisd.ID, nisd.AvailableSize)
-	return hr.NisdMap[nisd.ID]
+
+	hr.NisdMap.Set(nisd.ID, copy)
+
+	log.Debugf(
+		"added nisd copy to temp nisd map: id=%s, available_size=%d",
+		nisd.ID,
+		nisd.AvailableSize,
+	)
+
+	return copy
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
