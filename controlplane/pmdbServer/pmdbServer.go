@@ -521,12 +521,6 @@ func (nso *NiovaKVServer) Init(cleanupPeerArgs *PumiceDBServer.PmdbCbArgs) {
 
 func (nso *NiovaKVServer) WritePrep(wrPrepArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	log.Trace("NiovaCtlPlane server: Write prep received")
-	var copyErr error
-	_, copyErr = PumiceDBServer.PmdbCopyDataToBuffer(byte(1), wrPrepArgs.ContinueWr)
-	if copyErr != nil {
-		log.Error("Failed to Copy result in the buffer: %s", copyErr)
-		return -1
-	}
 	return 0
 }
 
