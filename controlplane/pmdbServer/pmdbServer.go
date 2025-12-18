@@ -289,7 +289,7 @@ func (handler *pmdbServerHandler) parseArgs() (*NiovaKVServer, error) {
 	*/
 	defaultLog := "/" + "tmp" + "/" + handler.peerUUID.String() + ".log"
 	flag.StringVar(&handler.logDir, "l", defaultLog, "log dir")
-	flag.StringVar(&handler.logLevel, "ll", "Info", "Log level")
+	flag.StringVar(&handler.logLevel, "ll", "Trace", "Log level")
 	flag.StringVar(&handler.gossipClusterFile, "g", "NULL", "Serf agent port")
 	flag.BoolVar(&handler.prometheus, "p", false, "Enable prometheus")
 	flag.Parse()
