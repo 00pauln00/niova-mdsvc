@@ -592,10 +592,12 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
 		readResult, err := readArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-			ColFamily: colmfamily,
-			Key:       reqStruct.Key,
-			BufSize:   readArgs.ReplySize - int64(encodingOverhead),
-			Prefix:    reqStruct.Prefix,
+			ColFamily:  colmfamily,
+			Key:        reqStruct.Key,
+			BufSize:    readArgs.ReplySize - int64(encodingOverhead),
+			Prefix:     reqStruct.Prefix,
+			SeqNum:     reqStruct.SeqNum,
+			Consistent: true,
 		})
 		var cRead bool
 		if readResult.LastKey != "" {
