@@ -472,14 +472,16 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 		log.Debugf("allocating nisd for chunk: %d, from fd: %d ", i, fd)
 		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
 		if err != nil {
-			i--
-			log.Errorf("failed to allocate nisd from fd: %d", fd)
-			fd, err = ctlplfl.IncFD(fd)
-			if err != nil {
-				log.Error("cannot inc fd further: ", err)
-				return err
-			}
-			log.Warnf("failed to allocate nisd in the previous fd, incremented fd: %d for chunk: %d", fd, i)
+			// i--
+			err = fmt.Errorf("failed to allocate nisd from fd: %d, %v", fd, err)
+			log.Error(err)
+			return err
+			// fd, err = ctlplfl.IncFD(fd)
+			// if err != nil {
+			// 	log.Error("cannot inc fd further: ", err)
+			// 	return err
+			// }
+			// log.Warnf("failed to allocate nisd in the previous fd, incremented fd: %d for chunk: %d", fd, i)
 
 		}
 	}
