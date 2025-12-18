@@ -546,19 +546,10 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	//For application request
 	log.Trace("Key passed by client: ", applyNiovaKV.Key)
 
-	// length of key.
-	keyLength := len(applyNiovaKV.Key)
-
 	byteToStr := string(applyNiovaKV.Value)
 
-	// Length of value.
-	valLen := len(byteToStr)
-
 	log.Trace("Write the KeyValue by calling PmdbWriteKV")
-	rc := PumiceDBServer.PmdbWriteKV(applyArgs.UserID, applyArgs.PmdbHandler,
-		applyNiovaKV.Key,
-		int64(keyLength), byteToStr,
-		int64(valLen), colmfamily)
+	rc := applyArgs.PmdbWriteKV(colmfamily, applyNiovaKV.Key, byteToStr)
 
 	return int64(rc)
 }
@@ -594,7 +585,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if reqStruct.Operation == requestResponseLib.KV_READ {
 
 		log.Trace("read - ", reqStruct.SeqNum)
-		readResult, err := PumiceDBServer.PmdbReadKV(reqStruct.Key, int64(keyLen), colmfamily)
+		readResult, err := readArgs.PmdbReadKV(colmfamily, reqStruct.Key)
 		singleReadMap := make(map[string][]byte)
 		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
@@ -606,11 +597,12 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult, err := PumiceDBServer.RangeReadKV(readArgs.UserID,
-			reqStruct.Key,
-			int64(keyLen), reqStruct.Prefix,
-			(readArgs.ReplySize - int64(encodingOverhead)),
-			reqStruct.Consistent, reqStruct.SeqNum, colmfamily)
+		readResult, err := readArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
+			ColFamily: colmfamily,
+			Key:       reqStruct.Key,
+			BufSize:   readArgs.ReplySize - int64(encodingOverhead),
+			Prefix:    reqStruct.Prefix,
+		})
 		var cRead bool
 		if readResult.LastKey != "" {
 			cRead = true
