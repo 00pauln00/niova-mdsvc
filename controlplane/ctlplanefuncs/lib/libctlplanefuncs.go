@@ -10,8 +10,8 @@ import (
 
 	"hash/fnv"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -330,5 +330,5 @@ func IncFD(fd int) (int, error) {
 		fd++
 		return fd, nil
 	}
-	return fd, errors.New("No device's available to allocate data")
+	return fd, fmt.Errorf("max failure domain reached: %d", fd)
 }
