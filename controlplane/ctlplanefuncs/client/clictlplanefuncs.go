@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -32,6 +32,8 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 		RaftUUID:  key,
 	}
 	stop := make(chan int)
+	level := "Info"
+	log.InitXlog("client.log", &level)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go func() {
 		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)

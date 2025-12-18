@@ -33,8 +33,8 @@ import (
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 /*
@@ -77,7 +77,7 @@ func PopulateHierarchy() error {
 	time.Sleep(2 * time.Second)
 	readResult, err := PumiceDBServer.RangeReadKV(nil, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, 4*1024*1024*1024, false, 0, "PMDBTS_CF")
 	if err != nil {
-		log.Error("PopulateHierarchy():RangeReadKV()", err)
+		log.Warn("PopulateHierarchy():RangeReadKV()", err)
 		return err
 	}
 	log.Debug("fetching read result: ", readResult)
@@ -100,27 +100,14 @@ func main() {
 	serverHandler := pmdbServerHandler{}
 	cpLib.RegisterGOBStructs()
 
-	nso, pErr := serverHandler.parseArgs()
-	if pErr != nil {
-		log.Println(pErr)
+	nso, err := serverHandler.parseArgs()
+	if err != nil {
+		defaultLogger.Println("failed to parse arguments", err)
 		return
 	}
 
-	switch serverHandler.logLevel {
-	case "Info":
-		log.SetLevel(log.InfoLevel)
-	case "Trace":
-		log.SetLevel(log.TraceLevel)
-	}
-
+	log.InitXlog(serverHandler.logDir, &serverHandler.logLevel)
 	log.Info("Log Dir - ", serverHandler.logDir)
-
-	//Create log file
-	err := PumiceDBCommon.InitLogger(serverHandler.logDir)
-	if err != nil {
-		log.Error("Error while initating logger ", err)
-		os.Exit(1)
-	}
 
 	err = serverHandler.startSerfAgent()
 	if err != nil {
@@ -209,7 +196,7 @@ func main() {
 	srvctlplanefuncs.HR.Init()
 	err = PopulateHierarchy()
 	if err != nil {
-		log.Error("Failed to Created Hierarchy struct:", err)
+		log.Warn("failed to create hierarchy struct:", err)
 	}
 
 	serverHandler.checkPMDBLiveness()
@@ -229,7 +216,7 @@ func (handler *pmdbServerHandler) checkPMDBLiveness() {
 	}
 }
 
-func (handler *pmdbServerHandler) exportTags() error {
+func (handler *pmdbServerHandler) exportTags() {
 	if handler.prometheus {
 		handler.checkHTTPLiveness()
 		handler.GossipData["Hport"] = strconv.Itoa(RecvdPort)
@@ -244,7 +231,6 @@ func (handler *pmdbServerHandler) exportTags() error {
 		time.Sleep(3 * time.Second)
 	}
 
-	return nil
 }
 
 func usage() {

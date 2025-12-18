@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
-	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/btree"
 )
 
@@ -72,13 +72,14 @@ func (fd *FailureDomain) deleteEmptyEntity(id string) {
 	}
 	if e.Nisds.Len() == 0 {
 		fd.Tree.Delete(e)
+		log.Tracef("deleting entity: %s, no nisd's available: ", e.ID)
 	}
 }
 
 func GetIndex(hash uint64, size int) (int, error) {
 	// if no elements are present in the tree, return a error
 	if size <= 0 {
-		return 0, errors.New("invalid size")
+		return 0, fmt.Errorf("invalid size: %d", size)
 	}
 	// if only one element is present in the tree, return 0th idx
 	if size == 1 {
@@ -90,11 +91,12 @@ func GetIndex(hash uint64, size int) (int, error) {
 // Add NISD and the corresponding parent entities to the Hierarchy
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	if n.AvailableSize < cpLib.CHUNK_SIZE {
-		log.Info("skipping nisd addition %s, as the available size %d < 8GV", n.ID, n.AvailableSize)
+		log.Debugf("skipping nisd addition %s, as the available size %d GB < 8GB", n.ID, BytesToGB(n.AvailableSize))
 	}
 	if len(n.FailureDomain) != cpLib.MAX_FD {
-		log.Error("failed to add nisd: not enough failure domain info")
-		return fmt.Errorf("failed to add nisd: not enough failure domain info")
+		err := fmt.Errorf("failed to add nisd: not enough failure domain info")
+		log.Error(err)
+		return err
 	}
 	for i, id := range n.FailureDomain {
 		e := hr.FD[i].getOrCreateEntity(id)
@@ -111,6 +113,7 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) {
 		if !ok {
 			continue
 		}
+		log.Tracef("deleting nisd %s, from fd %d", n.ID, i)
 		e.Nisds.Delete(n)
 		fd.deleteEmptyEntity(id)
 	}
@@ -142,28 +145,31 @@ func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
 		AvailableSize: (nisd.AvailableSize),
 		Ptr:           nisd,
 	}
+	log.Debug("added nisd copy to the temp nisd map: %d, with as: %d ", nisd.ID, nisd.AvailableSize)
 	return hr.NisdMap[nisd.ID]
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
 func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}) (*cpLib.NisdCopy, error) {
 	if int(fd) >= len(hr.FD) {
-		log.Error("failed to get fd: ", fd)
-		return nil, errors.New("invalid fd tier")
+		err := fmt.Errorf("invalid failure domain: %d", fd)
+		log.Error("PickNISD():", err)
+		return nil, err
 	}
 
 	fdRef := hr.FD[fd]
 
 	ent, ok := fdRef.Tree.GetAt(entityIDX)
 	if !ok {
-		log.Error("failed to get entitiy tree at idx: ", entityIDX)
-		return nil, errors.New("entity missing")
+		err := fmt.Errorf("failed to fetch entity tree from idx: %d, fd: %d", entityIDX, fd)
+		log.Error("GetAt(): ", err)
+		return nil, err
 	}
 
 	// select NISD inside entity
 	idx, err := GetIndex(hash, ent.Nisds.Len())
 	if err != nil {
-		log.Error("failed to get index for hash: ", hash)
+		log.Errorf("failed to get index for hash: %d: %v", hash, err)
 		return nil, err
 	}
 
@@ -180,50 +186,51 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 		// check if the nisd can be picked or not by checking the nisd available space from the nisd map,
 		// if the space is available then pick the nisd
 		if nCopy.AvailableSize >= ctlplfl.CHUNK_SIZE {
-			nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
-
 			// TODO: move this to a separate filtering method
 			if _, exists := picked[nCopy.Ptr.ID]; !exists {
+
+				// decrement the available size value only after the chunk is picked
+				nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
 				// commit selection
 				picked[nCopy.Ptr.ID] = struct{}{}
 				return nCopy, nil
 			}
+			log.Tracef("failed to pick nisd, as it's already picked: %s", nCopy.Ptr.ID)
 		}
 
 		idx = (idx + 1) % ent.Nisds.Len()
-		log.Info("index : ", idx)
+		log.Tracef("incrementing index : ", idx)
 	}
 	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", entityIDX)
 }
+
 func BytesToGB(b int64) float64 {
 	const gb = 1024 * 1024 * 1024
 	return float64(b) / float64(gb)
 }
 
 func (hr *Hierarchy) Dump() {
-	if hr == nil {
-		return
-	}
 	if hr.FD == nil {
+		log.Errorf("hierarchy Structure not initialized")
 		return
 	}
 
 	for i := range hr.FD {
 		fd := &hr.FD[i]
-		log.Infof("FD Type: %d", fd.Type)
+		log.Debugf("FD Type: %d", fd.Type)
 
 		fd.Tree.Scan(func(ent *Entities) bool {
 			if ent == nil {
 				return true
 			}
 
-			log.Infof("  Entity: %s\n", ent.ID)
+			log.Debugf("  Entity: %s", ent.ID)
 
 			ent.Nisds.Scan(func(n *cpLib.Nisd) bool {
 				if n == nil {
 					return true
 				}
-				log.Infof("    Nisd: %s: %f GB\n", n.ID, BytesToGB(n.AvailableSize))
+				log.Debugf(" 	Nisd: %s: %f GB", n.ID, BytesToGB(n.AvailableSize))
 				return true
 			})
 
