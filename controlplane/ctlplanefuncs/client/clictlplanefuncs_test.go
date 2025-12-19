@@ -27,14 +27,6 @@ var (
 	Nisds = make(map[string]cpLib.Nisd)
 )
 
-var (
-	TestPDUs  = make(map[string]cpLib.PDU)
-	TestRacks = make(map[string]cpLib.Rack)
-	TestHypervisors = make(map[string]cpLib.Hypervisor)
-	TestDevices = make(map[string]cpLib.Device)
-	TestNisds = make(map[string]cpLib.Nisd)
-)
-
 var VDEV_ID string
 
 func newClient(t *testing.T) *CliCFuncs {
