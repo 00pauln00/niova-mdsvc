@@ -3,7 +3,6 @@ package clictlplanefuncs
 import (
 	"os"
 	"testing"
-	"fmt"
 	"context"
     "time"
     "golang.org/x/sync/errgroup"
@@ -21,14 +20,6 @@ var (
 	Hypervisors = make(map[string]cpLib.Hypervisor)
 	Devices = make(map[string]cpLib.Device)
 	Nisds = make(map[string]cpLib.Nisd)
-)
-
-var (
-	TestPDUs  = make(map[string]cpLib.PDU)
-	TestRacks = make(map[string]cpLib.Rack)
-	TestHypervisors = make(map[string]cpLib.Hypervisor)
-	TestDevices = make(map[string]cpLib.Device)
-	TestNisds = make(map[string]cpLib.Nisd)
 )
 
 var VDEV_ID string
