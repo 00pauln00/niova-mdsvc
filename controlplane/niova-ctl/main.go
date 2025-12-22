@@ -6136,8 +6136,8 @@ func (m model) viewShowInitializedNISD() string {
 
 	s.WriteString("NISD Details:\n")
 	s.WriteString(fmt.Sprintf("  NISD UUID: %s\n", m.currentNISD.ID))
-	s.WriteString(fmt.Sprintf("  Device ID: %s\n", m.currentNISD.FailureDomain[ctlplfl.DEVICE_IDX]))
-	s.WriteString(fmt.Sprintf("  Hypervisor ID: %s\n", m.currentNISD.FailureDomain[ctlplfl.HV_IDX]))
+	s.WriteString(fmt.Sprintf("  Device ID: %s\n", m.currentNISD.FailureDomain[ctlplfl.FD_DEVICE]))
+	s.WriteString(fmt.Sprintf("  Hypervisor ID: %s\n", m.currentNISD.FailureDomain[ctlplfl.FD_HV]))
 	s.WriteString(fmt.Sprintf("  Client Port: %d\n", m.currentNISD.ClientPort))
 	s.WriteString(fmt.Sprintf("  Server Port: %d\n", m.currentNISD.PeerPort))
 	s.WriteString(fmt.Sprintf("  IP Address: %s\n", m.currentNISD.IPAddr))
@@ -6348,8 +6348,8 @@ func (m model) viewNISDSelection() string {
 		// Display NISD info
 		info := fmt.Sprintf("UUID: %s | Device: %s | HV: %s | Ports: %d/%d",
 			nisd.ID,
-			nisd.FailureDomain[ctlplfl.DEVICE_IDX],
-			nisd.FailureDomain[ctlplfl.HV_IDX],
+			nisd.FailureDomain[ctlplfl.FD_DEVICE],
+			nisd.FailureDomain[ctlplfl.FD_HV],
 			nisd.ClientPort,
 			nisd.PeerPort)
 
@@ -6407,8 +6407,8 @@ func (m model) viewNISDStart() string {
 
 	// Display selected NISD details
 	s.WriteString(fmt.Sprintf("NISD UUID: %s\n", m.selectedNISDToStart.ID))
-	s.WriteString(fmt.Sprintf("Device ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.DEVICE_IDX]))
-	s.WriteString(fmt.Sprintf("Hypervisor ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.HV_IDX]))
+	s.WriteString(fmt.Sprintf("Device ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE]))
+	s.WriteString(fmt.Sprintf("Hypervisor ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV]))
 	s.WriteString(fmt.Sprintf("IP Address: %s\n", m.selectedNISDToStart.IPAddr))
 	s.WriteString(fmt.Sprintf("Client Port: %d\n", m.selectedNISDToStart.ClientPort))
 	s.WriteString(fmt.Sprintf("Server Port: %d\n", m.selectedNISDToStart.PeerPort))
@@ -6445,8 +6445,8 @@ func (m model) viewShowStartedNISD() string {
 
 	s.WriteString("NISD Process Details:\n")
 	s.WriteString(fmt.Sprintf("  NISD UUID: %s\n", m.selectedNISDToStart.ID))
-	s.WriteString(fmt.Sprintf("  Device ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.DEVICE_IDX]))
-	s.WriteString(fmt.Sprintf("  Hypervisor ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.HV_IDX]))
+	s.WriteString(fmt.Sprintf("  Device ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE]))
+	s.WriteString(fmt.Sprintf("  Hypervisor ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV]))
 	s.WriteString(fmt.Sprintf("  IP Address: %s\n", m.selectedNISDToStart.IPAddr))
 	s.WriteString(fmt.Sprintf("  Client Port: %d\n", m.selectedNISDToStart.ClientPort))
 	s.WriteString(fmt.Sprintf("  Server Port: %d\n", m.selectedNISDToStart.PeerPort))
@@ -6477,8 +6477,8 @@ func (m model) startNISDProcess() error {
 	// Simulate process start logic
 	fmt.Printf("Starting NISD process:\n")
 	fmt.Printf("  UUID: %s\n", m.selectedNISDToStart.ID)
-	fmt.Printf("  Device: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.DEVICE_IDX])
-	fmt.Printf("  Hypervisor: %s (%s)\n", m.selectedNISDToStart.FailureDomain[ctlplfl.HV_IDX], m.selectedNISDToStart.IPAddr)
+	fmt.Printf("  Device: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE])
+	fmt.Printf("  Hypervisor: %s (%s)\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV], m.selectedNISDToStart.IPAddr)
 	fmt.Printf("  Ports: %d/%d\n", m.selectedNISDToStart.ClientPort, m.selectedNISDToStart.PeerPort)
 
 	// Placeholder for actual implementation
@@ -6550,8 +6550,8 @@ func (m model) viewAllNISDs() string {
 		for i, nisd := range nisds {
 			s.WriteString(fmt.Sprintf("NISD %d:\n", i+1))
 			s.WriteString(fmt.Sprintf("  UUID: %s\n", nisd.ID))
-			s.WriteString(fmt.Sprintf("  Device ID: %s\n", nisd.FailureDomain[ctlplfl.DEVICE_IDX]))
-			s.WriteString(fmt.Sprintf("  Hypervisor: %s\n", nisd.FailureDomain[ctlplfl.HV_IDX]))
+			s.WriteString(fmt.Sprintf("  Device ID: %s\n", nisd.FailureDomain[ctlplfl.FD_DEVICE]))
+			s.WriteString(fmt.Sprintf("  Hypervisor: %s\n", nisd.FailureDomain[ctlplfl.FD_HV]))
 			s.WriteString(fmt.Sprintf("  IP Address: %s\n", nisd.IPAddr))
 			s.WriteString(fmt.Sprintf("  Client Port: %d\n", nisd.ClientPort))
 			s.WriteString(fmt.Sprintf("  Server Port: %d\n", nisd.PeerPort))

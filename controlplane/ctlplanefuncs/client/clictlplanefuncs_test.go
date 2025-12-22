@@ -314,7 +314,7 @@ func TestVdevLifecycle(t *testing.T) {
 func TestPutAndGetPartition(t *testing.T) {
 	c := newClient(t)
 	pt := &cpLib.DevicePartition{
-		PartitionID:   "96ea4c60-a5df-11f0-a315-fb09c06e6471",
+		PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
 		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
 		Size:          10 * 1024 * 1024 * 1024,
 		PartitionPath: "some path",
@@ -323,15 +323,15 @@ func TestPutAndGetPartition(t *testing.T) {
 	resp, err := c.PutPartition(pt)
 	log.Info("created partition: ", resp)
 	assert.NoError(t, err)
-	resp1, err := c.GetPartition(cpLib.GetReq{ID: "96ea4c60-a5df-11f0-a315-fb09c06e6471"})
+	resp1, err := c.GetPartition(cpLib.GetReq{ID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1"})
 	assert.NoError(t, err)
 	log.Info("Get partition: ", resp1)
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 	racks := []cpLib.Rack{
-		{ID: "rack-1", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
-		{ID: "rack-2", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
+		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
+		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
 	}
 
 	for _, r := range racks {
@@ -358,34 +358,34 @@ func TestVdevNisdChunk(t *testing.T) {
 	c := newClient(t)
 
 	// // create nisd
-	// mockNisd := cpLib.Nisd{
-	// 	ClientPort: 7001,
-	// 	PeerPort:   8001,
-	// 	ID:         "nisd-001",
-	// 	FailureDomain: []string{
-	// 		"pdu-05",
-	// 		"rack-04",
-	// 		"hv-07",
-	// 		"dev-004",
-	// 	},
-	// 	IPAddr:        "192.168.1.10",
-	// 	TotalSize:     1_000_000_000_000, // 1 TB
-	// 	AvailableSize: 750_000_000_000,   // 750 GB
-	// }
-	// resp, err := c.PutNisd(&mockNisd)
-	// assert.NoError(t, err)
-	// assert.True(t, resp.Success)
+	mockNisd := cpLib.Nisd{
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
+		FailureDomain: []string{
+			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
+			"2435b29e-df29-11f0-900b-d3d680074046",
+			"298cedc0-df29-11f0-8c85-e3df2426ed67",
+			"nvme-e3df2426ed67",
+		},
+		IPAddr:        "192.168.1.10",
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+	}
+	resp, err := c.PutNisd(&mockNisd)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 
-	// // create vdev
-	// vdev := &cpLib.Vdev{
-	// 	Cfg: cpLib.VdevCfg{
-	// 		Size: 500 * 1024 * 1024 * 1024,
-	// 	}}
-	// err = c.CreateVdev(vdev)
-	// log.Info("Created Vdev Result: ", vdev)
-	// assert.NoError(t, err)
-	// readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
-	// log.Info("Read vdev:", readV)
+	// create vdev
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size: 500 * 1024 * 1024 * 1024,
+		}}
+	resp, err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", resp)
+	assert.NoError(t, err)
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	log.Info("Read vdev:", readV)
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
@@ -413,49 +413,49 @@ func TestParallelVdevCreation(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []string{
-		"11111111-d458-11f0-ae93-fb6358160001",
-		"11111111-d458-11f0-ae93-fb6358160002",
-		"11111111-d458-11f0-ae93-fb6358160003",
-		"11111111-d458-11f0-ae93-fb6358160004",
-		"11111111-d458-11f0-ae93-fb6358160005",
+		"9bc244bc-df29-11f0-a93b-277aec17e401",
+		"9bc244bc-df29-11f0-a93b-277aec17e402",
+		"9bc244bc-df29-11f0-a93b-277aec17e403",
+		"9bc244bc-df29-11f0-a93b-277aec17e404",
+		"9bc244bc-df29-11f0-a93b-277aec17e405",
 	}
 
 	// 10 RACKS
 	racks := []string{
-		"22222222-d458-11f0-ae93-fb6358161001",
-		"22222222-d458-11f0-ae93-fb6358161002",
-		"22222222-d458-11f0-ae93-fb6358161003",
-		"22222222-d458-11f0-ae93-fb6358161004",
-		"22222222-d458-11f0-ae93-fb6358161005",
-		"22222222-d458-11f0-ae93-fb6358161006",
-		"22222222-d458-11f0-ae93-fb6358161007",
-		"22222222-d458-11f0-ae93-fb6358161008",
-		"22222222-d458-11f0-ae93-fb6358161009",
-		"22222222-d458-11f0-ae93-fb6358161010",
+		"3f082930-df29-11f0-ab7b-4bd430991101",
+		"3f082930-df29-11f0-ab7b-4bd430991102",
+		"3f082930-df29-11f0-ab7b-4bd430991103",
+		"3f082930-df29-11f0-ab7b-4bd430991104",
+		"3f082930-df29-11f0-ab7b-4bd430991105",
+		"3f082930-df29-11f0-ab7b-4bd430991106",
+		"3f082930-df29-11f0-ab7b-4bd430991107",
+		"3f082930-df29-11f0-ab7b-4bd430991108",
+		"3f082930-df29-11f0-ab7b-4bd430991109",
+		"3f082930-df29-11f0-ab7b-4bd430991110",
 	}
 
 	// 20 HVs
 	hvs := []string{
-		"33333333-d458-11f0-ae93-fb6358162001",
-		"33333333-d458-11f0-ae93-fb6358162002",
-		"33333333-d458-11f0-ae93-fb6358162003",
-		"33333333-d458-11f0-ae93-fb6358162004",
-		"33333333-d458-11f0-ae93-fb6358162005",
-		"33333333-d458-11f0-ae93-fb6358162006",
-		"33333333-d458-11f0-ae93-fb6358162007",
-		"33333333-d458-11f0-ae93-fb6358162008",
-		"33333333-d458-11f0-ae93-fb6358162009",
-		"33333333-d458-11f0-ae93-fb6358162010",
-		"33333333-d458-11f0-ae93-fb6358162011",
-		"33333333-d458-11f0-ae93-fb6358162012",
-		"33333333-d458-11f0-ae93-fb6358162013",
-		"33333333-d458-11f0-ae93-fb6358162014",
-		"33333333-d458-11f0-ae93-fb6358162015",
-		"33333333-d458-11f0-ae93-fb6358162016",
-		"33333333-d458-11f0-ae93-fb6358162017",
-		"33333333-d458-11f0-ae93-fb6358162018",
-		"33333333-d458-11f0-ae93-fb6358162019",
-		"33333333-d458-11f0-ae93-fb6358162020",
+		"bde1f08a-df63-11f0-88ef-430ddec19901",
+		"bde1f08a-df63-11f0-88ef-430ddec19902",
+		"bde1f08a-df63-11f0-88ef-430ddec19903",
+		"bde1f08a-df63-11f0-88ef-430ddec19904",
+		"bde1f08a-df63-11f0-88ef-430ddec19905",
+		"bde1f08a-df63-11f0-88ef-430ddec19906",
+		"bde1f08a-df63-11f0-88ef-430ddec19907",
+		"bde1f08a-df63-11f0-88ef-430ddec19908",
+		"bde1f08a-df63-11f0-88ef-430ddec19909",
+		"bde1f08a-df63-11f0-88ef-430ddec19910",
+		"bde1f08a-df63-11f0-88ef-430ddec19911",
+		"bde1f08a-df63-11f0-88ef-430ddec19912",
+		"bde1f08a-df63-11f0-88ef-430ddec19913",
+		"bde1f08a-df63-11f0-88ef-430ddec19914",
+		"bde1f08a-df63-11f0-88ef-430ddec19915",
+		"bde1f08a-df63-11f0-88ef-430ddec19916",
+		"bde1f08a-df63-11f0-88ef-430ddec19917",
+		"bde1f08a-df63-11f0-88ef-430ddec19918",
+		"bde1f08a-df63-11f0-88ef-430ddec19919",
+		"bde1f08a-df63-11f0-88ef-430ddec19920",
 	}
 
 	// 40 Devices
@@ -567,7 +567,6 @@ func TestParallelVdevCreation(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()
-
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 150; i++ {
@@ -587,27 +586,27 @@ func TestParallelVdevCreation(t *testing.T) {
 
 }
 
-func TestHierarchyNew(t *testing.T) {
+func TestCreateSmallHierarchy(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []string{
-		"11111111-d458-11f0-ae93-fb6358160001",
-		"11111111-d458-11f0-ae93-fb6358160002",
+		"9bc244bc-df29-11f0-a93b-277aec17e43701",
+		"9bc244bc-df29-11f0-a93b-277aec17e43702",
 	}
 
 	// 10 RACKS
 	racks := []string{
-		"22222222-d458-11f0-ae93-fb6358161001",
-		"22222222-d458-11f0-ae93-fb6358161002",
+		"3f082930-df29-11f0-ab7b-4bd430991101",
+		"3f082930-df29-11f0-ab7b-4bd430991102",
 	}
 
 	// 20 HVs
 	hvs := []string{
-		"33333333-d458-11f0-ae93-fb6358162001",
-		"33333333-d458-11f0-ae93-fb6358162002",
-		"33333333-d458-11f0-ae93-fb6358162003",
-		"33333333-d458-11f0-ae93-fb6358162004",
-		"33333333-d458-11f0-ae93-fb6358162005",
+		"bde1f08a-df63-11f0-88ef-430ddec199701",
+		"bde1f08a-df63-11f0-88ef-430ddec199702",
+		"bde1f08a-df63-11f0-88ef-430ddec199703",
+		"bde1f08a-df63-11f0-88ef-430ddec199704",
+		"bde1f08a-df63-11f0-88ef-430ddec199705",
 	}
 
 	// 40 Devices

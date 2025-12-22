@@ -160,7 +160,7 @@ func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.D
 // nisd parser
 type NisdParser struct{}
 
-func (NisdParser) GetRootKey() string { return nisdCfgKey }
+func (NisdParser) GetRootKey() string { return NisdCfgKey }
 
 func (NisdParser) NewEntity(id string) Entity {
 	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4)}
@@ -171,7 +171,7 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case DEVICE_ID:
-			nisd.FailureDomain[ctlplfl.DEVICE_IDX] = string(value)
+			nisd.FailureDomain[ctlplfl.FD_DEVICE] = string(value)
 		case CLIENT_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.ClientPort = uint16(p)
@@ -179,11 +179,11 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
 		case hvKey:
-			nisd.FailureDomain[ctlplfl.HV_IDX] = string(value)
+			nisd.FailureDomain[ctlplfl.FD_HV] = string(value)
 		case pduKey:
-			nisd.FailureDomain[ctlplfl.PDU_IDX] = string(value)
+			nisd.FailureDomain[ctlplfl.FD_PDU] = string(value)
 		case rackKey:
-			nisd.FailureDomain[ctlplfl.RACK_IDX] = string(value)
+			nisd.FailureDomain[ctlplfl.FD_RACK] = string(value)
 		case IP_ADDR:
 			nisd.IPAddr = string(value)
 		case TOTAL_SPACE:

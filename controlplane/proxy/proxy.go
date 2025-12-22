@@ -38,8 +38,8 @@ import (
 
 	defaultLogger "log"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 // Structure for proxy
@@ -425,11 +425,11 @@ func (handler *proxyHandler) dumpConfigToFile(outfilepath string) error {
 
 func (handler *proxyHandler) PutLeaseHandlerCB(rncui string, wsn int64, request []byte, response *[]byte) error {
 	reqArgs := &pmdbClient.PmdbReq{
-		Rncui:      rncui,
-		ReqType:	PumiceDBCommon.LEASE_REQ,
-		Request:  	request,
-		GetReply: 	1,
-		Reply:    response,
+		Rncui:       rncui,
+		ReqType:     PumiceDBCommon.LEASE_REQ,
+		Request:     request,
+		GetReply:    1,
+		Reply:       response,
 		WriteSeqNum: wsn,
 	}
 
@@ -449,7 +449,7 @@ func (handler *proxyHandler) PutLeaseHandlerCB(rncui string, wsn int64, request 
 
 func (handler *proxyHandler) GetLeaseHandlerCB(request []byte, response *[]byte) error {
 	reqArgs := &pmdbClient.PmdbReq{
-		Rncui:      "",
+		Rncui:   "",
 		ReqType: PumiceDBCommon.LEASE_REQ,
 		Request: request,
 		Reply:   response,
@@ -460,11 +460,11 @@ func (handler *proxyHandler) GetLeaseHandlerCB(request []byte, response *[]byte)
 
 func (handler *proxyHandler) PutKVHandlerCB(rncui string, wsn int64, request []byte, response *[]byte) error {
 	reqArgs := &pmdbClient.PmdbReq{
-		Rncui:      rncui,
-		ReqType:	PumiceDBCommon.APP_REQ,
-		Request:  	request,
-		GetReply: 	0,
-		Reply:    response,
+		Rncui:       rncui,
+		ReqType:     PumiceDBCommon.APP_REQ,
+		Request:     request,
+		GetReply:    0,
+		Reply:       response,
 		WriteSeqNum: wsn,
 	}
 
@@ -487,7 +487,7 @@ func (handler *proxyHandler) PutKVHandlerCB(rncui string, wsn int64, request []b
 
 func (handler *proxyHandler) GetKVHandlerCB(request []byte, response *[]byte) error {
 	reqArgs := &pmdbClient.PmdbReq{
-		Rncui:      "",
+		Rncui:   "",
 		ReqType: PumiceDBCommon.APP_REQ,
 		Request: request,
 		Reply:   response,
@@ -531,7 +531,7 @@ func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response
 	r := &funclib.FuncReq{Name: name, Args: res}
 	reqArgs := &pmdbClient.PmdbReq{
 		Request:  encode(r),
-		ReqType: PumiceDBCommon.FUNC_REQ,
+		ReqType:  PumiceDBCommon.FUNC_REQ,
 		GetReply: 1,
 		Reply:    response,
 	}
@@ -556,7 +556,7 @@ Return(s) : error
 
 Description : Call back for PMDB write func requests to HTTP server.
 */
-func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string,  wsn int64, body []byte, response *[]byte, reader *http.Request) error {
+func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64, body []byte, response *[]byte, reader *http.Request) error {
 	log.Info("FuncHandlerCB called with name: ", name)
 	encType := GetEncodingType(reader)
 	res, err := DecodeRequest(encType, name, body)
@@ -567,11 +567,11 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string,  wsn in
 	r := &funclib.FuncReq{Name: name, Args: res}
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:       rncui,
-		Request:  	 encode(r),
-		GetReply: 	 1,
-		Reply:    	 response,
+		Request:     encode(r),
+		GetReply:    1,
+		Reply:       response,
 		WriteSeqNum: wsn,
-		ReqType:	 PumiceDBCommon.FUNC_REQ,
+		ReqType:     PumiceDBCommon.FUNC_REQ,
 	}
 	err = handler.pmdbClientObj.Put(reqArgs)
 	if err != nil {
@@ -715,16 +715,14 @@ func main() {
 
 	//niovaServer.clientUUID = uuid.NewV4().String()
 	//Create log file
-	err = PumiceDBCommon.InitLogger(proxyObj.logPath)
-	switch proxyObj.logLevel {
-	case "Info":
-		log.SetLevel(log.InfoLevel)
-	case "Trace":
-		log.SetLevel(log.TraceLevel)
-	}
-	if err != nil {
-		log.Error("(Proxy) Logger error : ", err)
-	}
+	// err = PumiceDBCommon.InitLogger(proxyObj.logPath)
+	// switch proxyObj.logLevel {
+	// case "Info":
+	// 	log.SetLevel(log.InfoLevel)
+	// case "Trace":
+	// 	log.SetLevel(log.TraceLevel)
+	// }
+	log.InitXlog(proxyObj.logPath, &proxyObj.logLevel)
 
 	//Apply config
 	err = proxyObj.getConfigData()

@@ -110,7 +110,7 @@ func main() {
 		conf.NisdConfig[i].ID = nisdInfo.ID
 		conf.NisdConfig[i].ClientPort = nisdInfo.ClientPort
 		conf.NisdConfig[i].PeerPort = nisdInfo.PeerPort
-		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.DEVICE_IDX]
+		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.FD_DEVICE]
 		conf.NisdConfig[i].Args = naS
 		log.Info("fetched nisd info from control plane: ", nisdInfo)
 
