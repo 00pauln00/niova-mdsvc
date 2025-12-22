@@ -535,6 +535,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		if err != nil {
 			log.Error("allocateNisdPerVdev():failed to allocate nisd: ", err)
 			resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
+			nisdMap.Clear()
 			continue
 		}
 		resp.Success = true
