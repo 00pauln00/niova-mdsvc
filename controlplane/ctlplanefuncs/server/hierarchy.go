@@ -148,7 +148,7 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 
 // Pick a  NISD using the hash from a specific failure domain.
 func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) (*cpLib.NisdCopy, error) {
-	if int(fd) >= len(hr.FD) {
+	if int(fd) >= cpLib.MAX_FD {
 		err := fmt.Errorf("invalid failure domain: %d", fd)
 		log.Error("PickNISD():", err)
 		return nil, err
