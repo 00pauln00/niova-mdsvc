@@ -2,21 +2,18 @@ package srvctlplanefuncs
 
 import (
 	"C"
+	"encoding/binary"
 	"fmt"
+	"path"
+	"strconv"
+	"strings"
+	"unsafe"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
-)
-import (
-	"encoding/binary"
-	"path"
-	"strconv"
-	"strings"
-	"unsafe"
-
 	"github.com/tidwall/btree"
 )
 
@@ -213,8 +210,16 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 }
 
 func ApplyNisd(args ...interface{}) (interface{}, error) {
-	cbargs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	nisd := args[0].(ctlplfl.Nisd)
+	cbargs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
+	if !ok {
+		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
+		return nil, err
+	}
+	nisd, ok := args[0].(ctlplfl.Nisd)
+	if !ok {
+		err := fmt.Errorf("invalid argument: expecting type Nisd")
+		return nil, err
+	}
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
@@ -364,10 +369,13 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdCopy, i int, commitChgs
 // Initialize the VDEV during the write preparation stage.
 // Since the VDEV ID is derived from a randomly generated UUID, It needs to be generated within the Write Prep Phase.
 func WPCreateVdev(args ...interface{}) (interface{}, error) {
-	var vdev ctlplfl.Vdev
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	vdev = args[0].(ctlplfl.Vdev)
+	vdev, ok := args[0].(ctlplfl.Vdev)
+	if !ok {
+		err := fmt.Errorf("invalid argument: expecting type vdev")
+		return nil, err
+	}
 	err := vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
@@ -406,6 +414,12 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 }
 
 func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) error {
+
+	if int(fd) >= ctlplfl.MAX_FD {
+		err := fmt.Errorf("invalid failure domain: %d", fd)
+		log.Error(err)
+		return err
+	}
 
 	treeLen := HR.FD[fd].Tree.Len()
 	if treeLen == 0 {
@@ -505,7 +519,11 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		Name:    "vdev",
 		Success: true,
 	}
-	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
+	cbArgs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
+	if !ok {
+		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
+		return nil, err
+	}
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
