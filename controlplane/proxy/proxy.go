@@ -715,13 +715,6 @@ func main() {
 
 	//niovaServer.clientUUID = uuid.NewV4().String()
 	//Create log file
-	// err = PumiceDBCommon.InitLogger(proxyObj.logPath)
-	// switch proxyObj.logLevel {
-	// case "Info":
-	// 	log.SetLevel(log.InfoLevel)
-	// case "Trace":
-	// 	log.SetLevel(log.TraceLevel)
-	// }
 	log.InitXlog(proxyObj.logPath, &proxyObj.logLevel)
 
 	//Apply config

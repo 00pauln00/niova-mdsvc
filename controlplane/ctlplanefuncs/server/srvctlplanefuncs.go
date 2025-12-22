@@ -488,23 +488,18 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 	return nil
 }
 
-func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg, nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) error {
-	fd, err := HR.GetFDLevel(int(vdev.NumReplica))
-	if err != nil {
-		log.Error("failed to get fd:", err)
-		return err
-	}
-	log.Debugf("selected fd %d, for vdev ID: %s & ft: %d.", fd, vdev.ID, vdev.NumReplica)
+func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, fd int, nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) ([]funclib.CommitChg, error) {
+	commitCh := make([]funclib.CommitChg, 0)
 	for i := 0; i < int(vdev.NumChunks); i++ {
 		log.Debugf("allocating nisd for chunk: %d, from fd: %d ", i, fd)
-		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh, nisdMap)
+		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), &commitCh, nisdMap)
 		if err != nil {
 			err = fmt.Errorf("failed to allocate nisd from fd: %d, %v", fd, err)
 			log.Error(err)
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return commitCh, nil
 }
 
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
@@ -513,7 +508,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	var funcIntrm funclib.FuncIntrm
 	resp := ctlplfl.ResponseXML{
 		Name:    "vdev",
-		Success: true,
+		Success: false,
 	}
 	cbArgs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
 	if !ok {
@@ -527,12 +522,27 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	nisdMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	HR.Dump()
 	// allocate nisd chunks to vdev
-	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes, nisdMap)
+	fd, err := HR.GetFDLevel(int(vdev.Cfg.NumReplica))
 	if err != nil {
-		log.Error("failed to allocate nisd: ", err)
-		resp.Success = false
-		resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
+		log.Error("failed to get fd:", err)
+		resp.Error = fmt.Sprintf("failed to get fd:", err)
+		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
+
+	for i := fd; i < ctlplfl.FD_MAX; i++ {
+		log.Debugf("selected fd %d, for vdev ID: %s & ft: %d.", i, vdev.Cfg.ID, vdev.Cfg.NumReplica)
+		commitCh, err := allocateNisdPerVdev(&vdev.Cfg, i, nisdMap)
+		if err != nil {
+			log.Error("allocateNisdPerVdev():failed to allocate nisd: ", err)
+			resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
+			continue
+		}
+		resp.Success = true
+		funcIntrm.Changes = append(funcIntrm.Changes, commitCh...)
+		break
+
+	}
+
 	if resp.Success {
 		nisdMap.Ascend("", func(k string, v *ctlplfl.NisdVdevAlloc) bool {
 			funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
