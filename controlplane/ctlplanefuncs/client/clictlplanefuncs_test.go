@@ -357,7 +357,7 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	c := newClient(t)
 
-	// // create nisd
+	// create nisd
 	mockNisd := cpLib.Nisd{
 		ClientPort: 7001,
 		PeerPort:   8001,
@@ -590,8 +590,8 @@ func TestCreateSmallHierarchy(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []string{
-		"9bc244bc-df29-11f0-a93b-277aec17e43701",
-		"9bc244bc-df29-11f0-a93b-277aec17e43702",
+		"e5bdb838-df76-11f0-9d60-d3a87e703a41",
+		"e5bdb838-df76-11f0-9d60-d3a87e703a42",
 	}
 
 	// 10 RACKS
@@ -602,11 +602,11 @@ func TestCreateSmallHierarchy(t *testing.T) {
 
 	// 20 HVs
 	hvs := []string{
-		"bde1f08a-df63-11f0-88ef-430ddec199701",
-		"bde1f08a-df63-11f0-88ef-430ddec199702",
-		"bde1f08a-df63-11f0-88ef-430ddec199703",
-		"bde1f08a-df63-11f0-88ef-430ddec199704",
-		"bde1f08a-df63-11f0-88ef-430ddec199705",
+		"bde1f08a-df63-11f0-88ef-430ddec19901",
+		"bde1f08a-df63-11f0-88ef-430ddec19902",
+		"bde1f08a-df63-11f0-88ef-430ddec19903",
+		"bde1f08a-df63-11f0-88ef-430ddec19904",
+		"bde1f08a-df63-11f0-88ef-430ddec19905",
 	}
 
 	// 40 Devices
@@ -717,8 +717,8 @@ func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
 	vdev := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
-			Size:       1700 * 1024 * 1024 * 1024,
-			NumReplica: 3,
+			Size:       1500 * 1024 * 1024 * 1024,
+			NumReplica: 4,
 		},
 	}
 
