@@ -203,7 +203,11 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	applyKV(intrm.Changes, cbargs)
+	err = applyKV(intrm.Changes, cbargs)
+	if err != nil {
+		log.Error("applyKV(): ", err)
+		return nil, err
+	}
 
 	return intrm.Response, nil
 }
@@ -219,7 +223,11 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	applyKV(intrm.Changes, cbargs)
+	err = applyKV(intrm.Changes, cbargs)
+	if err != nil {
+		log.Error("applyKV(): ", err)
+		return nil, err
+	}
 
 	err = HR.AddNisd(&nisd)
 	if err != nil {
@@ -397,7 +405,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
-func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg) error {
+func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) error {
 
 	treeLen := HR.FD[fd].Tree.Len()
 	if treeLen == 0 {
@@ -407,12 +415,13 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
 
 	log.Debugf("hash generated %d for chunk: %s, fd: %d", hash, chunk, fd)
+
 	// select entity by index
-	entityIDX, err := GetIndex(hash, treeLen)
-	if err != nil {
-		log.Error("failed to get entity: ", err)
-		return err
+	if treeLen <= 0 {
+		log.Error("failed to get entity: no elemnts in tree")
+		return fmt.Errorf("invalid size: %d", treeLen)
 	}
+	entityIDX := int(hash % uint64(treeLen))
 
 	log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
 
@@ -427,7 +436,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		attempts := 0
 
 		for attempts < treeLen {
-			nisd, err = HR.PickNISD(fd, entityIDX, hash, picked)
+			nisd, err = HR.PickNISD(fd, entityIDX, hash, picked, nisdMap)
 			if err == nil {
 				break
 			}
@@ -461,7 +470,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 	return nil
 }
 
-func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) error {
+func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) error {
 	fd, err := HR.GetFDLevel(int(vdev.NumReplica))
 	if err != nil {
 		log.Error("failed to get fd:", err)
@@ -470,7 +479,7 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, commitCh *[]funclib.CommitChg) e
 	log.Infof("selected fd %d, for vdev ID: %s & ft: %d.", fd, vdev.ID, vdev.NumReplica)
 	for i := 0; i < int(vdev.NumChunks); i++ {
 		log.Debugf("allocating nisd for chunk: %d, from fd: %d ", i, fd)
-		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh)
+		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), commitCh, nisdMap)
 		if err != nil {
 			// i--
 			err = fmt.Errorf("failed to allocate nisd from fd: %d, %v", fd, err)
@@ -501,25 +510,29 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Infof("allocating vdev for ID: %s", vdev.Cfg.ID)
-	HR.NisdMap = btree.NewMap[string, *ctlplfl.NisdCopy](32)
+	nisdMap := btree.NewMap[string, *ctlplfl.NisdCopy](32)
 	HR.Dump()
 	// allocate nisd chunks to vdev
-	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes)
+	err := allocateNisdPerVdev(&vdev.Cfg, &funcIntrm.Changes, nisdMap)
 	if err != nil {
 		log.Error("failed to allocate nisd: ", err)
 		resp.Success = false
 		resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
 	}
 	if resp.Success {
-		HR.NisdMap.Ascend("", func(k string, v *ctlplfl.NisdCopy) bool {
+		nisdMap.Ascend("", func(k string, v *ctlplfl.NisdCopy) bool {
 			funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
 				Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(nisdCfgKey, v.Ptr.ID), AVAIL_SPACE)),
 				Value: []byte(strconv.Itoa(int(v.AvailableSize))),
 			})
 			return true
 		})
-		applyKV(funcIntrm.Changes, cbArgs)
-		HR.NisdMap.Ascend("", func(k string, v *ctlplfl.NisdCopy) bool {
+		err = applyKV(funcIntrm.Changes, cbArgs)
+		if err != nil {
+			log.Error("applyKV(): ", err)
+			return nil, err
+		}
+		nisdMap.Ascend("", func(k string, v *ctlplfl.NisdCopy) bool {
 			log.Debugf("updating nisd %s available space %d from map -> tree", v.Ptr.ID, v.AvailableSize)
 			v.Ptr.AvailableSize = v.AvailableSize
 			if v.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
@@ -530,7 +543,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 	HR.Dump()
-	HR.NisdMap.Clear()
+	nisdMap.Clear()
 	log.Infof("vdev %s, request successfully processed", vdev.Cfg.ID)
 	return pmCmn.Encoder(pmCmn.GOB, resp)
 }

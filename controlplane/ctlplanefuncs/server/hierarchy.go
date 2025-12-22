@@ -12,6 +12,8 @@ import (
 
 // Nisds is a Counted B-tree containing pointers to Nisd objects, ordered by Nisd.ID.
 // Entity maps a single entity to the set of Nisd objects associated with it.
+// Here the Entity could be a PDU/Rack/HV/Device
+// The Nisds Tree holds all the nisd ptr associated with the Entity.
 type Entities struct {
 	ID    string
 	Nisds *btree.BTreeG[*cpLib.Nisd]
@@ -32,8 +34,6 @@ type FailureDomain struct {
 // Index 3 - Device
 type Hierarchy struct {
 	FD []FailureDomain
-	// AvailableSize uint64
-	NisdMap *btree.Map[string, *ctlplfl.NisdCopy]
 }
 
 var HR Hierarchy
@@ -76,18 +76,6 @@ func (fd *FailureDomain) deleteEmptyEntity(id string) {
 	}
 }
 
-func GetIndex(hash uint64, size int) (int, error) {
-	// if no elements are present in the tree, return a error
-	if size <= 0 {
-		return 0, fmt.Errorf("invalid size: %d", size)
-	}
-	// if only one element is present in the tree, return 0th idx
-	if size == 1 {
-		return 0, nil
-	}
-	return int(hash % uint64(size)), nil
-}
-
 // Add NISD and the corresponding parent entities to the Hierarchy
 func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	if n.AvailableSize < cpLib.CHUNK_SIZE {
@@ -120,13 +108,13 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) {
 }
 
 // Get the Failure Domain Based on the Nisd Count
-func (hr *Hierarchy) GetFDLevel(fltTlrnc int) (int, error) {
+func (hr *Hierarchy) GetFDLevel(ft int) (int, error) {
 	for i := cpLib.PDU_IDX; i <= cpLib.DEVICE_IDX; i++ {
-		if fltTlrnc <= hr.FD[i].Tree.Len() {
+		if ft <= hr.FD[i].Tree.Len() {
 			return i, nil
 		}
 	}
-	return -1, fmt.Errorf("failed to allocate vdev as the fault tolerance level %d cannot be met", fltTlrnc)
+	return -1, fmt.Errorf("failed to allocate vdev as the fault tolerance level %d cannot be met", ft)
 }
 
 // Get the total number of elements in a Failure Domain.
@@ -137,8 +125,8 @@ func (hr *Hierarchy) GetEntityLen(tierIDX int) int {
 	return hr.FD[tierIDX].Tree.Len()
 }
 
-func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
-	if nisdPtr, ok := hr.NisdMap.Get(nisd.ID); ok {
+func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) *ctlplfl.NisdCopy {
+	if nisdPtr, ok := nisdMap.Get(nisd.ID); ok {
 		return nisdPtr
 	}
 
@@ -147,7 +135,7 @@ func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
 		Ptr:           nisd,
 	}
 
-	hr.NisdMap.Set(nisd.ID, copy)
+	nisdMap.Set(nisd.ID, copy)
 
 	log.Debugf(
 		"added nisd copy to temp nisd map: id=%s, available_size=%d",
@@ -159,7 +147,7 @@ func (hr *Hierarchy) UpdateNisdCopy(nisd *ctlplfl.Nisd) *ctlplfl.NisdCopy {
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}) (*cpLib.NisdCopy, error) {
+func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) (*cpLib.NisdCopy, error) {
 	if int(fd) >= len(hr.FD) {
 		err := fmt.Errorf("invalid failure domain: %d", fd)
 		log.Error("PickNISD():", err)
@@ -176,13 +164,14 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 	}
 
 	// select NISD inside entity
-	idx, err := GetIndex(hash, ent.Nisds.Len())
-	if err != nil {
-		log.Errorf("failed to get index for hash: %d: %v", hash, err)
-		return nil, err
+	size := ent.Nisds.Len()
+	if size <= 0 {
+		log.Errorf("failed to get index for hash: %d", hash)
+		return nil, fmt.Errorf("invalid size: %d", size)
 	}
+	idx := int(hash % uint64(size))
 
-	for i := 0; i < ent.Nisds.Len(); i++ {
+	for i := 0; i < size; i++ {
 		nisd, ok := ent.Nisds.GetAt(idx)
 		if !ok {
 			log.Error("failed to get nisd from tree at idx: ", idx)
@@ -190,7 +179,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 		}
 
 		// update the map details here
-		nCopy := HR.UpdateNisdCopy(nisd)
+		nCopy := HR.LookupNAddNisd(nisd, nisdMap)
 
 		// check if the nisd can be picked or not by checking the nisd available space from the nisd map,
 		// if the space is available then pick the nisd
