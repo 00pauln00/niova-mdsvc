@@ -409,7 +409,7 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	log.Info("Get na: ", nisdArgs)
 }
 
-func TestHierarchy2(t *testing.T) {
+func TestParallelVdevCreation(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []string{
