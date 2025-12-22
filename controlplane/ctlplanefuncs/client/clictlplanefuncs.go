@@ -209,9 +209,19 @@ func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) 
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+func (ccf *CliCFuncs) GetNisds() ([]ctlplfl.Nisd, error) {
 	ncfg := make([]ctlplfl.Nisd, 0)
-	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
+	err := ccf.get(nil, &ncfg, ctlplfl.GET_NISD_LIST)
+	if err != nil {
+		log.Error("failed to fet nisd info: ", err)
+		return nil, err
+	}
+	return ncfg, nil
+}
+
+func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
+	ncfg := &ctlplfl.Nisd{}
+	err := ccf.get(req, ncfg, ctlplfl.GET_NISD)
 	if err != nil {
 		log.Error("failed to fet nisd info: ", err)
 		return nil, err
@@ -220,7 +230,7 @@ func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 }
 
 func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
+	return ccf.put(vdev.Cfg.Size, vdev, ctlplfl.CREATE_VDEV)
 }
 
 func (ccf *CliCFuncs) GetVdevsWithChunkInfo(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
@@ -228,17 +238,6 @@ func (ccf *CliCFuncs) GetVdevsWithChunkInfo(req *ctlplfl.GetReq) ([]ctlplfl.Vdev
 	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV_CHUNK_INFO)
 	if err != nil {
 		log.Error("GetVdevsWithChunkInfo failed: ", err)
-		return nil, err
-	}
-
-	return vdevs, nil
-}
-
-func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
-	vdevs := make([]ctlplfl.Vdev, 0)
-	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV)
-	if err != nil {
-		log.Error("GetVdevs failed: ", err)
 		return nil, err
 	}
 
@@ -356,4 +355,27 @@ func (ccf *CliCFuncs) GetNisdArgs() (ctlplfl.NisdArgs, error) {
 	}
 
 	return args, nil
+}
+
+func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
+	vdev := ctlplfl.VdevCfg{}
+	err := ccf.get(req, &vdev, ctlplfl.GET_VDEV_INFO)
+	if err != nil {
+		log.Error("Read Vdev Cfg failed: ", err)
+		return vdev, err
+	}
+
+	return vdev, nil
+}
+
+func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, error) {
+	cn := ctlplfl.ChunkNisd{}
+	log.Info("fetching chunk Info for:", req.ID)
+	err := ccf.get(req, &cn, ctlplfl.GET_CHUNK_NISD)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return cn, err
+	}
+
+	return cn, nil
 }

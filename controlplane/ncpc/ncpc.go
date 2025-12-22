@@ -45,7 +45,7 @@ type clientHandler struct {
 	configPath         string
 	logPath            string
 	resultFile         string
-	rncui              string
+	lookoutID          string
 	rangeQuery         bool
 	relaxedConsistency bool
 	count              int
@@ -207,7 +207,7 @@ func (handler *clientHandler) getCmdParams() {
 	flag.StringVar(&handler.logPath, "l", "/tmp/temp.log", "Log path")
 	flag.StringVar(&handler.operation, "o", "rw", "Specify the opeation to perform")
 	flag.StringVar(&handler.resultFile, "j", "json_output", "Path along with file name for the resultant json file")
-	flag.StringVar(&handler.rncui, "u", uuid.NewV4().String()+":0:0:0:0", "RNCUI for request / Lookout uuid")
+	flag.StringVar(&handler.lookoutID, "u", "", "Lookout uuid")
 	flag.IntVar(&handler.count, "n", 1, "Write number of key/value pairs per key type (Default 1 will write the passed key/value)")
 	flag.BoolVar(&handler.relaxedConsistency, "r", false, "Set this flag if range could be performed with relaxed consistency")
 	flag.IntVar(&handler.seed, "s", 10, "Seed value")
@@ -298,14 +298,15 @@ func (clientObj *clientHandler) prepareLOInfoRequest(b *bytes.Buffer) error {
 func (co *clientHandler) prepNSendReq(rncui string, isWrite bool, itr int) error {
 
 	var rqb bytes.Buffer
-	err := PumiceDBCommon.PrepareAppPumiceRequest(co.clientReqArr[itr].Request,
-		rncui, &rqb)
+
+	encoder := gob.NewEncoder(&rqb)
+	err := encoder.Encode(co.clientReqArr[itr].Request)
 	if err != nil {
 		return err
 	}
 
 	//Send the request
-	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "", isWrite)
+	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app?rncui="+rncui+"&wsn=0", isWrite)
 	if err != nil {
 		return err
 	}
@@ -330,20 +331,20 @@ func (co *clientHandler) write(wresult bool) ([]byte, error) {
 		wg.Add(1)
 		requestLimiter <- 1
 		co.clientReqArr[i].Request.Operation = requestResponseLib.KV_WRITE
-		go func(itr int) {
+		go func(itr int, rncui string) {
 			defer func() {
 				wg.Done()
 				<-requestLimiter
 			}()
 
 			err = func() error {
-				err := co.prepNSendReq(uuid.NewV4().String()+":0:0:0:0", true, itr)
+				err := co.prepNSendReq(rncui, true, itr)
 				return err
 			}()
 			if err != nil {
 				return
 			}
-		}(i)
+		}(i, uuid.NewV4().String()+":0:0:0:0")
 	}
 	wg.Wait()
 	file, err := json.MarshalIndent(co.clientReqArr, "", " ")
@@ -413,14 +414,15 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 		creq.Request.SeqNum = seqNum
 
 		rso := &creq.Response
-		err = PumiceDBCommon.PrepareAppPumiceRequest(creq.Request, "", &rqb)
+
+		encoder := gob.NewEncoder(&rqb)
+		err = encoder.Encode(creq.Request)
 		if err != nil {
-			log.Error("Pumice request creation error : ", err)
-			break
+			log.Error("Encoding error : ", err)
 		}
 
-		//Send the range request
-		rsb, err = co.clientAPIObj.Request(rqb.Bytes(), "", false)
+		//Send the request
+		rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app", false)
 		if err != nil {
 			log.Error("Error while sending request : ", err)
 		}
@@ -607,7 +609,7 @@ func (clientObj *clientHandler) processProxyStat() ([]byte, error) {
 
 func (clientObj *clientHandler) processLookoutInfo() ([]byte, error) {
 	clientObj.clientAPIObj.ServerChooseAlgorithm = 2
-	clientObj.clientAPIObj.UseSpecificServerName = clientObj.rncui
+	clientObj.clientAPIObj.UseSpecificServerName = clientObj.lookoutID
 
 	var b bytes.Buffer
 	var r []byte
@@ -694,7 +696,12 @@ func (clientObj *clientHandler) performLeaseReq(resource, client string) ([]byte
 		log.Error("Error while preparing lease handlers : ", err)
 		return nil, err
 	}
-	err = lrh.InitLeaseReq(client, resource, uuid.NewV4().String()+":0:0:0:0", op)
+
+	if (op != leaseLib.LOOKUP) && (op != leaseLib.LOOKUP_VALIDATE) {
+		lrh.Rncui, lrh.WSN = uuid.NewV4().String()+":0:0:0:0", 0
+	}
+
+	err = lrh.InitLeaseReq(client, resource, op)
 	if err != nil {
 		log.Error("error while initializing lease req : ", err)
 		return nil, err
@@ -881,25 +888,25 @@ func main() {
 	case "CreateVdev":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		// Step 1: Create first Vdev
-		vdev := &cpLib.Vdev{
+		vdev := &cpLib.Vdev{Cfg: cpLib.VdevCfg{
 			Size: vdevSize,
-		}
+		}}
 		err = c.CreateVdev(vdev)
 		if err != nil {
 			log.Error("failed to create vdev:", err)
 			os.Exit(-1)
 		}
 		log.Info("Vdev created successfully with UUID:", vdev)
-	case "GetVdev":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		vdev, err := c.GetVdevs(&cpLib.GetReq{
-			GetAll: true,
-		})
-		if err != nil {
-			log.Error("failed to get vdev info:", err)
-			os.Exit(-1)
-		}
-		log.Info("Vdev info retrieved successfully:", vdev)
+		// case "GetVdev":
+		// 	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		// 	vdev, err := c.GetVdevCfg(&cpLib.GetReq{
+		// 		GetAll: true,
+		// 	})
+		// 	if err != nil {
+		// 		log.Error("failed to get vdev info:", err)
+		// 		os.Exit(-1)
+		// 	}
+		// 	log.Info("Vdev info retrieved successfully:", vdev)
 
 	}
 

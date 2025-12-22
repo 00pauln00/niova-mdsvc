@@ -2,6 +2,7 @@ package clictlplanefuncs
 
 import (
 	"os"
+	"path"
 	"testing"
 	"context"
     "time"
@@ -585,11 +586,12 @@ func TestVdevLifecycle(t *testing.T) {
 
 	// Step 1: Create first Vdev
 	vdev1 := &cpLib.Vdev{
-		Size: 700 * 1024 * 1024 * 1024,
-	}
+		Cfg: cpLib.VdevCfg{
+			Size: 700 * 1024 * 1024 * 1024,
+		}}
 	err = c.CreateVdev(vdev1)
 	assert.NoError(t, err, "failed to create vdev1")
-	assert.NotEmpty(t, vdev1.VdevID, "vdev1 ID should not be empty")
+	assert.NotEmpty(t, vdev1.Cfg.ID, "vdev1 ID should not be empty")
 	log.Info("Created vdev1: ", vdev1)
 
 	// Step 2: Create second Vdev
@@ -619,22 +621,21 @@ func TestVdevLifecycle(t *testing.T) {
 
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetReq{
-		ID:     vdev1.VdevID,
+		ID:     vdev1.Cfg.ID,
 		GetAll: false,
 	}
-	specificResp, err := c.GetVdevs(getSpecificReq)
+	specificResp, err := c.GetVdevCfg(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev")
 	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
 	log.Info("Specific vdev response: ", specificResp)
 
-	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
-	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+	assert.Equal(t, vdev1.Cfg.ID, specificResp.ID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Cfg.Size, specificResp.Size, "fetched vdev size mismatch")
 
-	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	result, err := c.GetVdevsWithChunkInfo(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
-	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
-	log.Info("Specific vdev with chunk mapping response: ", specificResp)
+	assert.NotNil(t, result, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", result)
 
 	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
 	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
@@ -770,6 +771,41 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
+}
+
+func TestVdevNisdChunk(t *testing.T) {
+
+	c := newClient(t)
+
+	// create nisd
+	mockNisd := cpLib.Nisd{
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
+		IPAddr:        "192.168.1.10",
+		InitDev:       true,
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+	}
+	resp, err := c.PutNisd(&mockNisd)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	// create vdev
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size: 500 * 1024 * 1024 * 1024,
+		}}
+	err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", vdev)
+	assert.NoError(t, err)
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
+	log.Info("Read vdev:", readV)
+	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
+	log.Info("Read Nisd Chunk:", nc)
 }
 
 func TestPutAndGetNisdArgs(t *testing.T) {

@@ -316,11 +316,12 @@ func (deviceWithPartitionParser) GetEntity(entity Entity) Entity {
 	return *entity.(*ctlplfl.Device)
 }
 
+// TODO: Make chages to parse a single Vdev
 type vdevParser struct{}
 
 func (vdevParser) GetRootKey() string { return vdevKey }
 func (vdevParser) NewEntity(id string) Entity {
-	return &ctlplfl.Vdev{VdevID: id}
+	return &ctlplfl.Vdev{Cfg: ctlplfl.VdevCfg{ID: id}}
 }
 func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 	vdev := entity.(*ctlplfl.Vdev)
@@ -328,15 +329,15 @@ func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 		switch parts[VDEV_ELEMENT_KEY] {
 		case SIZE:
 			if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
-				vdev.Size = sz
+				vdev.Cfg.Size = sz
 			}
 		case NUM_CHUNKS:
 			if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
-				vdev.NumChunks = uint32(nc)
+				vdev.Cfg.NumChunks = uint32(nc)
 			}
 		case NUM_REPLICAS:
 			if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
-				vdev.NumReplica = uint8(nr)
+				vdev.Cfg.NumReplica = uint8(nr)
 			}
 		}
 	}
