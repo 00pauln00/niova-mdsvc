@@ -38,10 +38,11 @@ const (
 	GET_CHUNK_NISD      = "get_chunk_nisd"
 	GET_NISD_INFO       = "get_nisd_info"
 
-	PUT_NISD_ARGS = "PutNisdArgs"
-	GET_NISD_ARGS = "GetNisdArgs"
-	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
-	NAME          = "name"
+	PUT_NISD_ARGS  = "PutNisdArgs"
+	GET_NISD_ARGS  = "GetNisdArgs"
+	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
+	MAX_REPLY_SIZE = 4 * 1024 * 1024
+	NAME           = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -49,12 +50,12 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
-	PDU_IDX    = 0
-	RACK_IDX   = 1
-	HV_IDX     = 2
-	DEVICE_IDX = 3
-	MAX_FD     = 4
-	HASH_SIZE  = 8
+	FD_PDU    = 0
+	FD_RACK   = 1
+	FD_HV     = 2
+	FD_DEVICE = 3
+	FD_MAX    = 4
+	HASH_SIZE = 8
 )
 
 // Define Snapshot XML structure
@@ -161,7 +162,7 @@ type NisdChunk struct {
 	Chunk []int
 }
 
-type NisdCopy struct {
+type NisdVdevAlloc struct {
 	AvailableSize int64
 	Ptr           *Nisd
 }
@@ -309,24 +310,24 @@ func (n *Nisd) Validate() error {
 		return errors.New("invalid ID uuid")
 	}
 
-	if len(n.FailureDomain) != 4 {
+	if len(n.FailureDomain) != FD_MAX {
 		return errors.New("invalid NISD failure domain info")
 	}
-	for i := 0; i < DEVICE_IDX; i++ {
+	for i := 0; i < FD_DEVICE; i++ {
 		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
-			return errors.New("invalid FailureDomain[" + string(rune(i)) + "] uuid")
+			return fmt.Errorf("invalid FailureDomain[%d] uuid", i)
 		}
 	}
 
 	if n.AvailableSize > n.TotalSize {
-		return errors.New("Available Size exceeds Total Size")
+		return errors.New("available Size exceeds total size")
 	}
 
 	return nil
 }
 
-func IncFD(fd int) (int, error) {
-	if fd < DEVICE_IDX {
+func NextFailureDomain(fd int) (int, error) {
+	if fd < FD_DEVICE {
 		fd++
 		return fd, nil
 	}

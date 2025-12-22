@@ -73,9 +73,8 @@ type pmdbServerHandler struct {
 }
 
 func PopulateHierarchy() error {
-	nisdCfgKey := "n_cfg"
 	time.Sleep(2 * time.Second)
-	readResult, err := PumiceDBServer.RangeReadKV(nil, nisdCfgKey, int64(len(nisdCfgKey)), nisdCfgKey, 4*1024*1024*1024, false, 0, "PMDBTS_CF")
+	readResult, err := PumiceDBServer.RangeReadKV(nil, srvctlplanefuncs.NisdCfgKey, int64(len(srvctlplanefuncs.NisdCfgKey)), srvctlplanefuncs.NisdCfgKey, cpLib.MAX_REPLY_SIZE, false, 0, "PMDBTS_CF")
 	if err != nil {
 		log.Warn("PopulateHierarchy():RangeReadKV()", err)
 		return err

@@ -43,7 +43,7 @@ func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
 
 // Initialize the Hierarchy Struct
 func (hr *Hierarchy) Init() {
-	hr.FD = make([]FailureDomain, cpLib.MAX_FD)
+	hr.FD = make([]FailureDomain, cpLib.FD_MAX)
 	for i := 0; i < 4; i++ {
 		hr.FD[i] = FailureDomain{
 			Type: uint8(i),
@@ -81,7 +81,7 @@ func (hr *Hierarchy) AddNisd(n *cpLib.Nisd) error {
 	if n.AvailableSize < cpLib.CHUNK_SIZE {
 		log.Debugf("skipping nisd addition %s, as the available size %f GB < 8GB", n.ID, BytesToGB(n.AvailableSize))
 	}
-	if len(n.FailureDomain) != cpLib.MAX_FD {
+	if len(n.FailureDomain) != cpLib.FD_MAX {
 		err := fmt.Errorf("failed to add nisd: not enough failure domain info")
 		log.Error(err)
 		return err
@@ -109,7 +109,7 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) {
 
 // Get the Failure Domain Based on the Nisd Count
 func (hr *Hierarchy) GetFDLevel(ft int) (int, error) {
-	for i := cpLib.PDU_IDX; i <= cpLib.DEVICE_IDX; i++ {
+	for i := cpLib.FD_PDU; i <= cpLib.FD_DEVICE; i++ {
 		if ft <= hr.FD[i].Tree.Len() {
 			return i, nil
 		}
@@ -125,12 +125,12 @@ func (hr *Hierarchy) GetEntityLen(tierIDX int) int {
 	return hr.FD[tierIDX].Tree.Len()
 }
 
-func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) *ctlplfl.NisdCopy {
+func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) *ctlplfl.NisdVdevAlloc {
 	if nisdPtr, ok := nisdMap.Get(nisd.ID); ok {
 		return nisdPtr
 	}
 
-	copy := &ctlplfl.NisdCopy{
+	copy := &ctlplfl.NisdVdevAlloc{
 		AvailableSize: nisd.AvailableSize,
 		Ptr:           nisd,
 	}
@@ -147,8 +147,9 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{}, nisdMap *btree.Map[string, *ctlplfl.NisdCopy]) (*cpLib.NisdCopy, error) {
-	if int(fd) >= cpLib.MAX_FD {
+func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{},
+	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
+	if int(fd) >= cpLib.FD_MAX {
 		err := fmt.Errorf("invalid failure domain: %d", fd)
 		log.Error("PickNISD():", err)
 		return nil, err
@@ -179,21 +180,21 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 		}
 
 		// update the map details here
-		nCopy := HR.LookupNAddNisd(nisd, nisdMap)
+		nAlloc := HR.LookupNAddNisd(nisd, nisdMap)
 
 		// check if the nisd can be picked or not by checking the nisd available space from the nisd map,
 		// if the space is available then pick the nisd
-		if nCopy.AvailableSize >= ctlplfl.CHUNK_SIZE {
+		if nAlloc.AvailableSize >= ctlplfl.CHUNK_SIZE {
 			// TODO: move this to a separate filtering method
-			if _, exists := picked[nCopy.Ptr.ID]; !exists {
+			if _, exists := picked[nAlloc.Ptr.ID]; !exists {
 
 				// decrement the available size value only after the chunk is picked
-				nCopy.AvailableSize -= ctlplfl.CHUNK_SIZE
+				nAlloc.AvailableSize -= ctlplfl.CHUNK_SIZE
 				// commit selection
-				picked[nCopy.Ptr.ID] = struct{}{}
-				return nCopy, nil
+				picked[nAlloc.Ptr.ID] = struct{}{}
+				return nAlloc, nil
 			}
-			log.Tracef("failed to pick nisd, as it's already picked: %s", nCopy.Ptr.ID)
+			log.Tracef("failed to pick nisd, as it's already picked: %s", nAlloc.Ptr.ID)
 		}
 
 		idx = (idx + 1) % ent.Nisds.Len()
