@@ -1084,34 +1084,34 @@ func TestVdevNisdChunk(t *testing.T) {
 	c := newClient(t)
 
 	// // create nisd
-	// mockNisd := cpLib.Nisd{
-	// 	ClientPort: 7001,
-	// 	PeerPort:   8001,
-	// 	ID:         "nisd-001",
-	// 	FailureDomain: []string{
-	// 		"pdu-05",
-	// 		"rack-04",
-	// 		"hv-07",
-	// 		"dev-004",
-	// 	},
-	// 	IPAddr:        "192.168.1.10",
-	// 	TotalSize:     1_000_000_000_000, // 1 TB
-	// 	AvailableSize: 750_000_000_000,   // 750 GB
-	// }
-	// resp, err := c.PutNisd(&mockNisd)
-	// assert.NoError(t, err)
-	// assert.True(t, resp.Success)
+	mockNisd := cpLib.Nisd{
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
+		FailureDomain: []string{
+			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
+			"2435b29e-df29-11f0-900b-d3d680074046",
+			"298cedc0-df29-11f0-8c85-e3df2426ed67",
+			"nvme-e3df2426ed67",
+		},
+		IPAddr:        "192.168.1.10",
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+	}
+	resp, err := c.PutNisd(&mockNisd)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 
-	// // create vdev
-	// vdev := &cpLib.Vdev{
-	// 	Cfg: cpLib.VdevCfg{
-	// 		Size: 500 * 1024 * 1024 * 1024,
-	// 	}}
-	// err = c.CreateVdev(vdev)
-	// log.Info("Created Vdev Result: ", vdev)
-	// assert.NoError(t, err)
-	// readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
-	// log.Info("Read vdev:", readV)
+	// create vdev
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size: 500 * 1024 * 1024 * 1024,
+		}}
+	resp, err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", resp)
+	assert.NoError(t, err)
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	log.Info("Read vdev:", readV)
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
