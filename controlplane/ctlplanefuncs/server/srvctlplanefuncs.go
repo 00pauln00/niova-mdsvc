@@ -513,7 +513,8 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	cbArgs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
 	if !ok {
 		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
-		return nil, err
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
@@ -533,7 +534,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Debugf("selected fd %d, for vdev ID: %s & ft: %d.", i, vdev.Cfg.ID, vdev.Cfg.NumReplica)
 		commitCh, err := allocateNisdPerVdev(&vdev.Cfg, i, nisdMap)
 		if err != nil {
-			log.Error("allocateNisdPerVdev():failed to allocate nisd: ", err)
+			log.Error("allocateNisdPerVdev():failed to allocate nisd -> inc fd in next itr: ", err)
 			resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
 			nisdMap.Clear()
 			continue

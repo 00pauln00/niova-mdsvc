@@ -76,7 +76,7 @@ func PopulateHierarchy() error {
 	time.Sleep(2 * time.Second)
 	readResult, err := PumiceDBServer.RangeReadKV(nil, srvctlplanefuncs.NisdCfgKey, int64(len(srvctlplanefuncs.NisdCfgKey)), srvctlplanefuncs.NisdCfgKey, cpLib.MAX_REPLY_SIZE, false, 0, "PMDBTS_CF")
 	if err != nil {
-		log.Warn("PopulateHierarchy():RangeReadKV()", err)
+		log.Warn("RangeReadKV(): ", err)
 		return err
 	}
 	log.Debug("fetching read result: ", readResult)
@@ -84,7 +84,7 @@ func PopulateHierarchy() error {
 	for i := 0; i < len(nisdList); i++ {
 		err = srvctlplanefuncs.HR.AddNisd(&nisdList[i])
 		if err != nil {
-			log.Error("PopulateHierarchy():AddNisd()", err)
+			log.Error("AddNisd(): ", err)
 			return err
 		}
 		log.Debug("added nisd to the hierarchy: ", nisdList[i])
