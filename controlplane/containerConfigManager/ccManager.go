@@ -10,6 +10,7 @@ import (
 
 	cpClient "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 
 	"github.com/google/uuid"
 )
@@ -17,8 +18,29 @@ import (
 const GEN_CONF_FILE = "config-gen.yaml"
 const ZERO_INDEX = 0
 
+type Nisd struct {
+	ClientPort uint16 `yaml:"client_port"`
+	PeerPort   uint16 `yaml:"peer_port"`
+	ID         string `yaml:"uuid"`
+	DevID      string `yaml:"name"`
+	InitDev    bool   `yaml:"init"`
+	Args       string `yaml:"cmdline_args"`
+}
+
+type s3Config struct {
+	URL  string `yaml:"url"`
+	Opts string `yaml:"opts"`
+	Auth string `yaml:"auth"`
+}
+
+type NisdCntrConfig struct {
+	S3Config   s3Config         `yaml:"s3_config"`
+	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
+	NisdConfig []Nisd           `yaml:"nisd_config"`
+}
+
 // loadConfig loads config from file if present, otherwise creates a new one.
-func loadConfig(setupConfig string, cc *cpLib.NisdCntrConfig) error {
+func loadConfig(setupConfig string, cc *NisdCntrConfig) error {
 
 	if err := os.MkdirAll(filepath.Dir(setupConfig), os.ModePerm); err != nil {
 		return err
@@ -52,8 +74,8 @@ func main() {
 	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
-	var conf cpLib.NisdCntrConfig
-	conf.NisdConfig = make([]cpLib.Nisd, 0)
+	var conf NisdCntrConfig
+	conf.NisdConfig = make([]Nisd, 0)
 	err := loadConfig(*setupConfig, &conf)
 	if err != nil {
 		log.Error("failed to load config file: ", err)
@@ -80,17 +102,17 @@ func main() {
 
 		log.Info("setting nisd id: ", pt[ZERO_INDEX].NISDUUID)
 		req.ID = pt[ZERO_INDEX].NISDUUID
-		nisdInfo, err := c.GetNisds(req)
+		nisdInfo, err := c.GetNisd(req)
 		if err != nil {
 			log.Error("failed to get nisd details: ", err)
 			os.Exit(-1)
 		}
-		conf.NisdConfig[i].ID = nisdInfo[ZERO_INDEX].ID
-		conf.NisdConfig[i].ClientPort = nisdInfo[ZERO_INDEX].ClientPort
-		conf.NisdConfig[i].PeerPort = nisdInfo[ZERO_INDEX].PeerPort
-		conf.NisdConfig[i].DevID = nisdInfo[ZERO_INDEX].DevID
+		conf.NisdConfig[i].ID = nisdInfo.ID
+		conf.NisdConfig[i].ClientPort = nisdInfo.ClientPort
+		conf.NisdConfig[i].PeerPort = nisdInfo.PeerPort
+		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.FD_DEVICE]
 		conf.NisdConfig[i].Args = naS
-		log.Info("fetched nisd info from control plane: ", nisdInfo[ZERO_INDEX])
+		log.Info("fetched nisd info from control plane: ", nisdInfo)
 
 	}
 

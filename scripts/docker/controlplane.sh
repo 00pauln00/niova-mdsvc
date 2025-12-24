@@ -1,10 +1,14 @@
 #!/bin/bash
 
 #Create configuration files
-./raft-config.sh $1
+if [ "$2" = "init" ]; then
+    ./raft-config.sh $1
+fi
 
 RAFT_UUID=$(ls configs | awk -F. '/\.raft$/ { print $1 }')
-mkdir logs
+if [ "$2" = "init" ]; then
+    mkdir logs
+fi
 
 
 # Extract peer UUIDs from the configs directory

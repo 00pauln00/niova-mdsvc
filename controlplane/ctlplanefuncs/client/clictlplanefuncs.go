@@ -4,11 +4,16 @@ import (
 	"errors"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
+)
+
+const (
+	LOG_LEVEL = "Info"
+	LOG_FILE  = "client.log"
 )
 
 // Client side interferace for control plane functions
@@ -32,6 +37,8 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 		RaftUUID:  key,
 	}
 	stop := make(chan int)
+	logL := LOG_LEVEL
+	log.InitXlog(LOG_FILE, &logL)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go func() {
 		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
@@ -229,8 +236,13 @@ func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
 	return ncfg, nil
 }
 
-func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev.Cfg.Size, vdev, ctlplfl.CREATE_VDEV)
+func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(vdev, resp, ctlplfl.CREATE_VDEV)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (ccf *CliCFuncs) GetVdevsWithChunkInfo(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {

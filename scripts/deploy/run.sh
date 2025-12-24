@@ -4,9 +4,10 @@
 export NIOVA_LOCAL_CTL_SVC_DIR="/work/ctlplane/configs"
 export LD_LIBRARY_PATH="/lib:/work/ctlplane/lib"
 export NIOVA_INOTIFY_BASE_PATH="/work/ctlplane/ctl"
+export NIOVA_APPLY_HANDLER_VERSION=0
 
 # Detect container IP inside the Docker network
-MY_IP=$(hostname -i | awk '{print $1}')
+MY_IP=$(hostname -I | awk '{print $1}')
 echo "Container IP detected as $MY_IP"
 
 # Get Raft UUID (assume only one .raft file exists)

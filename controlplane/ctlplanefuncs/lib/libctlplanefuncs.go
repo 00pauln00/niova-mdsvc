@@ -3,13 +3,15 @@ package libctlplanefuncs
 import (
 	"encoding/gob"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	"hash/fnv"
+
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -36,16 +38,24 @@ const (
 	GET_CHUNK_NISD      = "get_chunk_nisd"
 	GET_NISD_INFO       = "get_nisd_info"
 
-	PUT_NISD_ARGS = "PutNisdArgs"
-	GET_NISD_ARGS = "GetNisdArgs"
-	CHUNK_SIZE    = 8 * 1024 * 1024 * 1024
-	NAME          = "name"
+	PUT_NISD_ARGS  = "PutNisdArgs"
+	GET_NISD_ARGS  = "GetNisdArgs"
+	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
+	MAX_REPLY_SIZE = 4 * 1024 * 1024
+	NAME           = "name"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
 	RUNNING       = 3
 	FAILED        = 4
 	STOPPED       = 5
+
+	FD_PDU    = 0
+	FD_RACK   = 1
+	FD_HV     = 2
+	FD_DEVICE = 3
+	FD_MAX    = 4
+	HASH_SIZE = 8
 )
 
 // Define Snapshot XML structure
@@ -71,6 +81,8 @@ type SnapXML struct {
 
 type ResponseXML struct {
 	Name    string `xml:"name"`
+	ID      string `xml:"ID"`
+	Error   string
 	Success bool
 }
 
@@ -108,17 +120,13 @@ type NisdArgs struct {
 
 type Nisd struct {
 	XMLName       xml.Name `xml:"NisdInfo"`
-	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort" yaml:"client_port"`
-	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string   `xml:"ID" json:"ID" yaml:"uuid"`
-	DevID         string   `xml:"DevID" json:"DevID" yaml:"name"`
-	HyperVisorID  string   `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
-	FailureDomain string   `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
-	IPAddr        string   `xml:"IPAddr" json:"IPAddr" yaml:"-"`
-	InitDev       bool     `yaml:"init"`
-	TotalSize     int64    `xml:"TotalSize" yaml:"-"`
-	AvailableSize int64    `xml:"AvailableSize" yaml:"-"`
-	Args          string   `yaml:"cmdline_args"`
+	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
+	ID            string   `xml:"ID" json:"ID"`
+	FailureDomain []string
+	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
+	TotalSize     int64  `xml:"TotalSize"`
+	AvailableSize int64  `xml:"AvailableSize"`
 }
 
 type PDU struct {
@@ -154,6 +162,11 @@ type NisdChunk struct {
 	Chunk []int
 }
 
+type NisdVdevAlloc struct {
+	AvailableSize int64
+	Ptr           *Nisd
+}
+
 type VdevCfg struct {
 	XMLName      xml.Name `xml:"Vdev"`
 	ID           string
@@ -183,22 +196,9 @@ func (vdev *Vdev) Init() error {
 	}
 	vdev.Cfg.ID = id.String()
 	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
-	vdev.Cfg.NumReplica = 1
 	vdev.Cfg.NumDataBlk = 0
 	vdev.Cfg.NumParityBlk = 0
 	return nil
-}
-
-type s3Config struct {
-	URL  string `yaml:"url"`
-	Opts string `yaml:"opts"`
-	Auth string `yaml:"auth"`
-}
-
-type NisdCntrConfig struct {
-	S3Config   s3Config         `yaml:"s3_config"`
-	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
-	NisdConfig []Nisd           `yaml:"nisd_config"`
 }
 
 // String returns a string representation of the Device
@@ -242,7 +242,7 @@ func Count8GBChunks(size int64) int64 {
 type ChunkNisd struct {
 	XMLName     xml.Name `xml:"ChunkNisd"`
 	NumReplicas uint8    `xml:"NREPLICAS"`
-	NisdUUID    []string `xml:"NISD"`
+	NisdUUIDs   string   `xml:"NISDs"`
 }
 
 func RegisterGOBStructs() {
@@ -297,4 +297,39 @@ func (a *NisdArgs) BuildCmdArgs() string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+func NisdAllocHash(data []byte) uint64 {
+	h := fnv.New64a()
+	h.Write(data)
+	return h.Sum64()
+}
+
+func (n *Nisd) Validate() error {
+	if _, err := uuid.Parse(n.ID); err != nil {
+		return errors.New("invalid ID uuid")
+	}
+
+	if len(n.FailureDomain) != FD_MAX {
+		return errors.New("invalid NISD failure domain info")
+	}
+	for i := 0; i < FD_DEVICE; i++ {
+		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
+			return fmt.Errorf("invalid FailureDomain[%d] uuid", i)
+		}
+	}
+
+	if n.AvailableSize > n.TotalSize {
+		return errors.New("available Size exceeds total size")
+	}
+
+	return nil
+}
+
+func NextFailureDomain(fd int) (int, error) {
+	if fd < FD_DEVICE {
+		fd++
+		return fd, nil
+	}
+	return fd, fmt.Errorf("max failure domain reached: %d", fd)
 }

@@ -15,6 +15,7 @@ import (
 	defaultLogger "log"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,8 +34,8 @@ import (
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 /*
@@ -72,31 +73,55 @@ type pmdbServerHandler struct {
 	portRange         []uint16
 }
 
+func PopulateHierarchy() error {
+	key, prefix := srvctlplanefuncs.NisdCfgKey, srvctlplanefuncs.NisdCfgKey
+	rangeReadContOut := make([]map[string][]byte, 0)
+	seq := uint64(0)
+	time.Sleep(2 * time.Second)
+	for {
+		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
+		readResult, err := PumiceDBServer.RangeReadKV(nil, key, int64(len(key)), prefix, cpLib.MAX_REPLY_SIZE, true, seq, "PMDBTS_CF")
+		if err != nil {
+			log.Warn("RangeReadKV(): ", err)
+			return err
+		}
+		rangeReadContOut = append(rangeReadContOut, readResult.ResultMap)
+		if readResult.LastKey == "" {
+			break
+		}
+		key = readResult.LastKey
+		prefix = filepath.Dir(readResult.LastKey)
+		seq = readResult.SeqNum
+
+	}
+	nisdList := srvctlplanefuncs.ParseEntitiesRR[cpLib.Nisd](rangeReadContOut, srvctlplanefuncs.NisdParser{})
+	for i := 0; i < len(nisdList); i++ {
+		err := srvctlplanefuncs.HR.AddNisd(&nisdList[i])
+		if err != nil {
+			log.Error("AddNisd(): ", err)
+			return err
+		}
+		log.Debug("added nisd to the hierarchy: ", nisdList[i])
+
+	}
+
+	log.Infof("successfully intialized hierarchy")
+	srvctlplanefuncs.HR.Dump()
+	return nil
+}
+
 func main() {
 	serverHandler := pmdbServerHandler{}
 	cpLib.RegisterGOBStructs()
 
-	nso, pErr := serverHandler.parseArgs()
-	if pErr != nil {
-		log.Println(pErr)
+	nso, err := serverHandler.parseArgs()
+	if err != nil {
+		defaultLogger.Println("failed to parse arguments", err)
 		return
 	}
 
-	switch serverHandler.logLevel {
-	case "Info":
-		log.SetLevel(log.InfoLevel)
-	case "Trace":
-		log.SetLevel(log.TraceLevel)
-	}
-
+	log.InitXlog(serverHandler.logDir, &serverHandler.logLevel)
 	log.Info("Log Dir - ", serverHandler.logDir)
-
-	//Create log file
-	err := PumiceDBCommon.InitLogger(serverHandler.logDir)
-	if err != nil {
-		log.Error("Error while initating logger ", err)
-		os.Exit(1)
-	}
 
 	err = serverHandler.startSerfAgent()
 	if err != nil {
@@ -160,6 +185,7 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_NISD, srvctlplanefuncs.ApplyNisd)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
@@ -181,8 +207,15 @@ func main() {
 	//TODO Check error
 	go nso.pso.Run()
 
+	srvctlplanefuncs.HR.Init()
+	err = PopulateHierarchy()
+	if err != nil {
+		log.Warn("failed to create hierarchy struct:", err)
+	}
+
 	serverHandler.checkPMDBLiveness()
 	serverHandler.exportTags()
+
 }
 
 func (handler *pmdbServerHandler) checkPMDBLiveness() {
@@ -197,7 +230,7 @@ func (handler *pmdbServerHandler) checkPMDBLiveness() {
 	}
 }
 
-func (handler *pmdbServerHandler) exportTags() error {
+func (handler *pmdbServerHandler) exportTags() {
 	if handler.prometheus {
 		handler.checkHTTPLiveness()
 		handler.GossipData["Hport"] = strconv.Itoa(RecvdPort)
@@ -212,7 +245,6 @@ func (handler *pmdbServerHandler) exportTags() error {
 		time.Sleep(3 * time.Second)
 	}
 
-	return nil
 }
 
 func usage() {
@@ -271,7 +303,7 @@ func (handler *pmdbServerHandler) parseArgs() (*NiovaKVServer, error) {
 	*/
 	defaultLog := "/" + "tmp" + "/" + handler.peerUUID.String() + ".log"
 	flag.StringVar(&handler.logDir, "l", defaultLog, "log dir")
-	flag.StringVar(&handler.logLevel, "ll", "Info", "Log level")
+	flag.StringVar(&handler.logLevel, "ll", "Trace", "Log level")
 	flag.StringVar(&handler.gossipClusterFile, "g", "NULL", "Serf agent port")
 	flag.BoolVar(&handler.prometheus, "p", false, "Enable prometheus")
 	flag.Parse()

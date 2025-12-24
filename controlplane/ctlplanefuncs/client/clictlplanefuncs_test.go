@@ -1,9 +1,12 @@
 package clictlplanefuncs
 
 import (
+	"fmt"
 	"os"
 	"path"
+	"sync"
 	"testing"
+	"time"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/google/uuid"
@@ -40,38 +43,44 @@ func TestPutAndGetNisd(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-001",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-01",
+			ClientPort: 7001,
+			PeerPort:   8001,
+			ID:         "nisd-001",
+			FailureDomain: []string{
+				"pdu-01",
+				"rack-01",
+				"hv-01",
+				"dev-001",
+			},
 			IPAddr:        "192.168.1.10",
-			InitDev:       true,
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
 		},
 		{
-			ClientPort:    7002,
-			PeerPort:      8002,
-			ID:            "nisd-002",
-			DevID:         "dev-002",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-02",
+			ClientPort: 7002,
+			PeerPort:   8002,
+			ID:         "nisd-002",
+			FailureDomain: []string{
+				"pdu-02",
+				"rack-02",
+				"hv-02",
+				"dev-002",
+			},
 			IPAddr:        "192.168.1.11",
-			InitDev:       false,
 			TotalSize:     500_000_000_000, // 500 GB
 			AvailableSize: 200_000_000_000, // 200 GB
 		},
 		{
-			ClientPort:    7003,
-			PeerPort:      8003,
-			ID:            "nisd-003",
-			DevID:         "dev-003",
-			HyperVisorID:  "hv-02",
-			FailureDomain: "fd-01",
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-003",
+			FailureDomain: []string{
+				"pdu-03",
+				"rack-03",
+				"hv-03",
+				"dev-003",
+			},
 			IPAddr:        "192.168.1.12",
-			InitDev:       true,
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
 		},
@@ -234,14 +243,16 @@ func TestVdevLifecycle(t *testing.T) {
 
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "nisd-001",
+		FailureDomain: []string{
+			"pdu-01",
+			"rack-01",
+			"hv-01",
+			"dev-006",
+		},
 		IPAddr:        "192.168.1.10",
-		InitDev:       true,
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
 	}
@@ -253,10 +264,10 @@ func TestVdevLifecycle(t *testing.T) {
 		Cfg: cpLib.VdevCfg{
 			Size: 700 * 1024 * 1024 * 1024,
 		}}
-	err = c.CreateVdev(vdev1)
+	resp, err := c.CreateVdev(vdev1)
 	assert.NoError(t, err, "failed to create vdev1")
-	assert.NotEmpty(t, vdev1.Cfg.ID, "vdev1 ID should not be empty")
-	log.Info("Created vdev1: ", vdev1)
+	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
+	log.Info("Created vdev1: ", resp.ID)
 
 	// Step 2: Create second Vdev
 	vdev2 := &cpLib.Vdev{
@@ -264,10 +275,10 @@ func TestVdevLifecycle(t *testing.T) {
 			Size: 400 * 1024 * 1024 * 1024,
 		},
 	}
-	err = c.CreateVdev(vdev2)
+	resp, err = c.CreateVdev(vdev2)
 	assert.NoError(t, err, "failed to create vdev2")
-	assert.NotEmpty(t, vdev2.Cfg.ID, "vdev2 ID should not be empty")
-	log.Info("Created vdev2: ", vdev2)
+	assert.NotEmpty(t, resp, "vdev2 ID should not be empty")
+	log.Info("Created vdev2: ", resp.ID)
 
 	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
@@ -303,7 +314,7 @@ func TestVdevLifecycle(t *testing.T) {
 func TestPutAndGetPartition(t *testing.T) {
 	c := newClient(t)
 	pt := &cpLib.DevicePartition{
-		PartitionID:   "96ea4c60-a5df-11f0-a315-fb09c06e6471",
+		PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
 		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
 		Size:          10 * 1024 * 1024 * 1024,
 		PartitionPath: "some path",
@@ -312,15 +323,15 @@ func TestPutAndGetPartition(t *testing.T) {
 	resp, err := c.PutPartition(pt)
 	log.Info("created partition: ", resp)
 	assert.NoError(t, err)
-	resp1, err := c.GetPartition(cpLib.GetReq{ID: "96ea4c60-a5df-11f0-a315-fb09c06e6471"})
+	resp1, err := c.GetPartition(cpLib.GetReq{ID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1"})
 	assert.NoError(t, err)
 	log.Info("Get partition: ", resp1)
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 	racks := []cpLib.Rack{
-		{ID: "rack-1", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
-		{ID: "rack-2", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
+		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
+		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
 	}
 
 	for _, r := range racks {
@@ -348,14 +359,16 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	// create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
+		FailureDomain: []string{
+			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
+			"2435b29e-df29-11f0-900b-d3d680074046",
+			"298cedc0-df29-11f0-8c85-e3df2426ed67",
+			"nvme-e3df2426ed67",
+		},
 		IPAddr:        "192.168.1.10",
-		InitDev:       true,
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
 	}
@@ -368,12 +381,12 @@ func TestVdevNisdChunk(t *testing.T) {
 		Cfg: cpLib.VdevCfg{
 			Size: 500 * 1024 * 1024 * 1024,
 		}}
-	err = c.CreateVdev(vdev)
-	log.Info("Created Vdev Result: ", vdev)
+	resp, err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
 	log.Info("Read vdev:", readV)
-	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
+	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
 
@@ -394,4 +407,337 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	nisdArgs, err := c.GetNisdArgs()
 	assert.NoError(t, err)
 	log.Info("Get na: ", nisdArgs)
+}
+
+func TestParallelVdevCreation(t *testing.T) {
+	c := newClient(t)
+
+	pdus := []string{
+		"9bc244bc-df29-11f0-a93b-277aec17e401",
+		"9bc244bc-df29-11f0-a93b-277aec17e402",
+		"9bc244bc-df29-11f0-a93b-277aec17e403",
+		"9bc244bc-df29-11f0-a93b-277aec17e404",
+		"9bc244bc-df29-11f0-a93b-277aec17e405",
+	}
+
+	// 10 RACKS
+	racks := []string{
+		"3f082930-df29-11f0-ab7b-4bd430991101",
+		"3f082930-df29-11f0-ab7b-4bd430991102",
+		"3f082930-df29-11f0-ab7b-4bd430991103",
+		"3f082930-df29-11f0-ab7b-4bd430991104",
+		"3f082930-df29-11f0-ab7b-4bd430991105",
+		"3f082930-df29-11f0-ab7b-4bd430991106",
+		"3f082930-df29-11f0-ab7b-4bd430991107",
+		"3f082930-df29-11f0-ab7b-4bd430991108",
+		"3f082930-df29-11f0-ab7b-4bd430991109",
+		"3f082930-df29-11f0-ab7b-4bd430991110",
+	}
+
+	// 20 HVs
+	hvs := []string{
+		"bde1f08a-df63-11f0-88ef-430ddec19901",
+		"bde1f08a-df63-11f0-88ef-430ddec19902",
+		"bde1f08a-df63-11f0-88ef-430ddec19903",
+		"bde1f08a-df63-11f0-88ef-430ddec19904",
+		"bde1f08a-df63-11f0-88ef-430ddec19905",
+		"bde1f08a-df63-11f0-88ef-430ddec19906",
+		"bde1f08a-df63-11f0-88ef-430ddec19907",
+		"bde1f08a-df63-11f0-88ef-430ddec19908",
+		"bde1f08a-df63-11f0-88ef-430ddec19909",
+		"bde1f08a-df63-11f0-88ef-430ddec19910",
+		"bde1f08a-df63-11f0-88ef-430ddec19911",
+		"bde1f08a-df63-11f0-88ef-430ddec19912",
+		"bde1f08a-df63-11f0-88ef-430ddec19913",
+		"bde1f08a-df63-11f0-88ef-430ddec19914",
+		"bde1f08a-df63-11f0-88ef-430ddec19915",
+		"bde1f08a-df63-11f0-88ef-430ddec19916",
+		"bde1f08a-df63-11f0-88ef-430ddec19917",
+		"bde1f08a-df63-11f0-88ef-430ddec19918",
+		"bde1f08a-df63-11f0-88ef-430ddec19919",
+		"bde1f08a-df63-11f0-88ef-430ddec19920",
+	}
+
+	// 40 Devices
+	devices := []string{
+		"nvme-fb6358163001",
+		"nvme-fb6358163002",
+		"nvme-fb6358163003",
+		"nvme-fb6358163004",
+		"nvme-fb6358163005",
+		"nvme-fb6358163006",
+		"nvme-fb6358163007",
+		"nvme-fb6358163008",
+		"nvme-fb6358163009",
+		"nvme-fb6358163010",
+		"nvme-fb6358163011",
+		"nvme-fb6358163012",
+		"nvme-fb6358163013",
+		"nvme-fb6358163014",
+		"nvme-fb6358163015",
+		"nvme-fb6358163016",
+		"nvme-fb6358163017",
+		"nvme-fb6358163018",
+		"nvme-fb6358163019",
+		"nvme-fb6358163020",
+		"nvme-fb6358163021",
+		"nvme-fb6358163022",
+		"nvme-fb6358163023",
+		"nvme-fb6358163024",
+		"nvme-fb6358163025",
+		"nvme-fb6358163026",
+		"nvme-fb6358163027",
+		"nvme-fb6358163028",
+		"nvme-fb6358163029",
+		"nvme-fb6358163030",
+		"nvme-fb6358163031",
+		"nvme-fb6358163032",
+		"nvme-fb6358163033",
+		"nvme-fb6358163034",
+		"nvme-fb6358163035",
+		"nvme-fb6358163036",
+		"nvme-fb6358163037",
+		"nvme-fb6358163038",
+		"nvme-fb6358163039",
+		"nvme-fb6358163040",
+	}
+
+	mockNisd := make([]cpLib.Nisd, 0, 160)
+
+	pduCount := len(pdus)
+	rackPerPdu := 2
+	hvPerRack := 2
+	devPerHv := 2
+	nisdPerDev := 4
+
+	rackIdx := 0
+	hvIdx := 0
+	devIdx := 0
+
+	nisdID := 1
+
+	for p := 0; p < pduCount; p++ {
+		pdu := pdus[p]
+
+		for r := 0; r < rackPerPdu; r++ {
+			rack := racks[rackIdx]
+			rackIdx++
+
+			for h := 0; h < hvPerRack; h++ {
+				hv := hvs[hvIdx]
+				hvIdx++
+
+				for d := 0; d < devPerHv; d++ {
+					dev := devices[devIdx]
+					devIdx++
+
+					for n := 0; n < nisdPerDev; n++ {
+						nisd := cpLib.Nisd{
+							ClientPort: 7000 + uint16(nisdID),
+							PeerPort:   8000 + uint16(nisdID),
+							ID:         fmt.Sprintf("ed7914c3-2e96-4f3e-8e0d-%012x", nisdID),
+							FailureDomain: []string{
+								pdu,
+								rack,
+								hv,
+								dev,
+							},
+							IPAddr:        fmt.Sprintf("192.168.1.%d", ((nisdID-1)%250)+1),
+							TotalSize:     1_000_000_000_000,
+							AvailableSize: 1_000_000_000_000,
+						}
+
+						mockNisd = append(mockNisd, nisd)
+						nisdID++
+					}
+				}
+			}
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for _, n := range mockNisd {
+			resp, err := c.PutNisd(&n)
+			assert.NoError(t, err)
+			assert.True(t, resp.Success)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 150; i++ {
+			vdev := &cpLib.Vdev{
+				Cfg: cpLib.VdevCfg{
+					Size:       107374182400,
+					NumReplica: 1,
+				},
+			}
+			_, err := c.CreateVdev(vdev)
+			assert.NoError(t, err)
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
+
+}
+
+func TestCreateSmallHierarchy(t *testing.T) {
+	c := newClient(t)
+
+	pdus := []string{
+		"e5bdb838-df76-11f0-9d60-d3a87e703a41",
+		"e5bdb838-df76-11f0-9d60-d3a87e703a42",
+	}
+
+	// 10 RACKS
+	racks := []string{
+		"3f082930-df29-11f0-ab7b-4bd430991101",
+		"3f082930-df29-11f0-ab7b-4bd430991102",
+	}
+
+	// 20 HVs
+	hvs := []string{
+		"bde1f08a-df63-11f0-88ef-430ddec19901",
+		"bde1f08a-df63-11f0-88ef-430ddec19902",
+		"bde1f08a-df63-11f0-88ef-430ddec19903",
+		"bde1f08a-df63-11f0-88ef-430ddec19904",
+		"bde1f08a-df63-11f0-88ef-430ddec19905",
+	}
+
+	// 40 Devices
+	devices := []string{
+		"nvme-fb6358163001",
+		"nvme-fb6358163002",
+		"nvme-fb6358163003",
+		"nvme-fb6358163004",
+		"nvme-fb6358163005",
+		"nvme-fb6358163006",
+	}
+
+	mockNisd := []cpLib.Nisd{
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5661",
+			FailureDomain: []string{
+				pdus[0],
+				racks[0],
+				hvs[0],
+				devices[0],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5662",
+			FailureDomain: []string{
+				pdus[0],
+				racks[0],
+				hvs[0],
+				devices[1],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5663",
+			FailureDomain: []string{
+				pdus[0],
+				racks[0],
+				hvs[1],
+				devices[2],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5664",
+			FailureDomain: []string{
+				pdus[1],
+				racks[1],
+				hvs[2],
+				devices[3],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5665",
+			FailureDomain: []string{
+				pdus[1],
+				racks[1],
+				hvs[3],
+				devices[4],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5666",
+			FailureDomain: []string{
+				pdus[1],
+				racks[1],
+				hvs[4],
+				devices[5],
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     1073741824000,
+			AvailableSize: 1073741824000,
+		},
+	}
+	for _, n := range mockNisd {
+		resp, err := c.PutNisd(&n)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
+
+}
+
+func TestCreateVdev(t *testing.T) {
+	c := newClient(t)
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       1500 * 1024 * 1024 * 1024,
+			NumReplica: 4,
+		},
+	}
+
+	resp, err := c.CreateVdev(vdev)
+	assert.NoError(t, err)
+	log.Infof("vdev response status: %v", resp)
+}
+
+func usagePercent(n cpLib.Nisd) int64 {
+	used := n.TotalSize - n.AvailableSize
+	return (used * 100) / n.TotalSize
+}
+
+func TestGetNisd(t *testing.T) {
+	c := newClient(t)
+	res, err := c.GetNisds()
+	for _, n := range res {
+		log.Infof("Nisd ID: %s, usage: %d", n.ID, usagePercent(n))
+	}
+	log.Info("total number of nisd's : ", len(res))
+	assert.NoError(t, err)
 }

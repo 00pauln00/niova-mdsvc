@@ -79,7 +79,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	key := getConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_ID, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE} {
+	for _, field := range []string{DEVICE_ID, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE, pduKey, rackKey} {
 		var value string
 		switch field {
 		case CLIENT_PORT:
@@ -87,9 +87,11 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
 		case hvKey:
-			value = nisd.HyperVisorID
-		case FAILURE_DOMAIN:
-			value = nisd.FailureDomain
+			value = nisd.FailureDomain[cpLib.FD_HV]
+		case pduKey:
+			value = nisd.FailureDomain[cpLib.FD_PDU]
+		case rackKey:
+			value = nisd.FailureDomain[cpLib.FD_RACK]
 		case IP_ADDR:
 			value = nisd.IPAddr
 		case TOTAL_SPACE:
@@ -97,7 +99,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 		case AVAIL_SPACE:
 			value = strconv.Itoa(int(nisd.AvailableSize))
 		case DEVICE_ID:
-			value = nisd.DevID
+			value = nisd.FailureDomain[cpLib.FD_DEVICE]
 		default:
 			continue
 		}

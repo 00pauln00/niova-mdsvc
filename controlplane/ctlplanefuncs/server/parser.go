@@ -25,6 +25,34 @@ type ParseEntity interface {
 	GetEntity(entity Entity) Entity
 }
 
+func ParseEntitiesRR[T Entity](readResult []map[string][]byte, pe ParseEntity) []T {
+	entityMap := make(map[string]Entity)
+
+	for i, _ := range readResult {
+		for k, v := range readResult[i] {
+			parts := strings.Split(strings.Trim(k, "/"), "/")
+			if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+				continue
+			}
+
+			id := parts[BASE_UUID_PREFIX]
+			entity, exists := entityMap[id]
+			if !exists {
+				entity = pe.NewEntity(id)
+				entityMap[id] = entity
+			}
+			pe.ParseField(entity, parts, v)
+		}
+	}
+
+	result := make([]T, 0, len(entityMap))
+	for _, e := range entityMap {
+		final := pe.GetEntity(e)
+		result = append(result, final.(T))
+	}
+	return result
+}
+
 func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
@@ -158,20 +186,20 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
 
 // nisd parser
-type nisdParser struct{}
+type NisdParser struct{}
 
-func (nisdParser) GetRootKey() string { return nisdCfgKey }
+func (NisdParser) GetRootKey() string { return NisdCfgKey }
 
-func (nisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{ID: id}
+func (NisdParser) NewEntity(id string) Entity {
+	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4)}
 }
 
-func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
+func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	nisd := entity.(*ctlplfl.Nisd)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case DEVICE_ID:
-			nisd.DevID = string(value)
+			nisd.FailureDomain[ctlplfl.FD_DEVICE] = string(value)
 		case CLIENT_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.ClientPort = uint16(p)
@@ -179,9 +207,11 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
 		case hvKey:
-			nisd.HyperVisorID = string(value)
-		case FAILURE_DOMAIN:
-			nisd.FailureDomain = string(value)
+			nisd.FailureDomain[ctlplfl.FD_HV] = string(value)
+		case pduKey:
+			nisd.FailureDomain[ctlplfl.FD_PDU] = string(value)
+		case rackKey:
+			nisd.FailureDomain[ctlplfl.FD_RACK] = string(value)
 		case IP_ADDR:
 			nisd.IPAddr = string(value)
 		case TOTAL_SPACE:
@@ -193,7 +223,7 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
-func (nisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
+func (NisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
 
 type pduParser struct{}
 
