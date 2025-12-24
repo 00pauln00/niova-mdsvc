@@ -358,7 +358,6 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commi
 		Key:   []byte(fmt.Sprintf("%s/%s/R.%d", vcKey, chunk, i)),
 		Value: []byte(nisd.Ptr.ID),
 	})
-	// TODO: how do we update the replication details
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(nKey),
 		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
