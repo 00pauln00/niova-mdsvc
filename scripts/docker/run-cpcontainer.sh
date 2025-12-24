@@ -6,4 +6,4 @@ fi
 
 docker build -t controlplane .
 curdir=$(pwd)
-docker run -it -v "${curdir}:/controlplane" --network=host controlplane $1 $2 $3
+docker run -it -v "${curdir}:/controlplane" --network=host controlplane $1 $2
