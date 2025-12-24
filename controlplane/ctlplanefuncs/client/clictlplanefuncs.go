@@ -11,6 +11,11 @@ import (
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
 
+const (
+	LOG_LEVEL = "Info"
+	LOG_FILE  = "client.log"
+)
+
 // Client side interferace for control plane functions
 type CliCFuncs struct {
 	appUUID  string
@@ -32,8 +37,8 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 		RaftUUID:  key,
 	}
 	stop := make(chan int)
-	level := "Info"
-	log.InitXlog("client.log", &level)
+	logL := LOG_LEVEL
+	log.InitXlog(LOG_FILE, &logL)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go func() {
 		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)

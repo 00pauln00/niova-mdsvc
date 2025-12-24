@@ -299,7 +299,7 @@ func (a *NisdArgs) BuildCmdArgs() string {
 	return strings.Join(parts, " ")
 }
 
-func Hash64(data []byte) uint64 {
+func NisdAllocHash(data []byte) uint64 {
 	h := fnv.New64a()
 	h.Write(data)
 	return h.Sum64()

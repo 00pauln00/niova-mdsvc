@@ -119,7 +119,7 @@ func (hr *Hierarchy) GetFDLevel(ft int) (int, error) {
 }
 
 // Get the total number of elements in a Failure Domain.
-func (hr *Hierarchy) GetEntityLen(tierIDX int) int {
+func (hr *Hierarchy) GetEntityCnt(tierIDX int) int {
 	if tierIDX >= len(hr.FD) {
 		return 0
 	}
@@ -131,25 +131,26 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 		return nisdPtr
 	}
 
-	copy := &ctlplfl.NisdVdevAlloc{
+	ns := &ctlplfl.NisdVdevAlloc{
 		AvailableSize: nisd.AvailableSize,
 		Ptr:           nisd,
 	}
 
-	nisdMap.Set(nisd.ID, copy)
+	nisdMap.Set(nisd.ID, ns)
 
 	log.Debugf(
-		"added nisd copy to temp nisd map: id=%s, available_size=%d",
+		"selected Nisd %s with available size %d for Vdev allocation",
 		nisd.ID,
 		nisd.AvailableSize,
 	)
 
-	return copy
+	return ns
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
 func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{},
 	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
+
 	if int(fd) >= cpLib.FD_MAX {
 		err := fmt.Errorf("invalid failure domain: %d", fd)
 		log.Error("PickNISD():", err)
@@ -158,6 +159,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 
 	fdRef := hr.FD[fd]
 
+	// Get the entity (PDU/Rack/HV/Device) object from the tree
 	ent, ok := fdRef.Tree.GetAt(entityIDX)
 	if !ok {
 		err := fmt.Errorf("failed to fetch entity tree from idx: %d, fd: %d", entityIDX, fd)
@@ -166,14 +168,14 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 	}
 
 	// select NISD inside entity
-	size := ent.Nisds.Len()
-	if size <= 0 {
-		log.Errorf("failed to get index for hash: %d", hash)
-		return nil, fmt.Errorf("invalid size: %d", size)
+	nisdCnt := ent.Nisds.Len()
+	idx, err := GetIdxForNisdAlloc(hash, nisdCnt)
+	if err != nil {
+		log.Errorf("failed to get index for hash: %d: %v", hash, err)
+		return nil, err
 	}
-	idx := int(hash % uint64(size))
 
-	for i := 0; i < size; i++ {
+	for i := 0; i < nisdCnt; i++ {
 		nisd, ok := ent.Nisds.GetAt(idx)
 		if !ok {
 			log.Error("failed to get nisd from tree at idx: ", idx)
@@ -237,4 +239,11 @@ func (hr *Hierarchy) Dump() {
 			return true
 		})
 	}
+}
+
+func GetIdxForNisdAlloc(hash uint64, size int) (int, error) {
+	if size <= 0 {
+		return 0, fmt.Errorf("invalid size: %d", size)
+	}
+	return int(hash % uint64(size)), nil
 }
