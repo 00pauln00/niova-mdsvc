@@ -427,16 +427,16 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		return fmt.Errorf("no entities available in failure domain %s", fd)
 	}
 
-	hash := ctlplfl.Hash64([]byte(vdev.ID + chunk))
+	hash := ctlplfl.NisdAllocHash([]byte(vdev.ID + chunk))
 
 	log.Debugf("hash generated %d for chunk: %s, fd: %d", hash, chunk, fd)
 
 	// select entity by index
-	if treeLen <= 0 {
-		log.Error("failed to get entity: no elemnts in tree")
-		return fmt.Errorf("invalid size: %d", treeLen)
+	entityIDX, err := GetIdxForNisdAlloc(hash, treeLen)
+	if err != nil {
+		log.Error("failed to get entity: ", err)
+		return err
 	}
-	entityIDX := int(hash % uint64(treeLen))
 
 	log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
 
@@ -482,7 +482,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		// decorrelate next replica
 		var buf [ctlplfl.HASH_SIZE]byte
 		binary.BigEndian.PutUint64(buf[:], hash)
-		hash = ctlplfl.Hash64(buf[:])
+		hash = ctlplfl.NisdAllocHash(buf[:])
 	}
 	return nil
 }
