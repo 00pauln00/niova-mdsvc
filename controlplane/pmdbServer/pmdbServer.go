@@ -79,13 +79,12 @@ func PopulateHierarchy() error {
 	seq := uint64(0)
 	time.Sleep(2 * time.Second)
 	for {
-		log.Infof("querying pmdb with key: k: %s, p: %s", key, prefix)
+		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
 		readResult, err := PumiceDBServer.RangeReadKV(nil, key, int64(len(key)), prefix, cpLib.MAX_REPLY_SIZE, true, seq, "PMDBTS_CF")
 		if err != nil {
 			log.Warn("RangeReadKV(): ", err)
 			return err
 		}
-		log.Debug("fetching read result: ", readResult)
 		rangeReadContOut = append(rangeReadContOut, readResult.ResultMap)
 		if readResult.LastKey == "" {
 			break
