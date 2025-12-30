@@ -248,13 +248,13 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	log.Trace("fetching nisd details for key : ", nisdCfgKey)
+	log.Trace("fetching nisd details for key : ", NisdCfgKey)
 	rrargs := PumiceDBServer.RangeReadArgs{
 		ColFamily:  colmfamily,
-		Key:        nisdCfgKey,
+		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
-		Prefix:     nisdCfgKey,
+		Prefix:     NisdCfgKey,
 	}
 	readResult, err := cbArgs.PmdbRangeRead(rrargs)
 	if err != nil {
@@ -294,10 +294,10 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
 		ColFamily:  colmfamily,
-		Key:        nisdCfgKey,
+		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
-		Prefix:     nisdCfgKey,
+		Prefix:     NisdCfgKey,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -792,9 +792,9 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 
 	nisdResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
 		ColFamily: colmfamily,
-		Key:       nisdCfgKey,
+		Key:       NisdCfgKey,
 		BufSize:   cbArgs.ReplySize,
-		Prefix:    nisdCfgKey,
+		Prefix:    NisdCfgKey,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -973,7 +973,12 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 
 	log.Info("searching for key:", vcKey)
 
-	rqResult, err := cbargs.PmdbReadKV(colmfamily, vcKey)
+	rqResult, err := cbargs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
+		ColFamily: colmfamily,
+		Key:       vcKey,
+		BufSize:   cbargs.ReplySize,
+		Prefix:    vcKey,
+	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err

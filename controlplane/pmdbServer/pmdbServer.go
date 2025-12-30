@@ -76,11 +76,16 @@ type pmdbServerHandler struct {
 func PopulateHierarchy() error {
 	key, prefix := srvctlplanefuncs.NisdCfgKey, srvctlplanefuncs.NisdCfgKey
 	rangeReadContOut := make([]map[string][]byte, 0)
-	seq := uint64(0)
 	time.Sleep(2 * time.Second)
+	var cbargs PumiceDBServer.PmdbCbArgs
 	for {
 		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
-		readResult, err := PumiceDBServer.RangeReadKV(nil, key, int64(len(key)), prefix, cpLib.MAX_REPLY_SIZE, true, seq, "PMDBTS_CF")
+		readResult, err := cbargs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
+			ColFamily: colmfamily,
+			Key:       key,
+			Prefix:    prefix,
+			BufSize:   cpLib.MAX_REPLY_SIZE,
+		})
 		if err != nil {
 			log.Warn("RangeReadKV(): ", err)
 			return err
@@ -91,8 +96,6 @@ func PopulateHierarchy() error {
 		}
 		key = readResult.LastKey
 		prefix = filepath.Dir(readResult.LastKey)
-		seq = readResult.SeqNum
-
 	}
 	nisdList := srvctlplanefuncs.ParseEntitiesRR[cpLib.Nisd](rangeReadContOut, srvctlplanefuncs.NisdParser{})
 	for i := 0; i < len(nisdList); i++ {
