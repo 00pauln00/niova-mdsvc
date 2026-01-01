@@ -81,14 +81,13 @@ func getVdevChunkKey(vdevID string) string {
 }
 
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
-	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
 	Snap := args[1].(ctlplfl.SnapXML)
 
 	//FIX: Arbitrary read size
 	key := fmt.Sprintf("snap/%s", Snap.SnapName)
 	log.Info("Key to be read : ", key)
-	readResult, err := PumiceDBServer.PmdbReadKV(cbArgs.UserID, key, int64(len(key)), colmfamily)
+	readResult, err := PumiceDBServer.PmdbReadKV(key, int64(len(key)), colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -894,7 +893,6 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 }
 
 func ReadChunkNisd(args ...interface{}) (interface{}, error) {
-	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 
 	err := req.ValidateRequest()
