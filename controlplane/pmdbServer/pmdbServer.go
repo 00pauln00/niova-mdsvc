@@ -522,7 +522,7 @@ func (nso *NiovaKVServer) Init(cleanupPeerArgs *PumiceDBServer.PmdbCbArgs) {
 func (nso *NiovaKVServer) WritePrep(wrPrepArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	log.Trace("NiovaCtlPlane server: Write prep received")
 	var copyErr error
-	_, copyErr = nso.pso.CopyDataToBuffer(byte(1), wrPrepArgs.ContinueWr)
+	_, copyErr = PumiceDBServer.PmdbCopyDataToBuffer(byte(1), wrPrepArgs.ContinueWr)
 	if copyErr != nil {
 		log.Error("Failed to Copy result in the buffer: %s", copyErr)
 		return -1
@@ -634,7 +634,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	log.Trace("Response trace : ", resultResponse)
 	if readErr == nil {
 		//Copy the encoded result in replyBuffer
-		replySize, copyErr = nso.pso.CopyDataToBuffer(resultResponse,
+		replySize, copyErr = PumiceDBServer.PmdbCopyDataToBuffer(resultResponse,
 			readArgs.ReplyBuf)
 		if copyErr != nil {
 			log.Error("Failed to Copy result in the buffer: %s", copyErr)
