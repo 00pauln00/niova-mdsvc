@@ -606,12 +606,12 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 	}
 
 	// PUT operation 
-	resp, err := c.PutNisd(&nisd)
+	resp, err := c.PutNisdCfg(&nisd)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET operation 
-	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
+	res, err := c.GetNisdCfg(cpLib.GetReq{ID: nisd.ID})
 	log.Info("GetNisdCfg: ", res)
 	assert.NoError(t, err)
 	assert.Equal(t, len(pdus), len(res), "Expected %d PDUs but got %d", len(pdus), len(res))
@@ -663,8 +663,8 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			ClientPort:    7001,
 			PeerPort:      8001,
 			ID:            "nisd-001",
-			DevID:         "dev-1",
-			HyperVisorID:  "hv-1",
+			DevID:         "dev-001",
+			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.10",
 			InitDev:       true,
@@ -675,8 +675,8 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			ClientPort:    7002,
 			PeerPort:      8002,
 			ID:            "nisd-002",
-			DevID:         "dev-2",
-			HyperVisorID:  "hv-1",
+			DevID:         "dev-002",
+			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-02",
 			IPAddr:        "192.168.1.11",
 			InitDev:       false,
@@ -687,8 +687,8 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			ClientPort:    7003,
 			PeerPort:      8003,
 			ID:            "nisd-003",
-			DevID:         "dev-3",
-			HyperVisorID:  "hv-2",
+			DevID:         "dev-003",
+			HyperVisorID:  "hv-02",
 			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.12",
 			InitDev:       true,
