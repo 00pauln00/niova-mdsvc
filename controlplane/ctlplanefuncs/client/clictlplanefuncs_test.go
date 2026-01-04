@@ -11,6 +11,9 @@ import (
 	"context"
     "time"
     "golang.org/x/sync/errgroup"
+	"context"
+    "time"
+    "golang.org/x/sync/errgroup"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/google/uuid"
@@ -73,47 +76,19 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 			HyperVisorID:  "hv-01",
 			FailureDomain: "fd-01",
 			IPAddr:        "192.168.1.10",
+			InitDev:       true,
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
-		},
-		{
-			ClientPort: 7002,
-			PeerPort:   8002,
-			ID:         "nisd-002",
-			FailureDomain: []string{
-				"pdu-02",
-				"rack-02",
-				"hv-02",
-				"dev-002",
-			},
-			IPAddr:        "192.168.1.11",
-			TotalSize:     500_000_000_000, // 500 GB
-			AvailableSize: 200_000_000_000, // 200 GB
-		},
-		{
-			ClientPort: 7003,
-			PeerPort:   8003,
-			ID:         "nisd-003",
-			FailureDomain: []string{
-				"pdu-03",
-				"rack-03",
-				"hv-03",
-				"dev-003",
-			},
-			IPAddr:        "192.168.1.12",
-			TotalSize:     2_000_000_000_000, // 2 TB
-			AvailableSize: 1_500_000_000_000, // 1.5 TB
-		},
 	}
 
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
+	// PUT single PDU
+	resp, err := c.PutPDU(&pdu)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 
-	res, err := c.GetNisd(cpLib.GetReq{ID: "nisd-002"})
-	log.Info("GetNisds: ", res)
+	// GET operation 
+	res, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
+	log.Info("Single PDU: ", res)
 	assert.NoError(t, err)
 
 }
@@ -926,16 +901,14 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	// // create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
-		FailureDomain: []string{
-			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
-			"2435b29e-df29-11f0-900b-d3d680074046",
-			"298cedc0-df29-11f0-8c85-e3df2426ed67",
-			"nvme-e3df2426ed67",
-		},
+		ClientPort:    7001,
+		PeerPort:      8001,
+		ID:            "nisd-001",
+		DevID:         "dev-001",
+		HyperVisorID:  "hv-01",
+		FailureDomain: "fd-01",
 		IPAddr:        "192.168.1.10",
+		InitDev:       true,
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
 	}
@@ -948,12 +921,12 @@ func TestVdevNisdChunk(t *testing.T) {
 		Cfg: cpLib.VdevCfg{
 			Size: 500 * 1024 * 1024 * 1024,
 		}}
-	resp, err = c.CreateVdev(vdev)
-	log.Info("Created Vdev Result: ", resp)
+	err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", vdev)
 	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
 	log.Info("Read vdev:", readV)
-	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
+	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
 
