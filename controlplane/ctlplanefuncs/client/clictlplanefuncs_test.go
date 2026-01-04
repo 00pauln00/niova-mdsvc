@@ -1212,7 +1212,6 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
 	}
-<<<<<<< HEAD
 }
 
 func TestVdevNisdChunk(t *testing.T) {
