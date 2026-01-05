@@ -125,13 +125,11 @@ type NetworkInfo struct {
 
 type Nisd struct {
 	XMLName       xml.Name `xml:"NisdInfo"`
-	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort"`
 	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
 	ID            string   `xml:"ID" json:"ID"`
 	FailureDomain []string
-	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
-	TotalSize     int64  `xml:"TotalSize"`
-	AvailableSize int64  `xml:"AvailableSize"`
+	TotalSize     int64 `xml:"TotalSize"`
+	AvailableSize int64 `xml:"AvailableSize"`
 	SocketPath    string
 	NetInfo       []NetworkInfo
 }

@@ -43,16 +43,14 @@ func TestPutAndGetNisd(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort: 7001,
-			PeerPort:   8001,
-			ID:         "3355858e-ea0e-11f0-9768-e71fc352cd1d",
+			PeerPort: 8001,
+			ID:       "3355858e-ea0e-11f0-9768-e71fc352cd1d",
 			FailureDomain: []string{
 				"87694b06-ea0e-11f0-8fc4-e3e2449638d1",
 				"87694b06-ea0e-11f0-8fc4-e3e2449638d2",
 				"87694b06-ea0e-11f0-8fc4-e3e2449638d3",
 				"nvme-e3f4123",
 			},
-			IPAddr:        "192.168.1.10",
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
 			SocketPath:    "/path/sockets1",
@@ -68,16 +66,14 @@ func TestPutAndGetNisd(t *testing.T) {
 			},
 		},
 		{
-			ClientPort: 7003,
-			PeerPort:   8003,
-			ID:         "397fc08c-ea0e-11f0-9e9a-47f5587ee1f8",
+			PeerPort: 8003,
+			ID:       "397fc08c-ea0e-11f0-9e9a-47f5587ee1f8",
 			FailureDomain: []string{
 				"e80029a8-ea0e-11f0-962b-f3f3668c2241",
 				"e80029a8-ea0e-11f0-962b-f3f3668c2242",
 				"e80029a8-ea0e-11f0-962b-f3f3668c2243",
 				"nvme-e3f4125",
 			},
-			IPAddr:        "192.168.1.12",
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
 			SocketPath:    "/path/sockets3",
@@ -251,16 +247,14 @@ func TestVdevLifecycle(t *testing.T) {
 
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "nisd-001",
+		PeerPort: 8001,
+		ID:       "nisd-001",
 		FailureDomain: []string{
 			"pdu-01",
 			"rack-01",
 			"hv-01",
 			"dev-006",
 		},
-		IPAddr:        "192.168.1.10",
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
 	}
@@ -367,16 +361,14 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	// create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
+		PeerPort: 8001,
+		ID:       "1d67328a-df29-11f0-9e36-d7e439f8e740",
 		FailureDomain: []string{
 			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
 			"2435b29e-df29-11f0-900b-d3d680074046",
 			"298cedc0-df29-11f0-8c85-e3df2426ed67",
 			"nvme-e3df2426ed67",
 		},
-		IPAddr:        "192.168.1.10",
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
 	}
@@ -541,16 +533,14 @@ func TestParallelVdevCreation(t *testing.T) {
 
 					for n := 0; n < nisdPerDev; n++ {
 						nisd := cpLib.Nisd{
-							ClientPort: 7000 + uint16(nisdID),
-							PeerPort:   8000 + uint16(nisdID),
-							ID:         fmt.Sprintf("ed7914c3-2e96-4f3e-8e0d-%012x", nisdID),
+							PeerPort: 8000 + uint16(nisdID),
+							ID:       fmt.Sprintf("ed7914c3-2e96-4f3e-8e0d-%012x", nisdID),
 							FailureDomain: []string{
 								pdu,
 								rack,
 								hv,
 								dev,
 							},
-							IPAddr:        fmt.Sprintf("192.168.1.%d", ((nisdID-1)%250)+1),
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
 						}
@@ -629,86 +619,74 @@ func TestCreateSmallHierarchy(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5661",
+			PeerPort: 8000,
+			ID:       "86adee3a-d5da-11f0-8250-5f1ad86a5661",
 			FailureDomain: []string{
 				pdus[0],
 				racks[0],
 				hvs[0],
 				devices[0],
 			},
-			IPAddr:        "192.168.1.1",
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
 		},
 		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5662",
+			PeerPort: 8000,
+			ID:       "86adee3a-d5da-11f0-8250-5f1ad86a5662",
 			FailureDomain: []string{
 				pdus[0],
 				racks[0],
 				hvs[0],
 				devices[1],
 			},
-			IPAddr:        "192.168.1.1",
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
 		},
 		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5663",
+			PeerPort: 8000,
+			ID:       "86adee3a-d5da-11f0-8250-5f1ad86a5663",
 			FailureDomain: []string{
 				pdus[0],
 				racks[0],
 				hvs[1],
 				devices[2],
 			},
-			IPAddr:        "192.168.1.1",
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
 		},
 		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5664",
+			PeerPort: 8000,
+			ID:       "86adee3a-d5da-11f0-8250-5f1ad86a5664",
 			FailureDomain: []string{
 				pdus[1],
 				racks[1],
 				hvs[2],
 				devices[3],
 			},
-			IPAddr:        "192.168.1.1",
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
 		},
 		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5665",
+			PeerPort: 8000,
+			ID:       "86adee3a-d5da-11f0-8250-5f1ad86a5665",
 			FailureDomain: []string{
 				pdus[1],
 				racks[1],
 				hvs[3],
 				devices[4],
 			},
-			IPAddr:        "192.168.1.1",
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
 		},
 		cpLib.Nisd{
-			ClientPort: 7000,
-			PeerPort:   8000,
-			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5666",
+			PeerPort: 8000,
+			ID:       "86adee3a-d5da-11f0-8250-5f1ad86a5666",
 			FailureDomain: []string{
 				pdus[1],
 				racks[1],
 				hvs[4],
 				devices[5],
 			},
-			IPAddr:        "192.168.1.1",
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
 		},
