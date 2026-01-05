@@ -344,39 +344,22 @@ func NextFailureDomain(fd int) (int, error) {
 
 type NetInfoList []NetworkInfo
 
-func (n NetInfoList) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	start.Name.Local = "NetInfo"
-
-	var parts []string
+func (n NetInfoList) MarshalText() ([]byte, error) {
+	parts := make([]string, 0, len(n))
 	for _, ni := range n {
-		parts = append(parts, fmt.Sprintf("%s:%d", ni.IPAddr, ni.Port))
+		parts = append(parts, ni.IPAddr+":"+strconv.FormatUint(uint64(ni.Port), 10))
 	}
-
-	content := strings.Join(parts, ", ")
-
-	if err := e.EncodeToken(start); err != nil {
-		return err
-	}
-	if err := e.EncodeToken(xml.CharData([]byte(content))); err != nil {
-		return err
-	}
-	if err := e.EncodeToken(start.End()); err != nil {
-		return err
-	}
-
-	return nil
+	return []byte(strings.Join(parts, ", ")), nil
 }
-
-func (n *NetInfoList) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	var raw string
-	if err := d.DecodeElement(&raw, &start); err != nil {
-		return err
+func (n *NetInfoList) UnmarshalText(text []byte) error {
+	raw := strings.TrimSpace(string(text))
+	if raw == "" {
+		return nil
 	}
 
 	entries := strings.Split(raw, ",")
 	for _, e := range entries {
-		e = strings.TrimSpace(e)
-		host, portStr, err := net.SplitHostPort(e)
+		host, portStr, err := net.SplitHostPort(strings.TrimSpace(e))
 		if err != nil {
 			return err
 		}
