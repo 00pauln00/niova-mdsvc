@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -124,14 +125,14 @@ type NetworkInfo struct {
 }
 
 type Nisd struct {
-	XMLName       xml.Name `xml:"NisdInfo"`
-	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
-	ID            string   `xml:"ID" json:"ID"`
-	FailureDomain []string
-	TotalSize     int64 `xml:"TotalSize"`
-	AvailableSize int64 `xml:"AvailableSize"`
-	SocketPath    string
-	NetInfo       []NetworkInfo
+	XMLName       xml.Name    `xml:"NisdInfo"`
+	PeerPort      uint16      `xml:"PeerPort" json:"PeerPort"`
+	ID            string      `xml:"ID" json:"ID"`
+	FailureDomain []string    `xml:"FailureDomain"`
+	TotalSize     int64       `xml:"TotalSize"`
+	AvailableSize int64       `xml:"AvailableSize"`
+	SocketPath    string      `xml:"SocketPath"`
+	NetInfo       NetInfoList `xml:"NetInfo"`
 }
 
 type PDU struct {
@@ -339,4 +340,56 @@ func NextFailureDomain(fd int) (int, error) {
 		return fd, nil
 	}
 	return fd, fmt.Errorf("max failure domain reached: %d", fd)
+}
+
+type NetInfoList []NetworkInfo
+
+func (n NetInfoList) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	start.Name.Local = "NetInfo"
+
+	var parts []string
+	for _, ni := range n {
+		parts = append(parts, fmt.Sprintf("%s:%d", ni.IPAddr, ni.Port))
+	}
+
+	content := strings.Join(parts, ", ")
+
+	if err := e.EncodeToken(start); err != nil {
+		return err
+	}
+	if err := e.EncodeToken(xml.CharData([]byte(content))); err != nil {
+		return err
+	}
+	if err := e.EncodeToken(start.End()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (n *NetInfoList) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var raw string
+	if err := d.DecodeElement(&raw, &start); err != nil {
+		return err
+	}
+
+	entries := strings.Split(raw, ",")
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		host, portStr, err := net.SplitHostPort(e)
+		if err != nil {
+			return err
+		}
+
+		p, err := strconv.ParseUint(portStr, 10, 16)
+		if err != nil {
+			return err
+		}
+
+		*n = append(*n, NetworkInfo{
+			IPAddr: host,
+			Port:   uint16(p),
+		})
+	}
+	return nil
 }

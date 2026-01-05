@@ -54,7 +54,7 @@ func TestPutAndGetNisd(t *testing.T) {
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
 			SocketPath:    "/path/sockets1",
-			NetInfo: []cpLib.NetworkInfo{
+			NetInfo: cpLib.NetInfoList{
 				cpLib.NetworkInfo{
 					IPAddr: "192.168.0.0.1",
 					Port:   5444,
@@ -77,7 +77,7 @@ func TestPutAndGetNisd(t *testing.T) {
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
 			SocketPath:    "/path/sockets3",
-			NetInfo: []cpLib.NetworkInfo{
+			NetInfo: cpLib.NetInfoList{
 				cpLib.NetworkInfo{
 					IPAddr: "192.168.0.0.1",
 					Port:   5444,
