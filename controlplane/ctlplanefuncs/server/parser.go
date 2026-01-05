@@ -26,6 +26,34 @@ type ParseEntity interface {
 	GetEntity(entity Entity) Entity
 }
 
+func ParseEntitiesRR[T Entity](readResult []map[string][]byte, pe ParseEntity) []T {
+	entityMap := make(map[string]Entity)
+
+	for i, _ := range readResult {
+		for k, v := range readResult[i] {
+			parts := strings.Split(strings.Trim(k, "/"), "/")
+			if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+				continue
+			}
+
+			id := parts[BASE_UUID_PREFIX]
+			entity, exists := entityMap[id]
+			if !exists {
+				entity = pe.NewEntity(id)
+				entityMap[id] = entity
+			}
+			pe.ParseField(entity, parts, v)
+		}
+	}
+
+	result := make([]T, 0, len(entityMap))
+	for _, e := range entityMap {
+		final := pe.GetEntity(e)
+		result = append(result, final.(T))
+	}
+	return result
+}
+
 func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
@@ -43,7 +71,6 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 		}
 		pe.ParseField(entity, parts, v)
 	}
-
 	result := make([]T, 0, len(entityMap))
 	for _, e := range entityMap {
 		final := pe.GetEntity(e)
@@ -166,27 +193,29 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
 
 // nisd parser
-type nisdParser struct{}
+type NisdParser struct{}
 
-func (nisdParser) GetRootKey() string { return nisdCfgKey }
+func (NisdParser) GetRootKey() string { return NisdCfgKey }
 
-func (nisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{ID: id, NetInfo: make([]ctlplfl.NetworkInfo, 0)}
+func (NisdParser) NewEntity(id string) Entity {
+	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4), NetInfo: make([]ctlplfl.NetworkInfo, 0)}
 }
 
-func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
+func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	nisd := entity.(*ctlplfl.Nisd)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case DEVICE_ID:
-			nisd.DevID = string(value)
+			nisd.FailureDomain[ctlplfl.FD_DEVICE] = string(value)
 		case PEER_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
 		case hvKey:
-			nisd.HyperVisorID = string(value)
-		case FAILURE_DOMAIN:
-			nisd.FailureDomain = string(value)
+			nisd.FailureDomain[ctlplfl.FD_HV] = string(value)
+		case pduKey:
+			nisd.FailureDomain[ctlplfl.FD_PDU] = string(value)
+		case rackKey:
+			nisd.FailureDomain[ctlplfl.FD_RACK] = string(value)
 		case TOTAL_SPACE:
 			ts, _ := strconv.Atoi(string(value))
 			nisd.TotalSize = int64(ts)
@@ -220,7 +249,7 @@ func (nisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 
-func (nisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
+func (NisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
 
 type pduParser struct{}
 
@@ -269,6 +298,7 @@ func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 		}
 	}
 }
+
 func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
 
 type deviceWithPartitionParser struct{}
@@ -341,3 +371,32 @@ func (deviceWithPartitionParser) ParseField(entity Entity, parts []string, value
 func (deviceWithPartitionParser) GetEntity(entity Entity) Entity {
 	return *entity.(*ctlplfl.Device)
 }
+
+// TODO: Make chages to parse a single Vdev
+type vdevParser struct{}
+
+func (vdevParser) GetRootKey() string { return vdevKey }
+func (vdevParser) NewEntity(id string) Entity {
+	return &ctlplfl.Vdev{Cfg: ctlplfl.VdevCfg{ID: id}}
+}
+func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
+	vdev := entity.(*ctlplfl.Vdev)
+	if len(parts) > KEY_LEN {
+		switch parts[VDEV_ELEMENT_KEY] {
+		case SIZE:
+			if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+				vdev.Cfg.Size = sz
+			}
+		case NUM_CHUNKS:
+			if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+				vdev.Cfg.NumChunks = uint32(nc)
+			}
+		case NUM_REPLICAS:
+			if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+				vdev.Cfg.NumReplica = uint8(nr)
+			}
+		}
+	}
+}
+
+func (vdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Vdev) }

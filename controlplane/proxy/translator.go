@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
-	log "github.com/sirupsen/logrus"
 )
 
 func GetEncodingType(r *http.Request) pmLib.Format {
@@ -21,7 +21,7 @@ func GetEncodingType(r *http.Request) pmLib.Format {
 
 func GetReqStruct(name string) any {
 	switch name {
-	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR, cpLib.GET_PARTITION, cpLib.GET_VDEV:
+	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR, cpLib.GET_PARTITION, cpLib.GET_VDEV_CHUNK_INFO, cpLib.GET_VDEV, cpLib.GET_CHUNK_NISD, cpLib.GET_VDEV_INFO:
 		return &cpLib.GetReq{}
 	case cpLib.PUT_RACK:
 		return &cpLib.Rack{}
@@ -35,11 +35,14 @@ func GetReqStruct(name string) any {
 		return &cpLib.PDU{}
 	case cpLib.PUT_PARTITION:
 		return &cpLib.DevicePartition{}
+	case cpLib.PUT_NISD_ARGS:
+		return &cpLib.NisdArgs{}
 	case cpLib.CREATE_SNAP, cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
-		var size int64
-		return &size
+		return &cpLib.Vdev{}
+	default:
+		return &cpLib.GetReq{}
 	}
 	return nil
 }
@@ -50,23 +53,29 @@ func GetRespStruct(name string) any {
 		return &[]cpLib.Rack{}
 	case cpLib.GET_DEVICE:
 		return &[]cpLib.Device{}
+	case cpLib.GET_CHUNK_NISD:
+		return &cpLib.ChunkNisd{}
+	case cpLib.GET_VDEV_INFO:
+		return &cpLib.VdevCfg{}
 	case cpLib.GET_HYPERVISOR:
 		return &[]cpLib.Hypervisor{}
-	case cpLib.GET_NISD:
+	case cpLib.GET_NISD_LIST:
 		return &[]cpLib.Nisd{}
+	case cpLib.GET_NISD:
+		return &cpLib.Nisd{}
 	case cpLib.GET_PDU:
 		return &[]cpLib.PDU{}
 	case cpLib.GET_PARTITION:
 		return &[]cpLib.DevicePartition{}
-	case cpLib.CREATE_VDEV:
-		return &cpLib.Vdev{}
-	case cpLib.GET_VDEV:
+	case cpLib.GET_VDEV_CHUNK_INFO, cpLib.GET_VDEV:
 		return &[]*cpLib.Vdev{}
 	case cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_SNAP:
 		return &cpLib.SnapResponseXML{}
-	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION:
+	case cpLib.GET_NISD_ARGS:
+		return &cpLib.NisdArgs{}
+	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS, cpLib.CREATE_VDEV:
 		return &cpLib.ResponseXML{}
 	}
 	return nil

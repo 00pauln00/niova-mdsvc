@@ -4,11 +4,16 @@ import (
 	"errors"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
+)
+
+const (
+	LOG_LEVEL = "Info"
+	LOG_FILE  = "client.log"
 )
 
 // Client side interferace for control plane functions
@@ -32,6 +37,8 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 		RaftUUID:  key,
 	}
 	stop := make(chan int)
+	logL := LOG_LEVEL
+	log.InitXlog(LOG_FILE, &logL)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go func() {
 		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)
@@ -178,18 +185,18 @@ func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
 	return ccf.request(rqb, urla, false)
 }
 
-func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutDevice(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(device, resp, ctlplfl.PUT_DEVICE)
 	if err != nil {
-		log.Error("PutDeviceInfo failed: ", err)
+		log.Error("PutDevice failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
 // TODO make changes to use new GetRequest struct
-func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
+func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
 	dev := make([]ctlplfl.Device, 0)
 	err := ccf.get(req, &dev, ctlplfl.GET_DEVICE)
 	if err != nil {
@@ -199,19 +206,19 @@ func (ccf *CliCFuncs) GetDeviceInfo(req ctlplfl.GetReq) ([]ctlplfl.Device, error
 	return dev, nil
 }
 
-func (ccf *CliCFuncs) PutNisdCfg(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(ncfg, resp, ctlplfl.PUT_NISD)
 	if err != nil {
-		log.Error("PutNisdCfg failed: ", err)
+		log.Error("PutNisd failed: ", err)
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+func (ccf *CliCFuncs) GetNisds() ([]ctlplfl.Nisd, error) {
 	ncfg := make([]ctlplfl.Nisd, 0)
-	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD)
+	err := ccf.get(nil, &ncfg, ctlplfl.GET_NISD_LIST)
 	if err != nil {
 		log.Error("failed to fet nisd info: ", err)
 		return nil, err
@@ -219,15 +226,30 @@ func (ccf *CliCFuncs) GetNisdCfg(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 	return ncfg, nil
 }
 
-func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) error {
-	return ccf.put(vdev.Size, vdev, ctlplfl.CREATE_VDEV)
+func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
+	ncfg := &ctlplfl.Nisd{}
+	err := ccf.get(req, ncfg, ctlplfl.GET_NISD)
+	if err != nil {
+		log.Error("failed to fet nisd info: ", err)
+		return nil, err
+	}
+	return ncfg, nil
 }
 
-func (ccf *CliCFuncs) GetVdevs(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
-	vdevs := make([]ctlplfl.Vdev, 0)
-	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV)
+func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(vdev, resp, ctlplfl.CREATE_VDEV)
 	if err != nil {
-		log.Error("GetHypervisor failed: ", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetVdevsWithChunkInfo(req *ctlplfl.GetReq) ([]ctlplfl.Vdev, error) {
+	vdevs := make([]ctlplfl.Vdev, 0)
+	err := ccf.get(req, &vdevs, ctlplfl.GET_VDEV_CHUNK_INFO)
+	if err != nil {
+		log.Error("GetVdevsWithChunkInfo failed: ", err)
 		return nil, err
 	}
 
@@ -314,4 +336,58 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 	}
 
 	return hypervisors, nil
+}
+
+func (ccf *CliCFuncs) PutNisdArgs(req *ctlplfl.NisdArgs) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.PUT_NISD_ARGS)
+	if err != nil {
+		log.Error("PutNisdArgs failed: ", err)
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (ccf *CliCFuncs) GetNisdArgs() (ctlplfl.NisdArgs, error) {
+	var args ctlplfl.NisdArgs
+	url := "name=" + ctlplfl.GET_NISD_ARGS
+	rsb, err := ccf.request(nil, url, false)
+	if err != nil {
+		log.Error("request failed: ", err)
+		return args, err
+	}
+	if rsb == nil {
+		return args, fmt.Errorf("failed to fetch response from control plane: %v", err)
+	}
+	err = pmCmn.Decoder(ccf.encType, rsb, &args)
+	if err != nil {
+		log.Error("failed to decode response: ", err)
+		return args, err
+	}
+
+	return args, nil
+}
+
+func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
+	vdev := ctlplfl.VdevCfg{}
+	err := ccf.get(req, &vdev, ctlplfl.GET_VDEV_INFO)
+	if err != nil {
+		log.Error("Read Vdev Cfg failed: ", err)
+		return vdev, err
+	}
+
+	return vdev, nil
+}
+
+func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, error) {
+	cn := ctlplfl.ChunkNisd{}
+	log.Info("fetching chunk Info for:", req.ID)
+	err := ccf.get(req, &cn, ctlplfl.GET_CHUNK_NISD)
+	if err != nil {
+		log.Error("GetHypervisor failed: ", err)
+		return cn, err
+	}
+
+	return cn, nil
 }

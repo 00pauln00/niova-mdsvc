@@ -9,7 +9,8 @@ go 1.24.0
 toolchain go1.24.8
 
 require (
-	github.com/00pauln00/niova-pumicedb/go v0.0.0-00010101000000-000000000000
+	github.com/00pauln00/niova-lookout v0.0.0-20251206193347-d24de0d14683
+	github.com/00pauln00/niova-pumicedb/go v0.0.0-20250619210501-e7cb0ad03da8
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -17,6 +18,7 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
+	github.com/tidwall/btree v1.8.1
 	golang.org/x/crypto v0.38.0
 	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6
 	gopkg.in/yaml.v3 v3.0.1

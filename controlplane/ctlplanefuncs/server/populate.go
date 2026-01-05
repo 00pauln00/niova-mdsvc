@@ -79,21 +79,23 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	key := getConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH} {
+	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, pduKey, rackKey} {
 		var value string
 		switch field {
 		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
 		case hvKey:
-			value = nisd.HyperVisorID
-		case FAILURE_DOMAIN:
-			value = nisd.FailureDomain
+			value = nisd.FailureDomain[cpLib.FD_HV]
+		case pduKey:
+			value = nisd.FailureDomain[cpLib.FD_PDU]
+		case rackKey:
+			value = nisd.FailureDomain[cpLib.FD_RACK]
 		case TOTAL_SPACE:
 			value = strconv.Itoa(int(nisd.TotalSize))
 		case AVAIL_SPACE:
 			value = strconv.Itoa(int(nisd.AvailableSize))
 		case DEVICE_ID:
-			value = nisd.DevID
+			value = nisd.FailureDomain[cpLib.FD_DEVICE]
 		case SOCKET_PATH:
 			value = nisd.SocketPath
 		default:
@@ -232,6 +234,38 @@ func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, ent
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
+			Value: []byte(value),
+		})
+	}
+}
+
+type nisdArgsPopulator struct{}
+
+func (nisdArgsPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+	args := entity.(*cpLib.NisdArgs)
+	for _, field := range []string{DEFRAG, MBCCnt, MergeHCnt, MCIReadCache, S3, DSYNC, ALLOW_DEFRAG_MCIB_CACHE} {
+		var value string
+		switch field {
+		case DEFRAG:
+			value = strconv.FormatBool(args.Defrag)
+		case MBCCnt:
+			value = strconv.Itoa(args.MBCCnt)
+		case MergeHCnt:
+			value = strconv.Itoa(args.MergeHCnt)
+		case MCIReadCache:
+			value = strconv.Itoa(args.MCIBReadCache)
+		case DSYNC:
+			value = args.DSync
+		case S3:
+			value = args.S3
+		case ALLOW_DEFRAG_MCIB_CACHE:
+			value = strconv.FormatBool(args.AllowDefragMCIBCache)
+
+		default:
+			continue
+		}
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", argsKey, field)),
 			Value: []byte(value),
 		})
 	}

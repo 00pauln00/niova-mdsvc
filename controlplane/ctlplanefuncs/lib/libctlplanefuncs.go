@@ -2,33 +2,46 @@ package libctlplanefuncs
 
 import (
 	"encoding/gob"
+	"encoding/xml"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
-	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	"hash/fnv"
+
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
-	PUT_DEVICE     = "PutDeviceInfo"
-	GET_DEVICE     = "GetDeviceInfo"
-	PUT_NISD       = "PutNisdCfg"
-	GET_NISD       = "GetNisdCfg"
-	GET_NISD_LIST  = "GetAllNisd"
-	CREATE_VDEV    = "CreateVdev"
-	GET_VDEV       = "GetVdev"
-	CREATE_SNAP    = "CreateSnap"
-	READ_SNAP_NAME = "ReadSnapByName"
-	READ_SNAP_VDEV = "ReadSnapForVdev"
-	PUT_PDU        = "PutPDU"
-	GET_PDU        = "GetPDU"
-	GET_RACK       = "GetRack"
-	PUT_RACK       = "PutRack"
-	GET_HYPERVISOR = "GetHypervisor"
-	PUT_HYPERVISOR = "PutHypervisor"
-	PUT_PARTITION  = "PutPartition"
-	GET_PARTITION  = "GetPartition"
+	PUT_DEVICE          = "PutDevice"
+	GET_DEVICE          = "GetDevice"
+	PUT_NISD            = "PutNisd"
+	GET_NISD            = "GetNisd"
+	GET_NISD_LIST       = "GetAllNisd"
+	CREATE_VDEV         = "CreateVdev"
+	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
+	GET_VDEV            = "GetVdevs"
+	CREATE_SNAP         = "CreateSnap"
+	READ_SNAP_NAME      = "ReadSnapByName"
+	READ_SNAP_VDEV      = "ReadSnapForVdev"
+	PUT_PDU             = "PutPDU"
+	GET_PDU             = "GetPDU"
+	GET_RACK            = "GetRack"
+	PUT_RACK            = "PutRack"
+	GET_HYPERVISOR      = "GetHypervisor"
+	PUT_HYPERVISOR      = "PutHypervisor"
+	PUT_PARTITION       = "PutPartition"
+	GET_PARTITION       = "GetPartition"
+	GET_VDEV_INFO       = "get_vdev_info" // new
+	GET_CHUNK_NISD      = "get_chunk_nisd"
+	GET_NISD_INFO       = "get_nisd_info"
+
+	PUT_NISD_ARGS  = "PutNisdArgs"
+	GET_NISD_ARGS  = "GetNisdArgs"
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
+	MAX_REPLY_SIZE = 4 * 1024 * 1024
 	NAME           = "name"
 
 	UNINITIALIZED = 1
@@ -36,6 +49,13 @@ const (
 	RUNNING       = 3
 	FAILED        = 4
 	STOPPED       = 5
+
+	FD_PDU    = 0
+	FD_RACK   = 1
+	FD_HV     = 2
+	FD_DEVICE = 3
+	FD_MAX    = 4
+	HASH_SIZE = 8
 )
 
 // Define Snapshot XML structure
@@ -61,6 +81,8 @@ type SnapXML struct {
 
 type ResponseXML struct {
 	Name    string `xml:"name"`
+	ID      string `xml:"ID"`
+	Error   string
 	Success bool
 }
 
@@ -86,20 +108,30 @@ type DevicePartition struct {
 	Size          int64  `json:"size,omitempty"`
 }
 
+type NisdArgs struct {
+	Defrag               bool   // -g Defrag
+	MBCCnt               int    // -m
+	MergeHCnt            int    // -M
+	MCIBReadCache        int    // -r
+	S3                   string // -s
+	DSync                string // -D
+	AllowDefragMCIBCache bool   // -x
+}
+
 type NetworkInfo struct {
 	IPAddr string
 	Port   uint16
 }
 
 type Nisd struct {
-	PeerPort      uint16 `xml:"PeerPort" json:"PeerPort" yaml:"peer_port"`
-	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
-	DevID         string `xml:"DevID" json:"DevID" yaml:"name"`
-	HyperVisorID  string `xml:"HyperVisorID" json:"HyperVisorID" yaml:"-"`
-	FailureDomain string `xml:"FailureDomain" json:"FailureDomain" yaml:"-"`
-	InitDev       bool   `yaml:"init"`
-	TotalSize     int64  `xml:"TotalSize" yaml:"-"`
-	AvailableSize int64  `xml:"AvailableSize" yaml:"-"`
+	XMLName       xml.Name `xml:"NisdInfo"`
+	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
+	ID            string   `xml:"ID" json:"ID"`
+	FailureDomain []string
+	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
+	TotalSize     int64  `xml:"TotalSize"`
+	AvailableSize int64  `xml:"AvailableSize"`
 	SocketPath    string
 	NetInfo       []NetworkInfo
 }
@@ -138,14 +170,24 @@ type NisdChunk struct {
 	Chunk []int
 }
 
-type Vdev struct {
-	VdevID       string
-	NisdToChkMap []NisdChunk
+type NisdVdevAlloc struct {
+	AvailableSize int64
+	Ptr           *Nisd
+}
+
+type VdevCfg struct {
+	XMLName      xml.Name `xml:"Vdev"`
+	ID           string
 	Size         int64
 	NumChunks    uint32
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+}
+
+type Vdev struct {
+	Cfg          VdevCfg
+	NisdToChkMap []NisdChunk
 }
 
 type GetReq struct {
@@ -160,24 +202,11 @@ func (vdev *Vdev) Init() error {
 		log.Error("failed to generate uuid:", err)
 		return err
 	}
-	vdev.VdevID = id.String()
-	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
-	vdev.NumReplica = 1
-	vdev.NumDataBlk = 0
-	vdev.NumParityBlk = 0
+	vdev.Cfg.ID = id.String()
+	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
+	vdev.Cfg.NumDataBlk = 0
+	vdev.Cfg.NumParityBlk = 0
 	return nil
-}
-
-type s3Config struct {
-	URL  string `yaml:"url"`
-	Opts string `yaml:"opts"`
-	Auth string `yaml:"auth"`
-}
-
-type NisdCntrConfig struct {
-	S3Config   s3Config         `yaml:"s3_config"`
-	Gossip     pmCmn.GossipInfo `yaml:"gossip"`
-	NisdConfig []Nisd           `yaml:"nisd_config"`
 }
 
 // String returns a string representation of the Device
@@ -218,6 +247,12 @@ func Count8GBChunks(size int64) int64 {
 	return count + 1
 }
 
+type ChunkNisd struct {
+	XMLName     xml.Name `xml:"ChunkNisd"`
+	NumReplicas uint8    `xml:"NREPLICAS"`
+	NisdUUIDs   string   `xml:"NISDs"`
+}
+
 func RegisterGOBStructs() {
 	gob.Register(Rack{})
 	gob.Register(GetReq{})
@@ -231,5 +266,79 @@ func RegisterGOBStructs() {
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
+	gob.Register(VdevCfg{})
+	gob.Register(ChunkNisd{})
+	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
+}
+
+func (req *GetReq) ValidateRequest() error {
+	if req.ID == "" {
+		return fmt.Errorf("Invalid Request: Recieved empty ID")
+	}
+	return nil
+
+}
+
+func (a *NisdArgs) BuildCmdArgs() string {
+	var parts []string
+
+	if a.Defrag {
+		parts = append(parts, "-g")
+	}
+	if a.MBCCnt != 0 {
+		parts = append(parts, "-m", strconv.Itoa(a.MBCCnt))
+	}
+	if a.MergeHCnt != 0 {
+		parts = append(parts, "-M", strconv.Itoa(a.MergeHCnt))
+	}
+	if a.MCIBReadCache != 0 {
+		parts = append(parts, "-r", strconv.Itoa(a.MCIBReadCache))
+	}
+	if a.S3 != "" {
+		parts = append(parts, "-s", a.S3)
+	}
+	if a.DSync != "" {
+		parts = append(parts, "-D", a.DSync)
+	}
+	if a.AllowDefragMCIBCache {
+		parts = append(parts, "-x")
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func NisdAllocHash(data []byte) uint64 {
+	h := fnv.New64a()
+	h.Write(data)
+	return h.Sum64()
+}
+
+func (n *Nisd) Validate() error {
+	if _, err := uuid.Parse(n.ID); err != nil {
+		return errors.New("invalid ID uuid")
+	}
+
+	if len(n.FailureDomain) != FD_MAX {
+		return errors.New("invalid NISD failure domain info")
+	}
+	for i := 0; i < FD_DEVICE; i++ {
+		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
+			return fmt.Errorf("invalid FailureDomain[%d] uuid", i)
+		}
+	}
+
+	if n.AvailableSize > n.TotalSize {
+		return errors.New("available Size exceeds total size")
+	}
+
+	return nil
+}
+
+func NextFailureDomain(fd int) (int, error) {
+	if fd < FD_DEVICE {
+		fd++
+		return fd, nil
+	}
+	return fd, fmt.Errorf("max failure domain reached: %d", fd)
 }

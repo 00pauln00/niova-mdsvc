@@ -15,6 +15,7 @@ import (
 	defaultLogger "log"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,8 +34,8 @@ import (
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 /*
@@ -72,31 +73,58 @@ type pmdbServerHandler struct {
 	portRange         []uint16
 }
 
+func PopulateHierarchy() error {
+	key, prefix := srvctlplanefuncs.NisdCfgKey, srvctlplanefuncs.NisdCfgKey
+	rangeReadContOut := make([]map[string][]byte, 0)
+	time.Sleep(2 * time.Second)
+	var cbargs PumiceDBServer.PmdbCbArgs
+	for {
+		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
+		readResult, err := cbargs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
+			ColFamily: colmfamily,
+			Key:       key,
+			Prefix:    prefix,
+			BufSize:   cpLib.MAX_REPLY_SIZE,
+		})
+		if err != nil {
+			log.Warn("RangeReadKV(): ", err)
+			return err
+		}
+		rangeReadContOut = append(rangeReadContOut, readResult.ResultMap)
+		if readResult.LastKey == "" {
+			break
+		}
+		key = readResult.LastKey
+		prefix = filepath.Dir(readResult.LastKey)
+	}
+	nisdList := srvctlplanefuncs.ParseEntitiesRR[cpLib.Nisd](rangeReadContOut, srvctlplanefuncs.NisdParser{})
+	for i := 0; i < len(nisdList); i++ {
+		err := srvctlplanefuncs.HR.AddNisd(&nisdList[i])
+		if err != nil {
+			log.Error("AddNisd(): ", err)
+			return err
+		}
+		log.Debug("added nisd to the hierarchy: ", nisdList[i])
+
+	}
+
+	log.Infof("successfully intialized hierarchy")
+	srvctlplanefuncs.HR.Dump()
+	return nil
+}
+
 func main() {
 	serverHandler := pmdbServerHandler{}
 	cpLib.RegisterGOBStructs()
 
-	nso, pErr := serverHandler.parseArgs()
-	if pErr != nil {
-		log.Println(pErr)
+	nso, err := serverHandler.parseArgs()
+	if err != nil {
+		defaultLogger.Println("failed to parse arguments", err)
 		return
 	}
 
-	switch serverHandler.logLevel {
-	case "Info":
-		log.SetLevel(log.InfoLevel)
-	case "Trace":
-		log.SetLevel(log.TraceLevel)
-	}
-
+	log.InitXlog(serverHandler.logDir, &serverHandler.logLevel)
 	log.Info("Log Dir - ", serverHandler.logDir)
-
-	//Create log file
-	err := PumiceDBCommon.InitLogger(serverHandler.logDir)
-	if err != nil {
-		log.Error("Error while initating logger ", err)
-		os.Exit(1)
-	}
 
 	err = serverHandler.startSerfAgent()
 	if err != nil {
@@ -142,7 +170,8 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.WPCreatePartition)
 
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.RdNisdCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, srvctlplanefuncs.ReadAllNisdConfigs)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.ReadNisdConfig)
 	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
 	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
@@ -150,10 +179,16 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
 	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
 	cpAPI.RegisterReadFunc(cpLib.GET_PARTITION, srvctlplanefuncs.ReadPartition)
-	cpAPI.RegisterReadFunc(cpLib.GET_VDEV, srvctlplanefuncs.ReadVdevCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_CHUNK_INFO, srvctlplanefuncs.ReadVdevsInfoWithChunkMapping)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_ARGS, srvctlplanefuncs.RdNisdArgs)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, srvctlplanefuncs.WPNisdArgs)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, srvctlplanefuncs.ReadVdevInfo)
+	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, srvctlplanefuncs.ReadChunkNisd)
 
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_NISD, srvctlplanefuncs.ApplyNisd)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
@@ -175,8 +210,20 @@ func main() {
 	//TODO Check error
 	go nso.pso.Run()
 
+	srvctlplanefuncs.HR.Init()
+	err = PopulateHierarchy()
+	if err != nil {
+		log.Warn("failed to create hierarchy struct:", err)
+	}
+
 	serverHandler.checkPMDBLiveness()
 	serverHandler.exportTags()
+
+}
+
+func appdecode(payload []byte, op interface{}) error {
+	dec := gob.NewDecoder(bytes.NewBuffer(payload))
+	return dec.Decode(op)
 }
 
 func (handler *pmdbServerHandler) checkPMDBLiveness() {
@@ -191,7 +238,7 @@ func (handler *pmdbServerHandler) checkPMDBLiveness() {
 	}
 }
 
-func (handler *pmdbServerHandler) exportTags() error {
+func (handler *pmdbServerHandler) exportTags() {
 	if handler.prometheus {
 		handler.checkHTTPLiveness()
 		handler.GossipData["Hport"] = strconv.Itoa(RecvdPort)
@@ -206,7 +253,6 @@ func (handler *pmdbServerHandler) exportTags() error {
 		time.Sleep(3 * time.Second)
 	}
 
-	return nil
 }
 
 func usage() {
@@ -265,7 +311,7 @@ func (handler *pmdbServerHandler) parseArgs() (*NiovaKVServer, error) {
 	*/
 	defaultLog := "/" + "tmp" + "/" + handler.peerUUID.String() + ".log"
 	flag.StringVar(&handler.logDir, "l", defaultLog, "log dir")
-	flag.StringVar(&handler.logLevel, "ll", "Info", "Log level")
+	flag.StringVar(&handler.logLevel, "ll", "Trace", "Log level")
 	flag.StringVar(&handler.gossipClusterFile, "g", "NULL", "Serf agent port")
 	flag.BoolVar(&handler.prometheus, "p", false, "Enable prometheus")
 	flag.Parse()
@@ -478,12 +524,6 @@ func (nso *NiovaKVServer) Init(cleanupPeerArgs *PumiceDBServer.PmdbCbArgs) {
 
 func (nso *NiovaKVServer) WritePrep(wrPrepArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	log.Trace("NiovaCtlPlane server: Write prep received")
-	var copyErr error
-	_, copyErr = nso.pso.CopyDataToBuffer(byte(1), wrPrepArgs.ContinueWr)
-	if copyErr != nil {
-		log.Error("Failed to Copy result in the buffer: %s", copyErr)
-		return -1
-	}
 	return 0
 }
 
@@ -494,7 +534,7 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	// Decode the input buffer into structure format
 	applyNiovaKV := &requestResponseLib.KVRequest{}
 	// register datatypes for decoding interface
-	decodeErr := nso.pso.DecodeApplicationReq(applyArgs.Payload, applyNiovaKV)
+	decodeErr := appdecode(applyArgs.Payload, applyNiovaKV)
 	if decodeErr != nil {
 		log.Error("Failed to decode the application data")
 		return -1
@@ -503,19 +543,10 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	//For application request
 	log.Trace("Key passed by client: ", applyNiovaKV.Key)
 
-	// length of key.
-	keyLength := len(applyNiovaKV.Key)
-
 	byteToStr := string(applyNiovaKV.Value)
 
-	// Length of value.
-	valLen := len(byteToStr)
-
 	log.Trace("Write the KeyValue by calling PmdbWriteKV")
-	rc := nso.pso.WriteKV(applyArgs.UserID, applyArgs.PmdbHandler,
-		applyNiovaKV.Key,
-		int64(keyLength), byteToStr,
-		int64(valLen), colmfamily)
+	rc := applyArgs.PmdbWriteKV(colmfamily, applyNiovaKV.Key, byteToStr)
 
 	return int64(rc)
 }
@@ -532,7 +563,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 
 	//Decode the request structure sent by client.
 	reqStruct := &requestResponseLib.KVRequest{}
-	decodeErr := nso.pso.DecodeApplicationReq(readArgs.Payload, reqStruct)
+	decodeErr := appdecode(readArgs.Payload, reqStruct)
 
 	if decodeErr != nil {
 		log.Error("Failed to decode the read request")
@@ -551,8 +582,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if reqStruct.Operation == requestResponseLib.KV_READ {
 
 		log.Trace("read - ", reqStruct.SeqNum)
-		readResult, err := nso.pso.ReadKV(readArgs.UserID, reqStruct.Key,
-			int64(keyLen), colmfamily)
+		readResult, err := readArgs.PmdbReadKV(colmfamily, reqStruct.Key)
 		singleReadMap := make(map[string][]byte)
 		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
@@ -564,11 +594,14 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult, err := nso.pso.RangeReadKV(readArgs.UserID,
-			reqStruct.Key,
-			int64(keyLen), reqStruct.Prefix,
-			(readArgs.ReplySize - int64(encodingOverhead)),
-			reqStruct.Consistent, reqStruct.SeqNum, colmfamily)
+		readResult, err := readArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
+			ColFamily:  colmfamily,
+			Key:        reqStruct.Key,
+			BufSize:    readArgs.ReplySize - int64(encodingOverhead),
+			Prefix:     reqStruct.Prefix,
+			SeqNum:     reqStruct.SeqNum,
+			Consistent: true,
+		})
 		var cRead bool
 		if readResult.LastKey != "" {
 			cRead = true
@@ -592,7 +625,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	log.Trace("Response trace : ", resultResponse)
 	if readErr == nil {
 		//Copy the encoded result in replyBuffer
-		replySize, copyErr = nso.pso.CopyDataToBuffer(resultResponse,
+		replySize, copyErr = PumiceDBServer.PmdbCopyDataToBuffer(resultResponse,
 			readArgs.ReplyBuf)
 		if copyErr != nil {
 			log.Error("Failed to Copy result in the buffer: %s", copyErr)
