@@ -133,6 +133,7 @@ type Nisd struct {
 	AvailableSize int64       `xml:"AvailableSize"`
 	SocketPath    string      `xml:"SocketPath"`
 	NetInfo       NetInfoList `xml:"NetInfo"`
+	NetInfoCnt    int         `xml:"NetInfoCnt"`
 }
 
 type PDU struct {
@@ -331,6 +332,10 @@ func (n *Nisd) Validate() error {
 		return errors.New("available Size exceeds total size")
 	}
 
+	if len(n.NetInfo) != n.NetInfoCnt {
+		return fmt.Errorf("network interface cnt %d doesn't match with the total interface details provided %d", n.NetInfoCnt, len(n.NetInfo))
+	}
+
 	return nil
 }
 
@@ -351,6 +356,7 @@ func (n NetInfoList) MarshalText() ([]byte, error) {
 	}
 	return []byte(strings.Join(parts, ", ")), nil
 }
+
 func (n *NetInfoList) UnmarshalText(text []byte) error {
 	raw := strings.TrimSpace(string(text))
 	if raw == "" {

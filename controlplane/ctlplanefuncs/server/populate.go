@@ -79,7 +79,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	key := getConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, pduKey, rackKey} {
+	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, pduKey, rackKey, NETWORK_INFO_CNT} {
 		var value string
 		switch field {
 		case PEER_PORT:
@@ -98,6 +98,8 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 			value = nisd.FailureDomain[cpLib.FD_DEVICE]
 		case SOCKET_PATH:
 			value = nisd.SocketPath
+		case NETWORK_INFO_CNT:
+			value = strconv.Itoa(nisd.NetInfoCnt)
 		default:
 			continue
 		}

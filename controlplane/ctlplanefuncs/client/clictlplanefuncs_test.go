@@ -64,6 +64,7 @@ func TestPutAndGetNisd(t *testing.T) {
 					Port:   6444,
 				},
 			},
+			NetInfoCnt: 2,
 		},
 		{
 			PeerPort: 8003,
@@ -87,6 +88,7 @@ func TestPutAndGetNisd(t *testing.T) {
 					Port:   6444,
 				},
 			},
+			NetInfoCnt: 2,
 		},
 	}
 

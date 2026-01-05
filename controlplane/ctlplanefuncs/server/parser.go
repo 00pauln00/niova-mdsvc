@@ -224,6 +224,9 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 			nisd.AvailableSize = int64(as)
 		case SOCKET_PATH:
 			nisd.SocketPath = string(value)
+		case NETWORK_INFO_CNT:
+			nic, _ := strconv.Atoi(string(value))
+			nisd.NetInfoCnt = nic
 		}
 	}
 
