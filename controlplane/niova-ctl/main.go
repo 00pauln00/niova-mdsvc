@@ -710,6 +710,8 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 			sshPort := strings.TrimSpace(m.inputs[2].Value())
 			portRange := strings.TrimSpace(m.inputs[3].Value())
 
+			ips := strings.Split(ip, ",")
+
 			if name == "" || ip == "" {
 				m.message = "Name and IP Address are required"
 				return m, nil
@@ -732,7 +734,7 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 				ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
 				Name:      name,
 				RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
-				IPAddress: ip,
+				IPAddress: ips,
 				SSHPort:   sshPort,
 				PortRange: portRange,
 			}
@@ -1609,7 +1611,7 @@ func (m model) resetInputs() model {
 
 func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	m.inputs[0].SetValue(hv.ID)
-	m.inputs[1].SetValue(hv.IPAddress)
+	m.inputs[1].SetValue(strings.Join(hv.IPAddress, ","))
 	//FIXME hardcoded valueof sshport
 	m.inputs[2].SetValue("22")
 	// Skip failure domain input (index 3) as it's now hierarchical
@@ -6170,6 +6172,13 @@ func (m *model) initializeNISD() error {
 	if err != nil {
 		return fmt.Errorf("failed to allocate ports for NISD: %v", err)
 	}
+	netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddress))
+	for _, ip := range hv.IPAddress {
+		netInfos = append(netInfos, ctlplfl.NetworkInfo{
+			IPAddr: ip,
+			Port:   uint16(clientPort),
+		})
+	}
 
 	// Create NISD struct using DevicePartition data
 	nisd := &ctlplfl.Nisd{
@@ -6177,11 +6186,7 @@ func (m *model) initializeNISD() error {
 		PeerPort:      uint16(serverPort),
 		TotalSize:     m.selectedPartitionForNISD.Size,
 		AvailableSize: m.selectedPartitionForNISD.Size,
-		NetInfo: []ctlplfl.NetworkInfo{ctlplfl.NetworkInfo{
-			IPAddr: hv.IPAddress,
-			Port:   uint16(clientPort),
-		},
-		},
+		NetInfo:       netInfos,
 		FailureDomain: []string{
 			"", // TODO Pass PDU-ID
 			hv.RackID,
@@ -6236,17 +6241,20 @@ func (m *model) initializeSelectedNISDs() error {
 			continue
 		}
 
+		netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddress))
+		for _, ip := range hv.IPAddress {
+			netInfos = append(netInfos, ctlplfl.NetworkInfo{
+				IPAddr: ip,
+				Port:   uint16(clientPort),
+			})
+		}
 		// Create NISD struct using DevicePartition data
 		nisd := &ctlplfl.Nisd{
 			ID:            partitionInfo.Partition.NISDUUID, // Use NISD UUID from partition
 			PeerPort:      uint16(serverPort),
 			TotalSize:     partitionInfo.Partition.Size,
 			AvailableSize: partitionInfo.Partition.Size,
-			NetInfo: []ctlplfl.NetworkInfo{ctlplfl.NetworkInfo{
-				IPAddr: hv.IPAddress,
-				Port:   uint16(clientPort),
-			},
-			},
+			NetInfo:       netInfos,
 			FailureDomain: []string{
 				"",
 				"",

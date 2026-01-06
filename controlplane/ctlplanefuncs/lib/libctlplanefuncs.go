@@ -158,7 +158,7 @@ type Hypervisor struct {
 	ID          string // Unique hypervisor identifier
 	RackID      string
 	Name        string
-	IPAddress   string
+	IPAddress   []string
 	PortRange   string
 	SSHPort     string // SSH port for connection
 	Dev         []Device
@@ -245,6 +245,19 @@ func Count8GBChunks(size int64) int64 {
 		return count
 	}
 	return count + 1
+}
+
+func MatchIPs(a, b []string) bool {
+	set := make(map[string]struct{}, len(a))
+	for _, v := range a {
+		set[v] = struct{}{}
+	}
+	for _, v := range b {
+		if _, ok := set[v]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 type ChunkNisd struct {

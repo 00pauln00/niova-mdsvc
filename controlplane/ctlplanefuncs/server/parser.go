@@ -140,8 +140,6 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 		switch parts[ELEMENT_KEY] {
 		case rackKey:
 			hv.RackID = string(value)
-		case IP_ADDR:
-			hv.IPAddress = string(value)
 		case PORT_RANGE:
 			hv.PortRange = string(value)
 		case SSH_PORT:
@@ -155,6 +153,8 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 			}
 			hv.RDMAEnabled = rdma
 		}
+	} else if len(parts) > KEY_LEN && parts[2] == IP_ADDR {
+		hv.IPAddress = append(hv.IPAddress, string(value))
 	}
 }
 

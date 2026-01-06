@@ -189,8 +189,6 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 		switch field {
 		case NAME:
 			value = hv.Name
-		case IP_ADDR:
-			value = hv.IPAddress
 		case PORT_RANGE:
 			value = hv.PortRange
 		case SSH_PORT:
@@ -206,6 +204,12 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
 			Value: []byte(value),
+		})
+	}
+	for i, ip := range hv.IPAddress {
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s/%d", key, IP_ADDR, i)),
+			Value: []byte(ip),
 		})
 	}
 }
