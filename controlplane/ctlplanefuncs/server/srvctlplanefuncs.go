@@ -470,7 +470,8 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 	log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
 
 	// track NISDs already selected for this allocation
-	picked := make(map[string]struct{})
+	pickedNISD := make(map[string]struct{})
+	pickedEntity := make(map[int]struct{})
 
 	// chunk's replica's are stored in different NISD's from different entities
 	for i := 0; i < int(vdev.NumReplica); i++ {
@@ -482,7 +483,18 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 		attempts := 0
 
 		for attempts < treeLen {
-			nisd, err = HR.PickNISD(fd, entityIDX, hash, picked, nisdMap)
+
+			if _, used := pickedEntity[entityIDX]; used {
+				entityIDX = (entityIDX + 1) % treeLen
+				attempts++
+				log.Warnf("skipping entity IDX: %d, as it's already picked", entityIDX)
+				if attempts == treeLen-1 {
+					err = fmt.Errorf("failed to pick nisd from different entites at fd: %d", fd)
+				}
+				continue
+			}
+
+			nisd, err = HR.PickNISD(fd, entityIDX, hash, pickedNISD, nisdMap)
 			if err == nil {
 				break
 			}
@@ -504,7 +516,8 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 
 		log.Debugf("picked nisd: %s, for chunk %s/R.%d", nisd.Ptr.ID, chunk, i)
 		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
-
+		// mark entity as used
+		pickedEntity[entityIDX] = struct{}{}
 		// advance base index only after success
 		entityIDX = (entityIDX + 1) % treeLen
 

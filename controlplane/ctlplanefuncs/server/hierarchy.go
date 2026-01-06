@@ -39,12 +39,7 @@ type Hierarchy struct {
 var HR Hierarchy
 
 func compareEntity(a, b *Entities) bool { return a.ID < b.ID }
-func compareNisd(a, b *cpLib.Nisd) bool {
-	if a.AvailableSize != b.AvailableSize {
-		return a.AvailableSize > b.AvailableSize
-	}
-	return a.ID < b.ID
-}
+func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
 
 // Initialize the Hierarchy Struct
 func (hr *Hierarchy) Init() {
