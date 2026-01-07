@@ -2,8 +2,10 @@ package clictlplanefuncs
 
 import (
 	"fmt"
+	"fmt"
 	"os"
 	"path"
+	"sync"
 	"sync"
 	"testing"
 	"context"
@@ -564,7 +566,10 @@ func TestMultiCreateVdev(t *testing.T) {
 			Size: 700 * 1024 * 1024 * 1024,
 		}}
 	resp, err := c.CreateVdev(vdev1)
+	resp, err := c.CreateVdev(vdev1)
 	assert.NoError(t, err, "failed to create vdev1")
+	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
+	log.Info("Created vdev1: ", resp.ID)
 	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
 	log.Info("Created vdev1: ", resp.ID)
 
@@ -722,6 +727,8 @@ func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 	racks := []cpLib.Rack{
 		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
 		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
+		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
+		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
 	}
 
 	for _, r := range racks {
@@ -758,6 +765,15 @@ func TestVdevNisdChunk(t *testing.T) {
 			"298cedc0-df29-11f0-8c85-e3df2426ed67",
 			"nvme-e3df2426ed67",
 		},
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
+		FailureDomain: []string{
+			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
+			"2435b29e-df29-11f0-900b-d3d680074046",
+			"298cedc0-df29-11f0-8c85-e3df2426ed67",
+			"nvme-e3df2426ed67",
+		},
 		IPAddr:        "192.168.1.10",
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
@@ -773,9 +789,13 @@ func TestVdevNisdChunk(t *testing.T) {
 		}}
 	resp, err = c.CreateVdev(vdev)
 	log.Info("Created Vdev Result: ", resp)
+	resp, err = c.CreateVdev(vdev)
+	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
 	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
 	log.Info("Read vdev:", readV)
+	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }

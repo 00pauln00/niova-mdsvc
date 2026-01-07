@@ -53,6 +53,34 @@ func ParseEntitiesRR[T Entity](readResult []map[string][]byte, pe ParseEntity) [
 	return result
 }
 
+func ParseEntitiesRR[T Entity](readResult []map[string][]byte, pe ParseEntity) []T {
+	entityMap := make(map[string]Entity)
+
+	for i, _ := range readResult {
+		for k, v := range readResult[i] {
+			parts := strings.Split(strings.Trim(k, "/"), "/")
+			if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+				continue
+			}
+
+			id := parts[BASE_UUID_PREFIX]
+			entity, exists := entityMap[id]
+			if !exists {
+				entity = pe.NewEntity(id)
+				entityMap[id] = entity
+			}
+			pe.ParseField(entity, parts, v)
+		}
+	}
+
+	result := make([]T, 0, len(entityMap))
+	for _, e := range entityMap {
+		final := pe.GetEntity(e)
+		result = append(result, final.(T))
+	}
+	return result
+}
+
 func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
@@ -191,7 +219,6 @@ type NisdParser struct{}
 func (NisdParser) GetRootKey() string { return NisdCfgKey }
 
 func (NisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4)}
 	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4)}
 }
 
