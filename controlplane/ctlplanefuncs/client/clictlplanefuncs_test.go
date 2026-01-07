@@ -2,15 +2,10 @@ package clictlplanefuncs
 
 import (
 	"fmt"
-	"fmt"
 	"os"
 	"path"
 	"sync"
-	"sync"
 	"testing"
-	"context"
-    "time"
-    "golang.org/x/sync/errgroup"
 	"context"
     "time"
     "golang.org/x/sync/errgroup"
@@ -28,14 +23,8 @@ var (
 	Hypervisors = make(map[string]cpLib.Hypervisor)
 	Devices = make(map[string]cpLib.Device)
 	Nisds = make(map[string]cpLib.Nisd)
-)
-
-var (
-	TestPDUs  = make(map[string]cpLib.PDU)
-	TestRacks = make(map[string]cpLib.Rack)
-	TestHypervisors = make(map[string]cpLib.Hypervisor)
-	TestDevices = make(map[string]cpLib.Device)
 	TestNisds = make(map[string]cpLib.Nisd)
+	TestNisdsAfter = make(map[string]cpLib.Nisd)
 )
 
 var VDEV_ID string
@@ -62,477 +51,15 @@ func newClient(t *testing.T) *CliCFuncs {
 	return c
 }
 
-func TestPutAndGetSingleNisd(t *testing.T) {
-	c := newClient(t)
+func TestPutAndGetSinglePDU(t *testing.T) {
+	c := newClient(t) 
 
-	mockNisd := cpLib.Nisd{
-	pdu := cpLib.PDU{
+	pdu := []cpLib.PDU{
 		ID: "95f62aee-997e-11f0-9f1b-a70cff4b660b",
 		Name:          "pdu-1",
-		Location:      "us-west",
+		Location:      "us-east",
 		PowerCapacity: "15Kw",
 		Specification: "specification1",
-	}
-
-func TestPutAndGetSinglePDU(t *testing.T) {
-	c := newClient(t) 
-
-	mockNisd := []cpLib.Nisd{
-		{
-			ClientPort: 7001,
-			PeerPort:   8001,
-			ID:         "nisd-001",
-			FailureDomain: []string{
-				"pdu-01",
-				"rack-01",
-				"hv-01",
-				"dev-001",
-			},
-	nisd := cpLib.Nisd{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-001",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.10",
-			InitDev:       true,
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 750_000_000_000,   // 750 GB
-	}
-
-	// PUT single PDU
-	resp, err := c.PutPDU(&pdu)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
-
-	// GET operation 
-	res, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
-	log.Info("Single PDU: ", res)
-	assert.NoError(t, err)
-
-}
-
-func TestPutAndGetDevice(t *testing.T) {
-	c := newClient(t)
-
-	mockDevices := []cpLib.Device{
-		{
-			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
-			SerialNumber:  "SN123456789",
-			State:         1,
-			HypervisorID:  "hv-01",
-			FailureDomain: "fd-01",
-			DevicePath:    "/temp/path1",
-			Name:          "dev-1",
-		},
-		{
-			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
-			SerialNumber:  "SN987654321",
-			State:         0,
-			HypervisorID:  "hv-02",
-			FailureDomain: "fd-01",
-			DevicePath:    "/temp/path2",
-			Name:          "dev-2",
-			Size:          12345689,
-			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
-				PartitionID:   "b97c34qwe-9775558a141a",
-				PartitionPath: "/part/path1",
-				NISDUUID:      "1",
-				DevID:         "60447cdsad0-ab3e-1342340dd976538",
-				Size:          123467,
-			}, cpLib.DevicePartition{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
-				PartitionPath: "/part/path2",
-				NISDUUID:      "1",
-				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
-				Size:          123467,
-			},
-			},
-		},
-		{
-			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
-			SerialNumber:  "SN112233445",
-			State:         2,
-			HypervisorID:  "hv-01",
-			FailureDomain: "fd-02",
-			DevicePath:    "/temp/path3",
-			Name:          "dev-3",
-			Size:          9999999,
-			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
-				PartitionPath: "/part/path3",
-				NISDUUID:      "1",
-				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
-				Size:          123467,
-			},
-			},
-		},
-	}
-
-	for _, p := range mockDevices {
-		resp, err := c.PutDevice(&p)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
-	}
-
-	// PUT operation 
-	resp, err := c.PutNisdCfg(&nisd)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
-
-	// GET operation 
-	res, err := c.GetNisdCfg(cpLib.GetReq{ID: nisd.ID})
-	log.Info("GetNisdCfg: ", res)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, res)
-	
-	returned := res[0]
-
-	// Validate all key fields match
-	assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
-	assert.Equal(t, nisd.DevID, returned.DevID, "DevID mismatch")
-	assert.Equal(t, nisd.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
-	assert.Equal(t, nisd.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
-	assert.Equal(t, nisd.IPAddr, returned.IPAddr, "IPAddr mismatch")
-	assert.Equal(t, nisd.ClientPort, returned.ClientPort, "ClientPort mismatch")
-	assert.Equal(t, nisd.PeerPort, returned.PeerPort, "PeerPort mismatch")
-	assert.Equal(t, nisd.TotalSize, returned.TotalSize, "TotalSize mismatch")
-	assert.Equal(t, nisd.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
-	assert.Equal(t, nisd.InitDev, returned.InitDev, "InitDev mismatch")
-
-	log.Info("Single NISD PUT/GET validations successful.")
-}
-
-func TestPutAndGetMultipleNisds(t *testing.T) {
-	c := newClient(t)
-
-	mockNisd := []cpLib.Nisd{
-		{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-001",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.10",
-			InitDev:       true,
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 750_000_000_000,
-		},
-		{
-			ClientPort:    7002,
-			PeerPort:      8002,
-			ID:            "nisd-002",
-			DevID:         "dev-002",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-02",
-			IPAddr:        "192.168.1.11",
-			InitDev:       false,
-			TotalSize:     500_000_000_000,
-			AvailableSize: 200_000_000_000,
-		},
-		{
-			ClientPort: 7003,
-			PeerPort:   8003,
-			ID:         "nisd-003",
-			FailureDomain: []string{
-				"pdu-03",
-				"rack-03",
-				"hv-03",
-				"dev-003",
-			},
-			IPAddr:        "192.168.1.12",
-			InitDev:       true,
-			TotalSize:     2_000_000_000_000,
-			AvailableSize: 1_500_000_000_000,
-		},
-	}
-
-	// PUT multiple NISDs
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
-
-	// GET all NISDs
-	res, err := c.GetNisdCfg(cpLib.GetReq{})
-	assert.NoError(t, err)
-	assert.NotEmpty(t, res)
-
-	// Store results in the map
-	for _, n := range res {
-		Nisds[n.ID] = n
-	}
-
-	// Validation: NISD ↔ Hypervisor
-	for _, n := range Nisds {
-		var hvExists bool
-		for _, hv := range Hypervisors {
-			if hv.Name == n.HyperVisorID {
-				hvExists = true
-				break
-			}
-		}
-		assert.True(t, hvExists,
-			"NISD %s references HyperVisorID %s which does not exist among known Hypervisors",
-			n.ID, n.HyperVisorID)
-	}
-
-	// Validation: NISD ↔ Device
-	for _, n := range Nisds {
-		var devExists bool
-		for _, d := range Devices {
-			if d.Name == n.DevID {
-				devExists = true
-				break
-			}
-		}
-		assert.True(t, devExists,
-			"NISD %s references DevID %s which does not exist among known Devices",
-			n.ID, n.DevID)
-	}
-
-	// Validate count
-	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
-
-	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
-}
-
-func TestPutAndGetSingleDevice(t *testing.T) {
-	c := newClient(t)
-
-	device := cpLib.Device{
-		ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
-		SerialNumber:  "SN112233445",
-		State:         2,
-		HypervisorID:  "hv-01",
-		FailureDomain: "fd-02",
-		DevicePath:    "/temp/path3",
-		Name:          "dev-3",
-		Size:          9999999,
-		Partitions: []cpLib.DevicePartition{
-			{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
-				PartitionPath: "/part/path3",
-				NISDUUID:      "1",
-				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
-				Size:          123467,
-			},
-		},
-	}
-
-	// PUT single device
-	resp, err := c.PutDeviceInfo(&device)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
-
-	// GET device
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
-	log.Infof("fetch single device info: %s", res)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, res)
-
-	assert.NotEmpty(t, res)
-
-	returned := res[0]
-
-	// Validate all key fields
-	assert.Equal(t, device.ID, returned.ID)
-	assert.Equal(t, device.SerialNumber, returned.SerialNumber)
-	assert.Equal(t, device.HypervisorID, returned.HypervisorID)
-	assert.Equal(t, device.FailureDomain, returned.FailureDomain)
-	assert.Equal(t, device.DevicePath, returned.DevicePath)
-	assert.Equal(t, device.Name, returned.Name)
-	assert.Equal(t, device.Size, returned.Size)
-	assert.Equal(t, len(device.Partitions), len(returned.Partitions))
-
-	for i := range device.Partitions {
-		assert.Equal(t, device.Partitions[i].PartitionID, returned.Partitions[i].PartitionID)
-		assert.Equal(t, device.Partitions[i].PartitionPath, returned.Partitions[i].PartitionPath)
-		assert.Equal(t, device.Partitions[i].NISDUUID, returned.Partitions[i].NISDUUID)
-		assert.Equal(t, device.Partitions[i].DevID, returned.Partitions[i].DevID)
-		assert.Equal(t, device.Partitions[i].Size, returned.Partitions[i].Size)
-	}
-
-	log.Infof("Single Device PUT/GET validation successful for %s", device.ID)
-	// Validate all key fields
-	assert.Equal(t, device.ID, returned.ID)
-	assert.Equal(t, device.SerialNumber, returned.SerialNumber)
-	assert.Equal(t, device.HypervisorID, returned.HypervisorID)
-	assert.Equal(t, device.FailureDomain, returned.FailureDomain)
-	assert.Equal(t, device.DevicePath, returned.DevicePath)
-	assert.Equal(t, device.Name, returned.Name)
-	assert.Equal(t, device.Size, returned.Size)
-	assert.Equal(t, len(device.Partitions), len(returned.Partitions))
-
-	for i := range device.Partitions {
-		assert.Equal(t, device.Partitions[i].PartitionID, returned.Partitions[i].PartitionID)
-		assert.Equal(t, device.Partitions[i].PartitionPath, returned.Partitions[i].PartitionPath)
-		assert.Equal(t, device.Partitions[i].NISDUUID, returned.Partitions[i].NISDUUID)
-		assert.Equal(t, device.Partitions[i].DevID, returned.Partitions[i].DevID)
-		assert.Equal(t, device.Partitions[i].Size, returned.Partitions[i].Size)
-	}
-
-	log.Infof("Single Device PUT/GET validation successful for %s", device.ID)
-}
-
-func TestPutAndGetMultipleDevices(t *testing.T) {
-	c := newClient(t)
-
-	mockDevices := []cpLib.Device{
-		{
-			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
-			SerialNumber:  "SN123456789",
-			State:         1,
-			HypervisorID:  "hv-1",
-			FailureDomain: "fd-01",
-			DevicePath:    "/temp/path1",
-			Name:          "dev-1",
-		},
-		{
-			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
-			SerialNumber:  "SN987654321",
-			State:         0,
-			HypervisorID:  "hv-2",
-			FailureDomain: "fd-01",
-			DevicePath:    "/temp/path2",
-			Name:          "dev-2",
-			Size:          12345689,
-			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
-				PartitionID:   "b97c34qwe-9775558a141a",
-				PartitionPath: "/part/path1",
-				NISDUUID:      "1",
-				DevID:         "60447cdsad0-ab3e-1342340dd976538",
-				Size:          123467,
-			}, cpLib.DevicePartition{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
-				PartitionPath: "/part/path2",
-				NISDUUID:      "1",
-				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
-				Size:          123467,
-			},
-			},
-		},
-		{
-			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
-			SerialNumber:  "SN112233445",
-			State:         2,
-			HypervisorID:  "hv-1",
-			FailureDomain: "fd-02",
-			DevicePath:    "/temp/path3",
-			Name:          "dev-3",
-			Size:          9999999,
-			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
-				PartitionPath: "/part/path3",
-				NISDUUID:      "1",
-				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
-				Size:          123467,
-			},
-			},
-		},
-	}
-
-	// PUT multiple devices
-	for _, d := range mockDevices {
-		resp, err := c.PutDevice(&d)
-	for _, d := range mockDevices {
-		resp, err := c.PutDeviceInfo(&d)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
-	// Step 0: Create a NISD to allocate space for Vdevs
-	n := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "nisd-001",
-		FailureDomain: []string{
-			"pdu-01",
-			"rack-01",
-			"hv-01",
-			"dev-006",
-		},
-		IPAddr:        "192.168.1.10",
-		InitDev:       true,
-		TotalSize:     15_000_000_000_000, 
-		AvailableSize: 15_000_000_000_000, 
-	}
-
-	// PUT operation 
-	resp, err := c.PutNisd(&nisd)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
-
-	// GET all devices
-	res, err := c.GetDevices(cpLib.GetReq{})
-	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
-=======
-	// GET all devices
-	res, err := c.GetDeviceInfo(cpLib.GetReq{})
->>>>>>> 955463c ( Added two sub-tests for each entity.)
-	// GET operation 
-	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
-	log.Info("GetNisdCfg: ", res)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, res)
-
-	// Store results in the map
-	for _, d := range res {
-		Devices[d.ID] = d
-	}
-
-	// Validation: Device ↔ Hypervisor
-	for _, device := range Devices {
-		var hvExists bool
-		for _, hv := range Hypervisors {
-			if hv.Name == device.HypervisorID {
-				hvExists = true
-				break
-			}
-		}
-		assert.True(t, hvExists, "Device %s references HypervisorID %s which does not exist", device.Name, device.HypervisorID)
-	}
-
-	// Store results in the map
-	for _, d := range res {
-		Devices[d.ID] = d
-	}
-
-	// Validation: Device ↔ Hypervisor
-	for _, device := range Devices {
-		var hvExists bool
-		for _, hv := range Hypervisors {
-			if hv.Name == device.HypervisorID {
-				hvExists = true
-				break
-			}
-		}
-		assert.True(t, hvExists, "Device %s references HypervisorID %s which does not exist", device.Name, device.HypervisorID)
-	}
-
-	// Validate count
-	assert.Equal(t, len(mockDevices), len(res), "Mismatch in number of devices retrieved")
-
-	log.Infof("Inserted %d devices, retrieved %d successfully", len(mockDevices), len(res))
-}
-
-func TestPutAndGetSinglePDU(t *testing.T) {
-	c := newClient(t) 
-
-	nisd := cpLib.Nisd{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-001",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.10",
-			InitDev:       true,
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 750_000_000_000,   // 750 GB
 	}
 
 	// PUT single PDU
@@ -630,49 +157,14 @@ func TestPutAndGetSingleRack(t *testing.T) {
 func TestPutAndGetMultipleRacks(t *testing.T) {
 	c := newClient(t)
 
-	mockNisd := []cpLib.Nisd{
-		{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-001",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.10",
-			InitDev:       true,
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 750_000_000_000,
-		},
-		{
-			ClientPort:    7002,
-			PeerPort:      8002,
-			ID:            "nisd-002",
-			DevID:         "dev-002",
-			HyperVisorID:  "hv-01",
-			FailureDomain: "fd-02",
-			IPAddr:        "192.168.1.11",
-			InitDev:       false,
-			TotalSize:     500_000_000_000,
-			AvailableSize: 200_000_000_000,
-		},
-		{
-			ClientPort:    7003,
-			PeerPort:      8003,
-			ID:            "nisd-003",
-			DevID:         "dev-003",
-			HyperVisorID:  "hv-02",
-			FailureDomain: "fd-01",
-			IPAddr:        "192.168.1.12",
-			InitDev:       true,
-			TotalSize:     2_000_000_000_000,
-			AvailableSize: 1_500_000_000_000,
-		},
+	racks := []cpLib.Rack{
+		{ID: "8a5303ae-ab23-11f0-bb87-632ad3e09c04", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b", Name: "rack-1", Location: "us-east", Specification: "rack1-spec"},
+		{ID: "93e2925e-ab23-11f0-958d-87f55a6a9981", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea", Name: "rack-2", Location: "us-west", Specification: "rack2-spec"},
 	}
 
 	// PUT multiple NISDs
-	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		resp, err := c.PutNisd(&n)
+	for _, r := range racks {
+		resp, err := c.PutRack(&r)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
@@ -759,7 +251,7 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 		Hypervisors[hv.ID] = hv
 	}
 
-	log.Infof("All %d racks validated successfully", len(hypervisors))
+	log.Infof("All %d hypervisors validated successfully", len(hypervisors))
 
 	// Validation: ensure inserted hypervisors are present with correct fields
 	for _, expected := range hypervisors {
@@ -799,7 +291,7 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 		ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
 		SerialNumber:  "SN112233445",
 		State:         2,
-		HypervisorID:  "hv-1",
+		HypervisorID:  "hv-01",
 		FailureDomain: "fd-02",
 		DevicePath:    "/temp/path3",
 		Name:          "dev-3",
@@ -816,12 +308,12 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	}
 
 	// PUT single device
-	resp, err := c.PutDevice(&device)
+	resp, err := c.PutDeviceInfo(&device)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET device
-	res, err := c.GetDevices(cpLib.GetReq{ID: device.ID})
+	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
 	log.Infof("fetch single device info: %s", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -852,51 +344,137 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 func TestPutAndGetMultipleDevices(t *testing.T) {
 	c := newClient(t)
 
-	// Step 0: Create a NISD to allocate space for Vdevs
-	n := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "nisd-001",
-		FailureDomain: []string{
-			"pdu-01",
-			"rack-01",
-			"hv-01",
-			"dev-006",
+	mockDevices := []cpLib.Device{
+		{
+			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+			SerialNumber:  "SN123456789",
+			State:         1,
+			HypervisorID:  "hv-1",
+			FailureDomain: "fd-01",
+			DevicePath:    "/temp/path1",
+			Name:          "dev-1",
 		},
-		IPAddr:        "192.168.1.10",
-		InitDev:       true,
-		TotalSize:     15_000_000_000_000, 
-		AvailableSize: 15_000_000_000_000, 
-		TotalSize:     15_000_000_000_000, 
-		AvailableSize: 15_000_000_000_000, 
+		{
+			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
+			SerialNumber:  "SN987654321",
+			State:         0,
+			HypervisorID:  "hv-2",
+			FailureDomain: "fd-01",
+			DevicePath:    "/temp/path2",
+			Name:          "dev-2",
+			Size:          12345689,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c34qwe-9775558a141a",
+				PartitionPath: "/part/path1",
+				NISDUUID:      "1",
+				DevID:         "60447cdsad0-ab3e-1342340dd976538",
+				Size:          123467,
+			}, cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
+				PartitionPath: "/part/path2",
+				NISDUUID:      "1",
+				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
+				Size:          123467,
+			},
+			},
+		},
+		{
+			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+			SerialNumber:  "SN112233445",
+			State:         2,
+			HypervisorID:  "hv-1",
+			FailureDomain: "fd-02",
+			DevicePath:    "/temp/path3",
+			Name:          "dev-3",
+			Size:          9999999,
+			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+				PartitionPath: "/part/path3",
+				NISDUUID:      "1",
+				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				Size:          123467,
+			},
+			},
+		},
 	}
 
-	// PUT operation 
-	resp, err := c.PutNisd(&nisd)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
+	// PUT multiple devices
+	for _, d := range mockDevices {
+		resp, err := c.PutDeviceInfo(&d)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+	}
 
-	// GET operation 
-	res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
-	log.Info("GetNisdCfg: ", res)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, res)
-	
-	returned := res[0]
+	// GET all devices
+	res, err := c.GetDevices(cpLib.GetReq{})
+	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 
-	// Validate all key fields match
-	assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
-	assert.Equal(t, nisd.DevID, returned.DevID, "DevID mismatch")
-	assert.Equal(t, nisd.HyperVisorID, returned.HyperVisorID, "HyperVisorID mismatch")
-	assert.Equal(t, nisd.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
-	assert.Equal(t, nisd.IPAddr, returned.IPAddr, "IPAddr mismatch")
-	assert.Equal(t, nisd.ClientPort, returned.ClientPort, "ClientPort mismatch")
-	assert.Equal(t, nisd.PeerPort, returned.PeerPort, "PeerPort mismatch")
-	assert.Equal(t, nisd.TotalSize, returned.TotalSize, "TotalSize mismatch")
-	assert.Equal(t, nisd.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
-	assert.Equal(t, nisd.InitDev, returned.InitDev, "InitDev mismatch")
+	// Store results in the map
+	for _, d := range res {
+		Devices[d.ID] = d
+	}
 
-	log.Info("Single NISD PUT/GET validations successful.")
+	// Validation: Device ↔ Hypervisor
+	for _, device := range Devices {
+		var hvExists bool
+		for _, hv := range Hypervisors {
+			if hv.Name == device.HypervisorID {
+				hvExists = true
+				break
+			}
+		}
+		assert.True(t, hvExists, "Device %s references HypervisorID %s which does not exist", device.Name, device.HypervisorID)
+	}
+
+	// Validate count
+	assert.Equal(t, len(mockDevices), len(res), "Mismatch in number of devices retrieved")
+
+	log.Infof("Inserted %d devices, retrieved %d successfully", len(mockDevices), len(res))
+}
+
+func TestPutAndGetSingleNisd(t *testing.T) {
+   c := newClient(t)
+
+   nisd := cpLib.Nisd{
+           ClientPort:    7001,
+           PeerPort:      8001,
+           ID:            "nisd-001",
+           FailureDomain: []string{
+               "pdu-01",
+               "rack-01",
+               "hv-01",
+               "dev-001",
+           },
+           IPAddr:        "192.168.1.10",
+           TotalSize:     1_000_000_000_000, // 1 TB
+           AvailableSize: 750_000_000_000,   // 750 GB
+   }
+
+
+   // PUT operation
+   resp, err := c.PutNisd(&nisd)
+   assert.NoError(t, err)
+   assert.True(t, resp.Success)
+
+
+   // GET operation
+   res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
+   log.Info("GetNisdCfg: ", res)
+   assert.NoError(t, err)
+   assert.NotEmpty(t, res)
+  
+   returned := res[0]
+
+   // Validate all key fields match
+   assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
+   assert.Equal(t, nisd.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
+   assert.Equal(t, nisd.IPAddr, returned.IPAddr, "IPAddr mismatch")
+   assert.Equal(t, nisd.ClientPort, returned.ClientPort, "ClientPort mismatch")
+   assert.Equal(t, nisd.PeerPort, returned.PeerPort, "PeerPort mismatch")
+   assert.Equal(t, nisd.TotalSize, returned.TotalSize, "TotalSize mismatch")
+   assert.Equal(t, nisd.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
+
+   log.Info("Single NISD PUT/GET validations successful.")
 }
 
 func TestPutAndGetMultipleNisds(t *testing.T) {
@@ -904,40 +482,46 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort:    7001,
-			PeerPort:      8001,
-			ID:            "nisd-001",
-			DevID:         "dev-1",
-			HyperVisorID:  "hv-1",
-			FailureDomain: "fd-01",
+			ClientPort: 7001,
+			PeerPort:   8001,
+			ID:         "nisd-001",
+			FailureDomain: []string{
+				"pdu-01",
+				"rack-01",
+				"hv-01",
+				"dev-001",
+			},
 			IPAddr:        "192.168.1.10",
-			InitDev:       true,
-			TotalSize:     1_000_000_000_000,
-			AvailableSize: 750_000_000_000,
+			TotalSize:     1_000_000_000_000, // 1 TB
+			AvailableSize: 750_000_000_000,   // 750 GB
 		},
 		{
-			ClientPort:    7002,
-			PeerPort:      8002,
-			ID:            "nisd-002",
-			DevID:         "dev-2",
-			HyperVisorID:  "hv-1",
-			FailureDomain: "fd-02",
+			ClientPort: 7002,
+			PeerPort:   8002,
+			ID:         "nisd-002",
+			FailureDomain: []string{
+				"pdu-02",
+				"rack-02",
+				"hv-02",
+				"dev-002",
+			},
 			IPAddr:        "192.168.1.11",
-			InitDev:       false,
-			TotalSize:     500_000_000_000,
-			AvailableSize: 200_000_000_000,
+			TotalSize:     500_000_000_000, // 500 GB
+			AvailableSize: 200_000_000_000, // 200 GB
 		},
 		{
-			ClientPort:    7003,
-			PeerPort:      8003,
-			ID:            "nisd-003",
-			DevID:         "dev-3",
-			HyperVisorID:  "hv-2",
-			FailureDomain: "fd-01",
+			ClientPort: 7003,
+			PeerPort:   8003,
+			ID:         "nisd-003",
+			FailureDomain: []string{
+				"pdu-03",
+				"rack-03",
+				"hv-03",
+				"dev-003",
+			},
 			IPAddr:        "192.168.1.12",
-			InitDev:       true,
-			TotalSize:     2_000_000_000_000,
-			AvailableSize: 1_500_000_000_000,
+			TotalSize:     2_000_000_000_000, // 2 TB
+			AvailableSize: 1_500_000_000_000, // 1.5 TB
 		},
 	}
 
@@ -956,34 +540,6 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	// Store results in the map
 	for _, n := range res {
 		Nisds[n.ID] = n
-	}
-
-	// Validation: NISD ↔ Hypervisor
-	for _, n := range Nisds {
-		var hvExists bool
-		for _, hv := range Hypervisors {
-			if hv.Name == n.HyperVisorID {
-				hvExists = true
-				break
-			}
-		}
-		assert.True(t, hvExists,
-			"NISD %s references HyperVisorID %s which does not exist among known Hypervisors",
-			n.ID, n.HyperVisorID)
-	}
-
-	// Validation: NISD ↔ Device
-	for _, n := range Nisds {
-		var devExists bool
-		for _, d := range Devices {
-			if d.Name == n.DevID {
-				devExists = true
-				break
-			}
-		}
-		assert.True(t, devExists,
-			"NISD %s references DevID %s which does not exist among known Devices",
-			n.ID, n.DevID)
 	}
 
 	// Validate count
@@ -1024,21 +580,12 @@ func TestMultiCreateVdev(t *testing.T) {
 		Size: 800 * 1024 * 1024 * 1024}        // 800 GB
 	err = c.CreateVdev(vdev3)
 	assert.NoError(t, err)
-
-	vdev3 := &cpLib.Vdev{
-		Size: 800 * 1024 * 1024 * 1024}        // 800 GB
-	err = c.CreateVdev(vdev3)
-	assert.NoError(t, err)
 	assert.Greater(t, vdev3.Size, int64(0), "Vdev size must be greater than 0")
 	log.Info("CreateMultiVdev Result 3: ", vdev3)
 
 	// Verify that IDs are unique
 	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
 
-	// Verify that IDs are unique
-	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
-
-	// Step 3: Fetch all Vdevs and validate both exist
 	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
@@ -1135,24 +682,6 @@ func TestGetAllVdev(t *testing.T) {
 	}
 }
 
-	for _, chunk := range v.NisdToChkMap {
-		n := chunk.Nisd
-		var nisdExists bool
-		assert.NotEmpty(t, n.ID, "NISD ID should not be empty")
-		assert.NotEmpty(t, n.DevID, "Device ID should not be empty")
-		assert.NotEmpty(t, n.HyperVisorID, "Hypervisor ID should not be empty")
-
-		for _, nisd := range Nisds {
-			if n.ID == nisd.ID {
-				nisdExists = true
-				log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
-				break
-			}
-		}
-		assert.True(t, nisdExists,"Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
-	}
-}
-
 func TestPutAndGetSinglePartition(t *testing.T) {
 	c := newClient(t)
 
@@ -1220,41 +749,6 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	// // create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort:    7001,
-		PeerPort:      8001,
-		ID:            "nisd-001",
-		DevID:         "dev-001",
-		HyperVisorID:  "hv-01",
-		FailureDomain: "fd-01",
-		IPAddr:        "192.168.1.10",
-		InitDev:       true,
-		TotalSize:     1_000_000_000_000, // 1 TB
-		AvailableSize: 750_000_000_000,   // 750 GB
-	}
-	resp, err := c.PutNisd(&mockNisd)
-	assert.NoError(t, err)
-	assert.True(t, resp.Success)
-
-	// create vdev
-	vdev := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size: 500 * 1024 * 1024 * 1024,
-		}}
-	err = c.CreateVdev(vdev)
-	log.Info("Created Vdev Result: ", vdev)
-	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: vdev.Cfg.ID})
-	log.Info("Read vdev:", readV)
-	nc, err := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev.Cfg.ID, "2")})
-	log.Info("Read Nisd Chunk:", nc)
-}
-
-func TestVdevNisdChunk(t *testing.T) {
-
-	c := newClient(t)
-
-	// // create nisd
-	mockNisd := cpLib.Nisd{
 		ClientPort: 7001,
 		PeerPort:   8001,
 		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
@@ -1305,7 +799,7 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	log.Info("Get na: ", nisdArgs)
 }
 
-func TestHierarchy2(t *testing.T) {
+func TestHierarchy(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []string{
@@ -1480,6 +974,105 @@ func TestHierarchy2(t *testing.T) {
 
 	wg.Wait()
 
+	// -------------------------------
+	// NISD Distribution Verification
+	// -------------------------------
+
+	// GET all NISDs
+	res, err := c.GetNisds(cpLib.GetReq{})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, res)
+
+	// Store results in the map
+	for _, n := range res {
+		TestNisds[n.ID] = n
+	}
+
+	// Validate count
+	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
+
+	var usedSizes []uint64
+	var totalUsed uint64
+
+	for _, n := range TestNisds {
+		used := n.TotalSize - n.AvailableSize
+		usedSizes = append(usedSizes, used)
+		totalUsed += used
+	}
+
+	// Compute average usage
+	avgUsed := totalUsed / uint64(len(usedSizes))
+
+	// Allow small skew due to placement constraints (5%)
+	allowedSkew := avgUsed / 20
+
+	for i, used := range usedSizes {
+		diff := int64(used) - int64(avgUsed)
+		if diff < 0 {
+			diff = -diff
+		}
+
+		assert.LessOrEqualf(
+			t,
+			uint64(diff),
+			allowedSkew,
+			"NISD %d usage imbalance detected: used=%d avg=%d",
+			i,
+			used,
+			avgUsed,
+		)
+	}
+
+	// -------------------------------
+	// NISD Exhaustion Test
+	// -------------------------------
+
+	// Try allocating until exhaustion
+	var exhaustionErr error
+
+	for i := 0; i < 10_000; i++ {
+		vdev := &cpLib.Vdev{
+			Cfg: cpLib.VdevCfg{
+				Size:       50 * 1024 * 1024 * 1024, // 50GB chunks
+				NumReplica: 3, // Fault tolerance enabled
+			},
+		}
+
+		_, err := c.CreateVdev(vdev)
+		if err != nil {
+			exhaustionErr = err
+			break
+		}
+	}
+
+	assert.Error(t, exhaustionErr)
+	assert.Contains(
+		t,
+		exhaustionErr.Error(),
+		"Not enough space",
+	)
+
+	// Verify some space still remains (cannot hit 100%)
+	// GET all NISDs
+	nisdsAfter, err := c.GetNisds(cpLib.GetReq{})
+
+	// Store results in the map
+	for _, n := range nisdsAfter {
+		TestNisdsAfter[n.ID] = n
+	}
+
+	var remaining uint64
+	for _, n := range TestNisdsAfter {
+		remaining += n.AvailableSize
+	}
+
+	assert.Greater(
+		t,
+		remaining,
+		uint64(0),
+		"Expected remaining space due to fault tolerance constraints",
+	)
+
 }
 
 func TestCreateSmallHierarchy(t *testing.T) {
@@ -1490,13 +1083,13 @@ func TestCreateSmallHierarchy(t *testing.T) {
 		"9bc244bc-df29-11f0-a93b-277aec17e43702",
 	}
 
-	// 10 RACKS
+	// 2 RACKS
 	racks := []string{
 		"3f082930-df29-11f0-ab7b-4bd430991101",
 		"3f082930-df29-11f0-ab7b-4bd430991102",
 	}
 
-	// 20 HVs
+	// 5 HVs
 	hvs := []string{
 		"bde1f08a-df63-11f0-88ef-430ddec199701",
 		"bde1f08a-df63-11f0-88ef-430ddec199702",
@@ -1505,7 +1098,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 		"bde1f08a-df63-11f0-88ef-430ddec199705",
 	}
 
-	// 40 Devices
+	// 6 Devices
 	devices := []string{
 		"nvme-fb6358163001",
 		"nvme-fb6358163002",
@@ -1601,26 +1194,91 @@ func TestCreateSmallHierarchy(t *testing.T) {
 			AvailableSize: 1073741824000,
 		},
 	}
+
 	for _, n := range mockNisd {
 		resp, err := c.PutNisd(&n)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
 
+	// Total available space from mockNisd = 6 * 1TB
+	totalAvailable := uint64(6 * 1073741824000)
+
+	// Request more than total available space
+	requestedVdevSize := totalAvailable + 107374182400 // +100GB
+
+	vdev := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       requestedVdevSize,
+			NumReplica: 3,
+		},
+	}
+
+	resp, err := c.CreateVdev(&req)
+
+	// Expect an error
+	log.Infof("vdev1 response status: %v", resp)
 }
 
 func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
-	vdev := &cpLib.Vdev{
+	vdev1 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
 			Size:       1700 * 1024 * 1024 * 1024,
 			NumReplica: 3,
 		},
 	}
 
-	resp, err := c.CreateVdev(vdev)
+	resp, err := c.CreateVdev(vdev1)
 	assert.NoError(t, err)
-	log.Infof("vdev response status: %v", resp)
+	log.Infof("vdev1 response status: %v", resp)
+
+	vdev2 := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       1000 * 1024 * 1024 * 1024,
+			NumReplica: 6,
+		},
+	}
+
+	resp, err := c.CreateVdev(vdev2)
+	assert.NoError(t, err)
+	log.Infof("vdev2 response status: %v", resp)
+
+	vdev3 := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       1200 * 1024 * 1024 * 1024,
+			NumReplica: 15,
+		},
+	}
+
+	resp, err := c.CreateVdev(vdev3)
+	assert.NoError(t, err)
+	log.Infof("vdev3 response status: %v", resp)
+
+	vdev4 := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       1300 * 1024 * 1024 * 1024,
+			NumReplica: 25,
+		},
+	}
+
+	resp, err := c.CreateVdev(vdev4)
+	assert.NoError(t, err)
+	log.Infof("vdev4 response status: %v", resp)
+
+	// Failure Test: High fault tolerance
+	vdev5 := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       1000 * 1024 * 1024 * 1024,
+			NumReplica: 7,
+		},
+	}
+
+	// Should return an error
+	resp, err := c.CreateVdev(vdev5)
+	assert.NoError(t, err)
+	log.Infof("vdev5 response status: %v", resp)
+
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
