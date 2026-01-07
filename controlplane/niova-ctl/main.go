@@ -6193,6 +6193,7 @@ func (m *model) initializeNISD() error {
 			m.selectedHvForNISD.ID,
 			m.selectedPartitionForNISD.PartitionID,
 		},
+		NetInfoCnt: len(netInfos),
 	}
 
 	// Call PutNisd
@@ -6261,6 +6262,7 @@ func (m *model) initializeSelectedNISDs() error {
 				partitionInfo.HvUUID,
 				partitionInfo.Partition.PartitionID,
 			},
+			NetInfoCnt: len(netInfos),
 		}
 
 		// Call PutNisd
