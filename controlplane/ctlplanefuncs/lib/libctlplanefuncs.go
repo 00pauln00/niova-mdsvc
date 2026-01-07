@@ -11,6 +11,7 @@ import (
 	"hash/fnv"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/lib"
 	"github.com/google/uuid"
 )
 
@@ -261,6 +262,9 @@ func RegisterGOBStructs() {
 	gob.Register(VdevCfg{})
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
+	gob.Register(auth.UserAuth{})
+	gob.Register(auth.AuthResponse{})
+	gob.Register(auth.GetAuthReq{})
 }
 
 func (req *GetReq) ValidateRequest() error {

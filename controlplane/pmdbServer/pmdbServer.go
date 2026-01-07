@@ -24,6 +24,8 @@ import (
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
 
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/lib"
+	authServer "github.com/00pauln00/niova-mdsvc/controlplane/auth/server"
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
@@ -184,6 +186,9 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, srvctlplanefuncs.WPNisdArgs)
 	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, srvctlplanefuncs.ReadVdevInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, srvctlplanefuncs.ReadChunkNisd)
+
+	cpAPI.RegisterWritePrepFunc(auth.PutSecretKeyAPI, authServer.PutSecretKey)
+	cpAPI.RegisterReadFunc(auth.GetSecretKeyAPI, authServer.GetSecretKey)
 
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
