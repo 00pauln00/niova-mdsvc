@@ -2,13 +2,10 @@ package clictlplanefuncs
 
 import (
 	"fmt"
-	"fmt"
 	"os"
 	"path"
 	"sync"
-	"sync"
 	"testing"
-	"context"
     "time"
     "golang.org/x/sync/errgroup"
 
@@ -16,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Global maps to store test results for reuse between tests
@@ -56,7 +54,7 @@ func newClient(t *testing.T) *CliCFuncs {
 func TestPutAndGetSinglePDU(t *testing.T) {
 	c := newClient(t) 
 
-	pdu := []cpLib.PDU{
+	pdu := cpLib.PDU{
 		ID: "95f62aee-997e-11f0-9f1b-a70cff4b660b",
 		Name:          "pdu-1",
 		Location:      "us-east",
@@ -310,12 +308,12 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	}
 
 	// PUT single device
-	resp, err := c.PutDeviceInfo(&device)
+	resp, err := c.PutDevice(&device)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
 	// GET device
-	res, err := c.GetDeviceInfo(cpLib.GetReq{ID: device.ID})
+	res, err := c.GetDevices(cpLib.GetReq{ID: device.ID})
 	log.Infof("fetch single device info: %s", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
@@ -402,7 +400,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 
 	// PUT multiple devices
 	for _, d := range mockDevices {
-		resp, err := c.PutDeviceInfo(&d)
+		resp, err := c.PutDevice(&d)
 		assert.NoError(t, err)
 		assert.True(t, resp.Success)
 	}
@@ -410,6 +408,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	// GET all devices
 	res, err := c.GetDevices(cpLib.GetReq{})
 	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+	assert.NoError(t, err)
 
 	// Store results in the map
 	for _, d := range res {
@@ -460,12 +459,12 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 
 
    // GET operation
-   res, err := c.GetNisds(cpLib.GetReq{ID: nisd.ID})
+   res, err := c.GetNisd(cpLib.GetReq{ID: "nisd-001"})
    log.Info("GetNisdCfg: ", res)
    assert.NoError(t, err)
    assert.NotEmpty(t, res)
   
-   returned := res[0]
+   returned := res
 
    // Validate all key fields match
    assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
@@ -535,7 +534,7 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	}
 
 	// GET all NISDs
-	res, err := c.GetNisds(cpLib.GetReq{})
+	res, err := c.GetNisds()
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -552,13 +551,24 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 func TestMultiCreateVdev(t *testing.T) {
 	c := newClient(t)
-	vdev1 := &cpLib.Vdev{
-		Size: 700 * 1024 * 1024 * 1024}         // 700 GB
-	err := c.CreateVdev(vdev1)
+
+	// Step 0: Create a NISD to allocate space for Vdevs
+	n := cpLib.Nisd{
+		ClientPort: 7001,
+		PeerPort:   8001,
+		ID:         "nisd-001",
+		FailureDomain: []string{
+			"pdu-01",
+			"rack-01",
+			"hv-01",
+			"dev-006",
+		},
+		IPAddr:        "192.168.1.10",
+		TotalSize:     15_000_000_000_000, // 1 TB
+		AvailableSize: 15_000_000_000_000, // 750 GB
+	}
+	_, err := c.PutNisd(&n)
 	assert.NoError(t, err)
-	assert.Greater(t, vdev1.Size, int64(0), "Vdev size must be greater than 0")
-	log.Info("CreateMultiVdev Result 1: ", vdev1)
-	VDEV_ID = vdev1.VdevID
 
 	// Step 1: Create first Vdev
 	vdev1 := &cpLib.Vdev{
@@ -566,33 +576,24 @@ func TestMultiCreateVdev(t *testing.T) {
 			Size: 700 * 1024 * 1024 * 1024,
 		}}
 	resp, err := c.CreateVdev(vdev1)
-	resp, err := c.CreateVdev(vdev1)
 	assert.NoError(t, err, "failed to create vdev1")
-	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
-	log.Info("Created vdev1: ", resp.ID)
-	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
+	assert.NotEmpty(t, resp, "vdev1 ID should not be empty")
 	log.Info("Created vdev1: ", resp.ID)
 
 	// Step 2: Create second Vdev
 	vdev2 := &cpLib.Vdev{
-		Size: 400 * 1024 * 1024 * 1024}        // 400 GB
-	err = c.CreateVdev(vdev2)
-	assert.NoError(t, err)
-	assert.Greater(t, vdev2.Size, int64(0), "Vdev size must be greater than 0")
-	log.Info("CreateMultiVdev Result 2: ", vdev2)
-
-	vdev3 := &cpLib.Vdev{
-		Size: 800 * 1024 * 1024 * 1024}        // 800 GB
-	err = c.CreateVdev(vdev3)
-	assert.NoError(t, err)
-	assert.Greater(t, vdev3.Size, int64(0), "Vdev size must be greater than 0")
-	log.Info("CreateMultiVdev Result 3: ", vdev3)
-
-	// Verify that IDs are unique
-	assert.NotEqual(t, vdev1.VdevID, vdev2.VdevID, "Vdev IDs must be unique")
+		Cfg: cpLib.VdevCfg{
+			Size: 400 * 1024 * 1024 * 1024,
+		},
+	}
+	resp, err = c.CreateVdev(vdev2)
+	assert.NoError(t, err, "failed to create vdev2")
+	assert.NotEmpty(t, resp, "vdev2 ID should not be empty")
+	log.Info("Created vdev2: ", resp)
 
 	// Step 3: Fetch all Vdevs and validate both exist
 	getAllReq := &cpLib.GetReq{GetAll: true}
+
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	assert.NoError(t, err, "failed to fetch all vdevs with chunk mapping")
 	assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
@@ -600,28 +601,27 @@ func TestMultiCreateVdev(t *testing.T) {
 
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetReq{
-		ID:     vdev1.VdevID,
+		ID:     vdev1.Cfg.ID,
 		GetAll: false,
 	}
-	specificResp, err := c.GetVdevs(getSpecificReq)
+	specificResp, err := c.GetVdevCfg(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev")
 	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
 	log.Info("Specific vdev response: ", specificResp)
 
-	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev in specific fetch")
-	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+	assert.Equal(t, vdev1.Cfg.ID, specificResp.ID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Cfg.Size, specificResp.Size, "fetched vdev size mismatch")
 
-	specificResp, err = c.GetVdevsWithChunkInfo(getSpecificReq)
+	result, err := c.GetVdevsWithChunkInfo(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
-	assert.NotNil(t, specificResp, "specific vdev with chunk mapping response should not be nil")
-	log.Info("Specific vdev with chunk mapping response: ", specificResp)
+	assert.NotNil(t, result, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", result)
 
-	assert.Equal(t, 1, len(specificResp), "expected exactly one vdev with chunk mapping in specific fetch")
-	assert.Equal(t, vdev1.VdevID, specificResp[0].VdevID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Size, specificResp[0].Size, "fetched vdev size mismatch")
+	assert.Equal(t, 1, len(result), "expected exactly one vdev with chunk mapping in specific fetch")
+	assert.Equal(t, vdev1.Cfg.ID, result[0].Cfg.ID, "fetched vdev ID mismatch")
+	assert.Equal(t, vdev1.Cfg.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
 
-	v := allCResp[0]
+	assert.NotEqual(t, vdev1.Cfg.ID, vdev2.Cfg.ID, "Vdev IDs must be unique")
 
 	// Validate internal structure and cross-object references
 	for _, v := range []*cpLib.Vdev{vdev1, vdev2} {
@@ -634,12 +634,12 @@ func TestMultiCreateVdev(t *testing.T) {
 			for _, nisd := range Nisds {
 				if n.ID == nisd.ID {
 					nisdExists = true
-					log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
+					log.Info("Vdev", v.Cfg.ID, "references Nisd", n.ID, "which exists among known Nisds")
 					// GET nisd 
-					res, err := c.GetNisds(cpLib.GetReq{ID: n.ID})
+					res, err := c.GetNisd(cpLib.GetReq{ID: n.ID})
 					assert.NoError(t, err)
 					assert.NotEmpty(t, res)
-					returnedNisd := res[0]
+					returnedNisd := res
 					log.Info("Available Capacity of Nisd", nisd.ID, ": ", returnedNisd.AvailableSize)
 					// ensure available capacity decreased after vdev creation
 					assert.Lessf(t, returnedNisd.AvailableSize, nisd.AvailableSize,
@@ -648,42 +648,10 @@ func TestMultiCreateVdev(t *testing.T) {
 					break
 				}
 			}
-			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
+			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.Cfg.ID, n.ID)
 
 			assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
 		}
-	}
-}
-
-func TestGetAllVdev(t *testing.T) {
-	c := newClient(t)
-	req := &cpLib.GetReq{
-		GetAll: true,
-	}
-	resp, err := c.GetVdevs(req)
-	log.Info("fetch all vdevs response: ", resp)
-	assert.NoError(t, err)
-
-	v := resp[0]
-	assert.Equal(t, VDEV_ID, v.VdevID, "Mismatch in Vdev ID")
-	assert.Greater(t, v.Size, int64(0), "Vdev size must be valid")
-	assert.NotEmpty(t, v.NisdToChkMap, "Vdev should have at least one NISD mapping")
-
-	for _, chunk := range v.NisdToChkMap {
-		n := chunk.Nisd
-		var nisdExists bool
-		assert.NotEmpty(t, n.ID, "NISD ID should not be empty")
-		assert.NotEmpty(t, n.DevID, "Device ID should not be empty")
-		assert.NotEmpty(t, n.HyperVisorID, "Hypervisor ID should not be empty")
-
-		for _, nisd := range Nisds {
-			if n.ID == nisd.ID {
-				nisdExists = true
-				log.Info("Vdev", v.VdevID, "references Nisd", n.ID, "which exists among known Nisds")
-				break
-			}
-		}
-		assert.True(t, nisdExists,"Vdev %s references Nisd %s which does not exist among known Nisds", v.VdevID, n.ID)
 	}
 }
 
@@ -691,7 +659,6 @@ func TestPutAndGetSinglePartition(t *testing.T) {
 	c := newClient(t)
 
 	pt := &cpLib.DevicePartition{
-		PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
 		PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
 		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
 		Size:          10 * 1024 * 1024 * 1024,
@@ -718,8 +685,6 @@ func TestPutAndGetSinglePartition(t *testing.T) {
 	assert.Equal(t, pt.DevID, returned.DevID, "Mismatch in DevID")
 	assert.Equal(t, pt.Size, returned.Size, "Mismatch in Size (bytes)")
 
-	log.Infof("Single Partition PUT/GET validation successful for Partition ID: %s", pt.PartitionID)
-	log.Infof("Single Partition PUT/GET validation successful for Partition ID: %s", pt.PartitionID)
 	log.Infof("Single Partition PUT/GET validation successful for Partition ID: %s", pt.PartitionID)
 }
 
@@ -754,17 +719,8 @@ func TestVdevNisdChunk(t *testing.T) {
 
 	c := newClient(t)
 
-	// // create nisd
+	// create nisd
 	mockNisd := cpLib.Nisd{
-		ClientPort: 7001,
-		PeerPort:   8001,
-		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
-		FailureDomain: []string{
-			"17ab4598-df29-11f0-afa1-2f5633c6b6c9",
-			"2435b29e-df29-11f0-900b-d3d680074046",
-			"298cedc0-df29-11f0-8c85-e3df2426ed67",
-			"nvme-e3df2426ed67",
-		},
 		ClientPort: 7001,
 		PeerPort:   8001,
 		ID:         "1d67328a-df29-11f0-9e36-d7e439f8e740",
@@ -789,13 +745,9 @@ func TestVdevNisdChunk(t *testing.T) {
 		}}
 	resp, err = c.CreateVdev(vdev)
 	log.Info("Created Vdev Result: ", resp)
-	resp, err = c.CreateVdev(vdev)
-	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
 	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
 	log.Info("Read vdev:", readV)
-	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join("019b01bf-fd55-7e56-9f30-0005860e36a9", "2")})
 	log.Info("Read Nisd Chunk:", nc)
 }
@@ -999,7 +951,7 @@ func TestHierarchy(t *testing.T) {
 	// -------------------------------
 
 	// GET all NISDs
-	res, err := c.GetNisds(cpLib.GetReq{})
+	res, err := c.GetNisds()
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -1011,8 +963,8 @@ func TestHierarchy(t *testing.T) {
 	// Validate count
 	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
 
-	var usedSizes []uint64
-	var totalUsed uint64
+	var usedSizes []int64
+	var totalUsed int64
 
 	for _, n := range TestNisds {
 		used := n.TotalSize - n.AvailableSize
@@ -1021,7 +973,7 @@ func TestHierarchy(t *testing.T) {
 	}
 
 	// Compute average usage
-	avgUsed := totalUsed / uint64(len(usedSizes))
+	avgUsed := totalUsed / int64(len(usedSizes))
 
 	// Allow small skew due to placement constraints (5%)
 	allowedSkew := avgUsed / 20
@@ -1074,14 +1026,14 @@ func TestHierarchy(t *testing.T) {
 
 	// Verify some space still remains (cannot hit 100%)
 	// GET all NISDs
-	nisdsAfter, err := c.GetNisds(cpLib.GetReq{})
+	nisdsAfter, err := c.GetNisds()
 
 	// Store results in the map
 	for _, n := range nisdsAfter {
 		TestNisdsAfter[n.ID] = n
 	}
 
-	var remaining uint64
+	var remaining int64
 	for _, n := range TestNisdsAfter {
 		remaining += n.AvailableSize
 	}
@@ -1089,7 +1041,7 @@ func TestHierarchy(t *testing.T) {
 	assert.Greater(
 		t,
 		remaining,
-		uint64(0),
+		int64(0),
 		"Expected remaining space due to fault tolerance constraints",
 	)
 
@@ -1222,7 +1174,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 	}
 
 	// Total available space from mockNisd = 6 * 1TB
-	totalAvailable := uint64(6 * 1073741824000)
+	totalAvailable := int64(6 * 1073741824000)
 
 	// Request more than total available space
 	requestedVdevSize := totalAvailable + 107374182400 // +100GB
@@ -1234,7 +1186,8 @@ func TestCreateSmallHierarchy(t *testing.T) {
 		},
 	}
 
-	resp, err := c.CreateVdev(&req)
+	resp, err := c.CreateVdev(vdev)
+	assert.NoError(t, err)
 
 	// Expect an error
 	log.Infof("vdev1 response status: %v", resp)
@@ -1249,9 +1202,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp, err := c.CreateVdev(vdev1)
-	assert.NoError(t, err)
-	log.Infof("vdev1 response status: %v", resp)
+	resp1, err1 := c.CreateVdev(vdev1)
+	assert.NoError(t, err1)
+	log.Infof("vdev1 response status: %v", resp1)
 
 	vdev2 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -1260,9 +1213,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp, err := c.CreateVdev(vdev2)
-	assert.NoError(t, err)
-	log.Infof("vdev2 response status: %v", resp)
+	resp2, err2 := c.CreateVdev(vdev2)
+	assert.NoError(t, err2)
+	log.Infof("vdev2 response status: %v", resp2)
 
 	vdev3 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -1271,9 +1224,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp, err := c.CreateVdev(vdev3)
-	assert.NoError(t, err)
-	log.Infof("vdev3 response status: %v", resp)
+	resp3, err3 := c.CreateVdev(vdev3)
+	assert.NoError(t, err3)
+	log.Infof("vdev3 response status: %v", resp3)
 
 	vdev4 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -1282,9 +1235,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp, err := c.CreateVdev(vdev4)
-	assert.NoError(t, err)
-	log.Infof("vdev4 response status: %v", resp)
+	resp4, err4 := c.CreateVdev(vdev4)
+	assert.NoError(t, err4)
+	log.Infof("vdev4 response status: %v", resp4)
 
 	// Failure Test: High fault tolerance
 	vdev5 := &cpLib.Vdev{
@@ -1295,10 +1248,181 @@ func TestCreateVdev(t *testing.T) {
 	}
 
 	// Should return an error
-	resp, err := c.CreateVdev(vdev5)
-	assert.NoError(t, err)
-	log.Infof("vdev5 response status: %v", resp)
+	resp5, err5 := c.CreateVdev(vdev5)
+	assert.NoError(t, err5)
+	log.Infof("vdev5 response status: %v", resp5)
 
+}
+
+func TestCreateVdevParallel(t *testing.T) {
+	c := newClient(t)
+
+	log.Info("Starting TestCreateVdevParallel")
+
+	// PDU
+	pdu := cpLib.PDU{
+		ID:            "2f4c7c3a-9d2a-4e3e-b1b7-6a6f8d7b2f1a",
+		Name:          "pdu-1",
+		Location:      "us-east",
+		PowerCapacity: "15Kw",
+		Specification: "spec-pdu",
+	}
+
+	resp, err := c.PutPDU(&pdu)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	log.Info("PDU created: ", pdu.ID)
+
+	// Rack
+	rack := cpLib.Rack{
+		ID:            "6a9e1c44-3b9a-4d63-8f5c-0a2c1e8f4b77",
+		PDUID:         "2f4c7c3a-9d2a-4e3e-b1b7-6a6f8d7b2f1a",
+		Name:          "rack-1",
+		Location:      "us-east",
+		Specification: "rack-spec",
+	}
+
+	resp, err = c.PutRack(&rack)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	log.Info("Rack created: ", rack.ID)
+
+	// Hypervisor
+	hv := cpLib.Hypervisor{
+		ID:        "b3d8f0a2-7c5e-4b9f-9a62-2d7e1f6c8a54",
+		RackID:    "6a9e1c44-3b9a-4d63-8f5c-0a2c1e8f4b77",
+		Name:      "hv-1",
+		IPAddress: "127.0.0.1",
+		PortRange: "8000-9000",
+		SSHPort:   "6999",
+	}
+
+	resp, err = c.PutHypervisor(&hv)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	log.Info("Hypervisor created: ", hv.ID)
+
+	// Device
+	device := cpLib.Device{
+		ID:            "nvme-5e6b9c7f1a33",   
+		SerialNumber:  "SN123456789",   
+		State:         1,
+		HypervisorID:  "b3d8f0a2-7c5e-4b9f-9a62-2d7e1f6c8a54",
+		FailureDomain: "fd-01",
+		DevicePath:    "/dev/path1",
+		Name:          "dev-1",
+		Size:          600 * 1024 * 1024 * 1024, // 600 GB raw
+		Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+			PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+			PartitionPath: "/part/path3",
+			NISDUUID:      "1",
+			DevID:         "nvme-5e6b9c7f1a33",
+			Size:          123467,
+		},
+		},
+	}
+
+	resp, err = c.PutDevice(&device)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	log.Info("Device created: ", device.ID)
+
+	// NISDs (Total = 500 GB)
+	const nisdSize = 280 * 1024 * 1024 * 1024 // 250 GB
+
+	nisds := []cpLib.Nisd{
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5661",
+			FailureDomain: []string{
+				"2f4c7c3a-9d2a-4e3e-b1b7-6a6f8d7b2f1a",
+				"6a9e1c44-3b9a-4d63-8f5c-0a2c1e8f4b77",
+				"b3d8f0a2-7c5e-4b9f-9a62-2d7e1f6c8a54",
+				"nvme-5e6b9c7f1a33",
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     nisdSize,
+			AvailableSize: nisdSize,
+		},
+		cpLib.Nisd{
+			ClientPort: 7000,
+			PeerPort:   8000,
+			ID:         "86adee3a-d5da-11f0-8250-5f1ad86a5662",
+			FailureDomain: []string{
+				"2f4c7c3a-9d2a-4e3e-b1b7-6a6f8d7b2f1a",
+				"6a9e1c44-3b9a-4d63-8f5c-0a2c1e8f4b77",
+				"b3d8f0a2-7c5e-4b9f-9a62-2d7e1f6c8a54",
+				"nvme-5e6b9c7f1a33",
+			},
+			IPAddr:        "192.168.1.1",
+			TotalSize:     nisdSize,
+			AvailableSize: nisdSize,
+		},
+	}
+
+	for _, nisd := range nisds {
+		resp, err = c.PutNisd(&nisd)
+		require.NoError(t, err)
+		require.True(t, resp.Success)
+		log.Info("NISD created: ", nisd.ID)
+	}
+
+	// Create 5 VDEVs in parallel
+	const (
+		vdevCount = 5
+		vdevSize  = 100 * 1024 * 1024 * 1024 // 100 GB
+	)
+
+	var(
+		eg        errgroup.Group
+		mu        sync.Mutex
+		createdVdevs []*cpLib.Vdev
+	)
+
+	for i := 0; i < vdevCount; i++ {
+		i := i // capture loop variable
+		eg.Go(func() error {
+			log.Info("Starting VDEV creation worker: ", i)
+
+			vdev := &cpLib.Vdev{
+				Cfg: cpLib.VdevCfg{
+					Size:       vdevSize,
+					NumReplica: 1,
+				},
+			}
+
+			resp, err := c.CreateVdev(vdev)
+			if err != nil {
+				return fmt.Errorf("worker %d: CreateVdev error: %w", i, err)
+			}
+			if resp == nil || !resp.Success {
+				return fmt.Errorf("worker %d: CreateVdev failed", i)
+			}
+
+			mu.Lock()
+			createdVdevs = append(createdVdevs, vdev)
+			mu.Unlock()
+
+			log.Info("VDEV created | worker=", i)
+
+			return nil
+		})
+	}
+
+	err = eg.Wait()
+	require.NoError(t, err)
+	require.Len(t, createdVdevs, vdevCount)
+
+	log.Info("All VDEVs created successfully. Total: ", len(createdVdevs))
+
+	// validation of created vdevs
+	assert.Equal(t, vdevCount, len(createdVdevs),
+		"unexpected number of VDEVs created")
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
