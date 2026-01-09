@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -202,6 +203,7 @@ type model struct {
 	currentVdev            ctlplfl.Vdev
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
 	vdevSizeInput          textinput.Model
+	vdevCountInput         textinput.Model
 
 	// Control Plane
 	cpClient            *ctlplcl.CliCFuncs
@@ -354,6 +356,10 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	vdevSizeInput.Placeholder = "e.g., 10GB, 1TB, 1PB"
 	vdevSizeInput.CharLimit = 32
 
+	vdevCountInput := textinput.New()
+	vdevCountInput.Placeholder = "e.g., 10, 20, 30..."
+	vdevCountInput.CharLimit = 32
+
 	isConnected := false
 	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
 	if cpClient != nil {
@@ -387,6 +393,7 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
 		vdevSizeInput:         vdevSizeInput,
+		vdevCountInput:        vdevCountInput,
 		// Control plane configuration
 		cpEnabled:    cpEnabled,
 		cpRaftUUID:   cpRaftUUID,
@@ -6600,6 +6607,8 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				// Initialize the size input field
 				m.vdevSizeInput.SetValue("")
 				m.vdevSizeInput.Focus()
+				m.vdevCountInput.SetValue("")
+
 				return m, textinput.Blink
 			case 1: // Edit Vdev
 				m.state = stateEditVdev
@@ -6725,7 +6734,41 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab", "shift+tab", "up", "down":
+		case "tab", "down":
+			if m.focusedInput == 0 {
+				m.focusedInput = 1
+			} else {
+				m.focusedInput = 0
+			}
+
+			m.vdevSizeInput.Blur()
+			m.vdevCountInput.Blur()
+
+			if m.focusedInput == 0 {
+				m.vdevSizeInput.Focus()
+			} else {
+				m.vdevCountInput.Focus()
+			}
+
+			return m, nil
+			// Only one input field for now (size)
+		case "shift+tab", "up":
+			if m.focusedInput == 1 {
+				m.focusedInput = 0
+			} else {
+				m.focusedInput = 1
+			}
+
+			m.vdevSizeInput.Blur()
+			m.vdevCountInput.Blur()
+
+			if m.focusedInput == 0 {
+				m.vdevSizeInput.Focus()
+			} else {
+				m.vdevCountInput.Focus()
+			}
+
+			return m, nil
 			// Only one input field for now (size)
 		case "enter":
 			// Create the Vdev
@@ -6742,36 +6785,51 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Create Vdev
-			vdev := &ctlplfl.Vdev{
-				Cfg: ctlplfl.VdevCfg{
-					Size: size,
-				}}
-
-			// Initialize the Vdev (generates ID)
-			if err := vdev.Init(); err != nil {
-				m.message = fmt.Sprintf("Failed to initialize Vdev: %v", err)
+			countStr := m.vdevCountInput.Value()
+			if countStr == "" {
+				m.message = "Please enter Vdev count"
 				return m, nil
 			}
 
-			// Call CreateVdev from control plane client
-			if m.cpClient != nil && m.cpConnected {
-				log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
+			count, err := strconv.Atoi(countStr)
+			if err != nil || count <= 0 {
+				m.message = "Invalid Vdev count"
+				return m, nil
+			}
+
+			if m.cpClient == nil || !m.cpConnected {
+				log.Warn("Control plane not connected: cpClient=", m.cpClient != nil, " cpConnected=", m.cpConnected)
+				m.message = "Control plane not connected"
+				return m, nil
+			}
+
+			for i := 0; i < count; i++ {
+				vdev := &ctlplfl.Vdev{
+					Cfg: ctlplfl.VdevCfg{
+						Size: size,
+					},
+				}
+
+				if err := vdev.Init(); err != nil {
+					m.message = fmt.Sprintf("Failed to initialize Vdev: %v", err)
+					return m, nil
+				}
+
+				log.Info("Creating Vdev ", i+1, "/", count, " size=", vdev.Cfg.Size)
 				resp, err := m.cpClient.CreateVdev(vdev)
 				if err != nil {
 					log.Error("CreateVdev failed: ", err)
 					m.message = fmt.Sprintf("Failed to create Vdev: %v", err)
 					return m, nil
 				}
+
 				log.Info("Vdev created successfully: ", resp.ID)
-				// TODO: Remove this here
 				m.currentVdev = *vdev
-				m.state = stateShowAddedVdev
-				m.message = "Vdev created successfully"
-			} else {
-				log.Warn("Control plane not connected: cpClient=", m.cpClient != nil, " cpConnected=", m.cpConnected)
-				m.message = "Control plane not connected"
+				time.Sleep(100 * time.Millisecond)
 			}
+
+			m.state = stateShowAddedVdev
+			m.message = fmt.Sprintf("%d Vdev(s) created successfully", count)
 		case "esc":
 			m.state = stateVdevManagement
 			m.message = ""
@@ -6780,6 +6838,7 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	}
 
 	m.vdevSizeInput, cmd = m.vdevSizeInput.Update(msg)
+	m.vdevCountInput, cmd = m.vdevCountInput.Update(msg)
 	return m, cmd
 }
 
@@ -6806,6 +6865,10 @@ func (m model) viewVdevForm() string {
 
 	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n\n")
 	s.WriteString("The control plane will automatically allocate available storage.\n\n")
+
+	s.WriteString("Enter the number of vdevs to be created\n")
+	s.WriteString(m.vdevSizeInput.View())
+	s.WriteString("\n\n")
 
 	s.WriteString(helpStyle.Render("enter: create Vdev • esc: back"))
 
@@ -6994,7 +7057,12 @@ func (m model) updateShowAddedVdev(msg tea.Msg) (model, tea.Cmd) {
 		m.state = stateVdevManagement
 		m.selectedDevicesForVdev = make(map[int]bool)
 		m.vdevSizeInput.SetValue("")
+		m.vdevCountInput.SetValue("")
+		m.focusedInput = 0
+		m.vdevSizeInput.Focus()
+		m.vdevCountInput.Blur()
 		m.message = ""
+		m.vdevCountInput.SetValue("")
 		return m, nil
 	}
 	return m, nil
