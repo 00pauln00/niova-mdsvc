@@ -170,7 +170,7 @@ func (c *Config) AddHypervisor(rackUUID string, hv *ctlplfl.Hypervisor) error {
 			if rack.ID == rackUUID {
 				// Check if hypervisor exists by IP address within rack
 				for k, existing := range rack.Hypervisors {
-					if existing.IPAddress == hv.IPAddress {
+					if ctlplfl.MatchIPs(existing.IPAddress, hv.IPAddress) {
 						// Preserve UUID and devices when updating
 						hv.ID = existing.ID
 						if len(hv.Dev) == 0 {
@@ -197,7 +197,7 @@ func (c *Config) AddHypervisorLegacy(hv Hypervisor) {
 
 	// Check if hypervisor exists by IP address
 	for i, existing := range c.Hypervisors {
-		if existing.IPAddress == hv.IPAddress {
+		if ctlplfl.MatchIPs(existing.IPAddress, hv.IPAddress) {
 			// Preserve UUID when updating existing hypervisor
 			hv.ID = existing.ID
 			c.Hypervisors[i] = hv
@@ -391,11 +391,11 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 						// Mark the server port as allocated (NISD uses this)
 						allocatedPorts[int(nisd.PeerPort)] = true
 						// Mark the client port as allocated
-						allocatedPorts[int(nisd.ClientPort)] = true
-						// Mark client port + 1 as allocated (NISD uses this internally)
-						allocatedPorts[int(nisd.ClientPort)+1] = true
-						// Mark the gap port after client port + 1 as allocated for spacing
-						allocatedPorts[int(nisd.ClientPort)+2] = true
+						// allocatedPorts[int(nisd.ClientPort)] = true
+						// // Mark client port + 1 as allocated (NISD uses this internally)
+						// allocatedPorts[int(nisd.ClientPort)+1] = true
+						// // Mark the gap port after client port + 1 as allocated for spacing
+						// allocatedPorts[int(nisd.ClientPort)+2] = true
 					}
 				}
 			}

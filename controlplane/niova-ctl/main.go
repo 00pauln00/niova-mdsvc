@@ -710,6 +710,8 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 			sshPort := strings.TrimSpace(m.inputs[2].Value())
 			portRange := strings.TrimSpace(m.inputs[3].Value())
 
+			ips := strings.Split(ip, ",")
+
 			if name == "" || ip == "" {
 				m.message = "Name and IP Address are required"
 				return m, nil
@@ -732,7 +734,7 @@ func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
 				ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
 				Name:      name,
 				RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
-				IPAddress: ip,
+				IPAddress: ips,
 				SSHPort:   sshPort,
 				PortRange: portRange,
 			}
@@ -1609,7 +1611,7 @@ func (m model) resetInputs() model {
 
 func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	m.inputs[0].SetValue(hv.ID)
-	m.inputs[1].SetValue(hv.IPAddress)
+	m.inputs[1].SetValue(strings.Join(hv.IPAddress, ","))
 	//FIXME hardcoded valueof sshport
 	m.inputs[2].SetValue("22")
 	// Skip failure domain input (index 3) as it's now hierarchical
@@ -6138,9 +6140,9 @@ func (m model) viewShowInitializedNISD() string {
 	s.WriteString(fmt.Sprintf("  NISD UUID: %s\n", m.currentNISD.ID))
 	s.WriteString(fmt.Sprintf("  Device ID: %s\n", m.currentNISD.FailureDomain[ctlplfl.FD_DEVICE]))
 	s.WriteString(fmt.Sprintf("  Hypervisor ID: %s\n", m.currentNISD.FailureDomain[ctlplfl.FD_HV]))
-	s.WriteString(fmt.Sprintf("  Client Port: %d\n", m.currentNISD.ClientPort))
+	s.WriteString(fmt.Sprintf("  Client Port: %d\n", m.currentNISD.NetInfo[0].Port)) // Add support to store multiple Network Interfaces
 	s.WriteString(fmt.Sprintf("  Server Port: %d\n", m.currentNISD.PeerPort))
-	s.WriteString(fmt.Sprintf("  IP Address: %s\n", m.currentNISD.IPAddr))
+	s.WriteString(fmt.Sprintf("  IP Address: %s\n", m.currentNISD.NetInfo[0].IPAddr))
 	s.WriteString(fmt.Sprintf("  Total Size: %d bytes\n", m.currentNISD.TotalSize))
 
 	s.WriteString("\nThe NISD instance has been registered with the control plane.\n\n")
@@ -6170,21 +6172,28 @@ func (m *model) initializeNISD() error {
 	if err != nil {
 		return fmt.Errorf("failed to allocate ports for NISD: %v", err)
 	}
+	netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddress))
+	for _, ip := range hv.IPAddress {
+		netInfos = append(netInfos, ctlplfl.NetworkInfo{
+			IPAddr: ip,
+			Port:   uint16(clientPort),
+		})
+	}
 
 	// Create NISD struct using DevicePartition data
 	nisd := &ctlplfl.Nisd{
 		ID:            nisdUUID, // Use NISD UUID from partition
-		ClientPort:    uint16(clientPort),
 		PeerPort:      uint16(serverPort),
-		IPAddr:        hv.IPAddress,
 		TotalSize:     m.selectedPartitionForNISD.Size,
 		AvailableSize: m.selectedPartitionForNISD.Size,
+		NetInfo:       netInfos,
 		FailureDomain: []string{
 			"", // TODO Pass PDU-ID
 			hv.RackID,
 			m.selectedHvForNISD.ID,
 			m.selectedPartitionForNISD.PartitionID,
 		},
+		NetInfoCnt: len(netInfos),
 	}
 
 	// Call PutNisd
@@ -6233,20 +6242,27 @@ func (m *model) initializeSelectedNISDs() error {
 			continue
 		}
 
+		netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddress))
+		for _, ip := range hv.IPAddress {
+			netInfos = append(netInfos, ctlplfl.NetworkInfo{
+				IPAddr: ip,
+				Port:   uint16(clientPort),
+			})
+		}
 		// Create NISD struct using DevicePartition data
 		nisd := &ctlplfl.Nisd{
 			ID:            partitionInfo.Partition.NISDUUID, // Use NISD UUID from partition
-			ClientPort:    uint16(clientPort),
 			PeerPort:      uint16(serverPort),
-			IPAddr:        hv.IPAddress,
 			TotalSize:     partitionInfo.Partition.Size,
 			AvailableSize: partitionInfo.Partition.Size,
+			NetInfo:       netInfos,
 			FailureDomain: []string{
 				"",
 				"",
 				partitionInfo.HvUUID,
 				partitionInfo.Partition.PartitionID,
 			},
+			NetInfoCnt: len(netInfos),
 		}
 
 		// Call PutNisd
@@ -6346,11 +6362,11 @@ func (m model) viewNISDSelection() string {
 		}
 
 		// Display NISD info
-		info := fmt.Sprintf("UUID: %s | Device: %s | HV: %s | Ports: %d/%d",
+		// TODO: Print IPAddr/Port Info
+		info := fmt.Sprintf("UUID: %s | Device: %s | HV: %s | Ports: %d",
 			nisd.ID,
 			nisd.FailureDomain[ctlplfl.FD_DEVICE],
 			nisd.FailureDomain[ctlplfl.FD_HV],
-			nisd.ClientPort,
 			nisd.PeerPort)
 
 		if i == m.selectedNISDForStart {
@@ -6409,8 +6425,8 @@ func (m model) viewNISDStart() string {
 	s.WriteString(fmt.Sprintf("NISD UUID: %s\n", m.selectedNISDToStart.ID))
 	s.WriteString(fmt.Sprintf("Device ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE]))
 	s.WriteString(fmt.Sprintf("Hypervisor ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV]))
-	s.WriteString(fmt.Sprintf("IP Address: %s\n", m.selectedNISDToStart.IPAddr))
-	s.WriteString(fmt.Sprintf("Client Port: %d\n", m.selectedNISDToStart.ClientPort))
+	// s.WriteString(fmt.Sprintf("IP Address: %s\n", m.selectedNISDToStart.IPAddr))
+	// s.WriteString(fmt.Sprintf("Client Port: %d\n", m.selectedNISDToStart.ClientPort))
 	s.WriteString(fmt.Sprintf("Server Port: %d\n", m.selectedNISDToStart.PeerPort))
 
 	s.WriteString("\nThis will start the NISD process on the target hypervisor.\n\n")
@@ -6447,8 +6463,8 @@ func (m model) viewShowStartedNISD() string {
 	s.WriteString(fmt.Sprintf("  NISD UUID: %s\n", m.selectedNISDToStart.ID))
 	s.WriteString(fmt.Sprintf("  Device ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE]))
 	s.WriteString(fmt.Sprintf("  Hypervisor ID: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV]))
-	s.WriteString(fmt.Sprintf("  IP Address: %s\n", m.selectedNISDToStart.IPAddr))
-	s.WriteString(fmt.Sprintf("  Client Port: %d\n", m.selectedNISDToStart.ClientPort))
+	// s.WriteString(fmt.Sprintf("  IP Address: %s\n", m.selectedNISDToStart.IPAddr))
+	// s.WriteString(fmt.Sprintf("  Client Port: %d\n", m.selectedNISDToStart.ClientPort))
 	s.WriteString(fmt.Sprintf("  Server Port: %d\n", m.selectedNISDToStart.PeerPort))
 	s.WriteString(fmt.Sprintf("  Status: Running\n"))
 
@@ -6478,8 +6494,8 @@ func (m model) startNISDProcess() error {
 	fmt.Printf("Starting NISD process:\n")
 	fmt.Printf("  UUID: %s\n", m.selectedNISDToStart.ID)
 	fmt.Printf("  Device: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE])
-	fmt.Printf("  Hypervisor: %s (%s)\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV], m.selectedNISDToStart.IPAddr)
-	fmt.Printf("  Ports: %d/%d\n", m.selectedNISDToStart.ClientPort, m.selectedNISDToStart.PeerPort)
+	// fmt.Printf("  Hypervisor: %s (%s)\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV], m.selectedNISDToStart.IPAddr)
+	// fmt.Printf("  Ports: %d/%d\n", m.selectedNISDToStart.ClientPort, m.selectedNISDToStart.PeerPort)
 
 	// Placeholder for actual implementation
 	// Real implementation would:
@@ -6552,8 +6568,8 @@ func (m model) viewAllNISDs() string {
 			s.WriteString(fmt.Sprintf("  UUID: %s\n", nisd.ID))
 			s.WriteString(fmt.Sprintf("  Device ID: %s\n", nisd.FailureDomain[ctlplfl.FD_DEVICE]))
 			s.WriteString(fmt.Sprintf("  Hypervisor: %s\n", nisd.FailureDomain[ctlplfl.FD_HV]))
-			s.WriteString(fmt.Sprintf("  IP Address: %s\n", nisd.IPAddr))
-			s.WriteString(fmt.Sprintf("  Client Port: %d\n", nisd.ClientPort))
+			// s.WriteString(fmt.Sprintf("  IP Address: %s\n", nisd.IPAddr))
+			// s.WriteString(fmt.Sprintf("  Client Port: %d\n", nisd.ClientPort))
 			s.WriteString(fmt.Sprintf("  Server Port: %d\n", nisd.PeerPort))
 			s.WriteString(fmt.Sprintf("  Total Size: %d bytes", nisd.TotalSize))
 			if nisd.TotalSize > 0 {
