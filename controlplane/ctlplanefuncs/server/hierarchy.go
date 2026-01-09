@@ -148,7 +148,7 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{},
+func (hr *Hierarchy) PickNISD(fd int, entityIDX int, picked map[string]struct{},
 	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
 
 	if int(fd) >= cpLib.FD_MAX {
@@ -170,8 +170,8 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 	// select NISD inside entity
 	nisdCnt := ent.Nisds.Len()
 
-	var best *cpLib.NisdVdevAlloc
-	var bestAvail int64
+	// nisd with highest available capacity
+	var OptimalNisd *cpLib.NisdVdevAlloc
 
 	for i := 0; i < nisdCnt; i++ {
 		nisd, ok := ent.Nisds.GetAt(i)
@@ -192,22 +192,21 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 			continue
 		}
 
-		// track max available space
-		if best == nil || nAlloc.AvailableSize > bestAvail {
-			best = nAlloc
-			bestAvail = nAlloc.AvailableSize
+		// if the current nisd's available space is > then optimal nisd's avilable space, update the OptimalNisd value
+		if OptimalNisd == nil || nAlloc.AvailableSize > OptimalNisd.AvailableSize {
+			OptimalNisd = nAlloc
 		}
 	}
 
-	if best == nil {
-		return nil, errors.New("no suitable nisd found")
+	if OptimalNisd == nil {
+		return nil, fmt.Errorf("no suitable nisd found from entity %s", ent.ID)
 	}
 
 	// commit selection
-	best.AvailableSize -= ctlplfl.CHUNK_SIZE
-	picked[best.Ptr.ID] = struct{}{}
+	OptimalNisd.AvailableSize -= ctlplfl.CHUNK_SIZE
+	picked[OptimalNisd.Ptr.ID] = struct{}{}
 
-	return best, nil
+	return OptimalNisd, nil
 }
 
 func BytesToGB(b int64) float64 {
