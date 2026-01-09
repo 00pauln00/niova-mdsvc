@@ -148,7 +148,7 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{},
+func (hr *Hierarchy) PickNISD(fd int, entityIDX int, picked map[string]struct{},
 	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
 
 	if int(fd) >= cpLib.FD_MAX {
@@ -169,41 +169,44 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 
 	// select NISD inside entity
 	nisdCnt := ent.Nisds.Len()
-	idx, err := GetIdxForNisdAlloc(hash, nisdCnt)
-	if err != nil {
-		log.Errorf("failed to get index for hash: %d: %v", hash, err)
-		return nil, err
-	}
+
+	// nisd with highest available capacity
+	var OptimalNisd *cpLib.NisdVdevAlloc
 
 	for i := 0; i < nisdCnt; i++ {
-		nisd, ok := ent.Nisds.GetAt(idx)
+		nisd, ok := ent.Nisds.GetAt(i)
 		if !ok {
-			log.Error("failed to get nisd from tree at idx: ", idx)
+			log.Error("failed to get nisd from tree at idx: ", i)
 			return nil, errors.New("selection failure")
 		}
 
-		// update the map details here
 		nAlloc := HR.LookupNAddNisd(nisd, nisdMap)
 
-		// check if the nisd can be picked or not by checking the nisd available space from the nisd map,
-		// if the space is available then pick the nisd
-		if nAlloc.AvailableSize >= ctlplfl.CHUNK_SIZE {
-			// TODO: move this to a separate filtering method
-			if _, exists := picked[nAlloc.Ptr.ID]; !exists {
-
-				// decrement the available size value only after the chunk is picked
-				nAlloc.AvailableSize -= ctlplfl.CHUNK_SIZE
-				// commit selection
-				picked[nAlloc.Ptr.ID] = struct{}{}
-				return nAlloc, nil
-			}
-			log.Tracef("failed to pick nisd, as it's already picked: %s", nAlloc.Ptr.ID)
+		// skip if already picked
+		if _, exists := picked[nAlloc.Ptr.ID]; exists {
+			continue
 		}
 
-		idx = (idx + 1) % ent.Nisds.Len()
-		log.Tracef("incrementing index : %d", idx)
+		// must have at least one chunk
+		if nAlloc.AvailableSize < ctlplfl.CHUNK_SIZE {
+			continue
+		}
+
+		// if the current nisd's available space is > then optimal nisd's avilable space, update the OptimalNisd value
+		if OptimalNisd == nil || nAlloc.AvailableSize > OptimalNisd.AvailableSize {
+			OptimalNisd = nAlloc
+		}
 	}
-	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", entityIDX)
+
+	if OptimalNisd == nil {
+		return nil, fmt.Errorf("no suitable nisd found from entity %s", ent.ID)
+	}
+
+	// commit selection
+	OptimalNisd.AvailableSize -= ctlplfl.CHUNK_SIZE
+	picked[OptimalNisd.Ptr.ID] = struct{}{}
+
+	return OptimalNisd, nil
 }
 
 func BytesToGB(b int64) float64 {
