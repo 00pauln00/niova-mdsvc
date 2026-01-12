@@ -297,28 +297,23 @@ func isValidIP(ip string) bool {
 
 // formatIPAddresses formats multiple IP addresses for display
 func formatIPAddresses(hv ctlplfl.Hypervisor) string {
-	// hv.EnsureIPAddresses()
-	if len(hv.IPAddress) == 0 {
-		return "no network info" // Fallback to old field
+	if len(hv.IPAddrs) == 1 {
+		return hv.IPAddrs[0]
 	}
-	if len(hv.IPAddress) == 1 {
-		return hv.IPAddress[0]
-	}
-	return fmt.Sprintf("%s +%d more", hv.IPAddress[0], len(hv.IPAddress)-1)
+	return fmt.Sprintf("%s +%d more", hv.IPAddrs[0], len(hv.IPAddrs)-1)
 }
 
 // formatDetailedIPAddresses formats all IP addresses for detailed views
 func formatDetailedIPAddresses(hv ctlplfl.Hypervisor) string {
-	// hv.EnsureIPAddresses()
-	if len(hv.IPAddress) == 0 {
+	if len(hv.IPAddrs) == 0 {
 		return "" // Fallback to old field
 	}
-	if len(hv.IPAddress) == 1 {
-		return hv.IPAddress[0]
+	if len(hv.IPAddrs) == 1 {
+		return hv.IPAddrs[0]
 	}
-	result := fmt.Sprintf("IP Addresses: %s", hv.IPAddress[0])
-	for i := 1; i < len(hv.IPAddress); i++ {
-		result += fmt.Sprintf(", %s", hv.IPAddress[i])
+	result := fmt.Sprintf("IP Addresses: %s", hv.IPAddrs[0])
+	for i := 1; i < len(hv.IPAddrs); i++ {
+		result += fmt.Sprintf(", %s", hv.IPAddrs[i])
 	}
 	return result
 }
@@ -991,7 +986,7 @@ func (m model) submitHypervisorForm() (model, tea.Cmd) {
 		ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
 		Name:      name,
 		RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
-		IPAddress: allIPs,                   // Multiple IP addresses
+		IPAddrs:   allIPs,                   // Multiple IP addresses
 		SSHPort:   sshPort,
 		PortRange: portRange,
 	}
@@ -1827,7 +1822,7 @@ func (m model) discoverDevices() tea.Cmd {
 		// Use primary IP for SSH connection
 		// primaryIP := m.currentHv.GetPrimaryIP()
 
-		client, err := NewSSHClient(m.currentHv.IPAddress)
+		client, err := NewSSHClient(m.currentHv.IPAddrs)
 		if err != nil {
 			return deviceDiscoveredMsg{err: err}
 		}
@@ -1853,7 +1848,6 @@ func (m model) resetInputs() model {
 
 func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	// Ensure IP addresses are properly initialized for backward compatibility
-	// hv.EnsureIPAddresses()
 
 	m.inputs[0].SetValue(hv.ID)
 
@@ -1863,8 +1857,8 @@ func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	m.ipManagementMode = false
 
 	// Create IP inputs for all existing IP addresses
-	if len(hv.IPAddress) > 0 {
-		for _, ip := range hv.IPAddress {
+	if len(hv.IPAddrs) > 0 {
+		for _, ip := range hv.IPAddrs {
 			ipInput := createIPInput()
 			ipInput.SetValue(ip)
 			m.ipInputs = append(m.ipInputs, ipInput)
@@ -1872,7 +1866,7 @@ func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	} else {
 		// Fallback to old field if no IPAddresses
 		ipInput := createIPInput()
-		ipInput.SetValue(hv.IPAddress[0])
+		ipInput.SetValue(hv.IPAddrs[0])
 		m.ipInputs = append(m.ipInputs, ipInput)
 	}
 
@@ -6498,8 +6492,8 @@ func (m *model) initializeNISD() error {
 	if err != nil {
 		return fmt.Errorf("failed to allocate ports for NISD: %v", err)
 	}
-	netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddress))
-	for _, ip := range hv.IPAddress {
+	netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddrs))
+	for _, ip := range hv.IPAddrs {
 		netInfos = append(netInfos, ctlplfl.NetworkInfo{
 			IPAddr: ip,
 			Port:   uint16(clientPort),
@@ -6568,8 +6562,8 @@ func (m *model) initializeSelectedNISDs() error {
 			continue
 		}
 
-		netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddress))
-		for _, ip := range hv.IPAddress {
+		netInfos := make([]ctlplfl.NetworkInfo, 0, len(hv.IPAddrs))
+		for _, ip := range hv.IPAddrs {
 			netInfos = append(netInfos, ctlplfl.NetworkInfo{
 				IPAddr: ip,
 				Port:   uint16(clientPort),

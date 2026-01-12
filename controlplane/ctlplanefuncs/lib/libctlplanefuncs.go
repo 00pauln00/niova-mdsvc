@@ -158,7 +158,7 @@ type Hypervisor struct {
 	ID          string // Unique hypervisor identifier
 	RackID      string
 	Name        string
-	IPAddress   []string
+	IPAddrs     []string
 	PortRange   string
 	SSHPort     string // SSH port for connection
 	Dev         []Device
@@ -397,8 +397,22 @@ func (n *NetInfoList) UnmarshalText(text []byte) error {
 }
 
 func (hv *Hypervisor) GetPrimaryIP() string {
-	if len(hv.IPAddress) == 0 {
+	if len(hv.IPAddrs) == 0 {
 		return "invalid ip address"
 	}
-	return hv.IPAddress[0]
+	return hv.IPAddrs[0]
+}
+
+func (hv *Hypervisor) ValidateIPs() error {
+	if len(hv.IPAddrs) == 0 {
+		return fmt.Errorf("no network info available")
+	}
+
+	for _, ip := range hv.IPAddrs {
+		parsed := net.ParseIP(strings.TrimSpace(ip))
+		if parsed != nil {
+			return fmt.Errorf("invalid ip %s ", ip)
+		}
+	}
+	return nil
 }

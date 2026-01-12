@@ -206,7 +206,7 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 			Value: []byte(value),
 		})
 	}
-	for i, ip := range hv.IPAddress {
+	for i, ip := range hv.IPAddrs {
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s/%d", key, IP_ADDR, i)),
 			Value: []byte(ip),

@@ -157,7 +157,7 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 			hv.RDMAEnabled = rdma
 		}
 	} else if len(parts) > KEY_LEN && parts[2] == IP_ADDR {
-		hv.IPAddress = append(hv.IPAddress, string(value))
+		hv.IPAddrs = append(hv.IPAddrs, string(value))
 	}
 }
 
