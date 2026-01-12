@@ -493,7 +493,7 @@ func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChg
 
 			// Skip a entity if already found in map, to prevent selecting multiple NISDs from the same entity.
 			if _, used := pickedEntity[curIdx]; used {
-				log.Warnf("skipping entity IDX: %d, already picked", curIdx)
+				log.Infof("skipping entity IDX: %d, already picked", curIdx)
 				continue
 			}
 
