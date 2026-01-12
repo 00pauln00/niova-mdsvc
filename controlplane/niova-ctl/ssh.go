@@ -20,7 +20,7 @@ type SSHClient struct {
 	client *ssh.Client
 }
 
-func NewSSHClient(host string) (*SSHClient, error) {
+func NewSSHClient(hosts []string) (*SSHClient, error) {
 	usr, err := user.Current()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current user: %v", err)
@@ -50,16 +50,20 @@ func NewSSHClient(host string) (*SSHClient, error) {
 		Timeout:         10 * time.Second,
 	}
 
-	if !strings.Contains(host, ":") {
-		host = host + ":22"
+	var lastErr error
+	for _, host := range hosts {
+		if !strings.Contains(host, ":") {
+			host = host + ":22"
+		}
+
+		client, err := ssh.Dial("tcp", host, config)
+		if err == nil {
+			return &SSHClient{client: client}, nil
+		}
+		lastErr = err
 	}
 
-	client, err := ssh.Dial("tcp", host, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to %s: %v", host, err)
-	}
-
-	return &SSHClient{client: client}, nil
+	return nil, fmt.Errorf("failed to connect to any host: %v", lastErr)
 }
 
 func (s *SSHClient) Close() error {

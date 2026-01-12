@@ -170,7 +170,7 @@ func (c *Config) AddHypervisor(rackUUID string, hv *ctlplfl.Hypervisor) error {
 			if rack.ID == rackUUID {
 				// Check if hypervisor exists by IP address within rack
 				for k, existing := range rack.Hypervisors {
-					if existing.IPAddress == hv.IPAddress {
+					if ctlplfl.MatchIPs(existing.IPAddrs, hv.IPAddrs) {
 						// Preserve UUID and devices when updating
 						hv.ID = existing.ID
 						if len(hv.Dev) == 0 {
@@ -197,7 +197,7 @@ func (c *Config) AddHypervisorLegacy(hv Hypervisor) {
 
 	// Check if hypervisor exists by IP address
 	for i, existing := range c.Hypervisors {
-		if existing.IPAddress == hv.IPAddress {
+		if ctlplfl.MatchIPs(existing.IPAddrs, hv.IPAddrs) {
 			// Preserve UUID when updating existing hypervisor
 			hv.ID = existing.ID
 			c.Hypervisors[i] = hv
@@ -377,25 +377,24 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 	if cpClient != nil {
 		// Type assert to get the actual client interface
 		if client, ok := cpClient.(interface {
-			GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
+			GetNisds() ([]ctlplfl.Nisd, error)
 		}); ok {
 			// Create a request to get all NISDs
 			// Get all NISDs and filter by hypervisor UUID locally
-			req := ctlplfl.GetReq{GetAll: true} // Empty ID to get all NISDs
-
-			nisds, err := client.GetNisds(req)
+			nisds, err := client.GetNisds()
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {
 					if nisd.FailureDomain[ctlplfl.FD_HV] == hypervisorUUID {
 						// Mark the server port as allocated (NISD uses this)
 						allocatedPorts[int(nisd.PeerPort)] = true
+						// TODO maintain per - ip map and mark the ports in that map
 						// Mark the client port as allocated
-						allocatedPorts[int(nisd.ClientPort)] = true
+						allocatedPorts[int(nisd.NetInfo[0].Port)] = true
 						// Mark client port + 1 as allocated (NISD uses this internally)
-						allocatedPorts[int(nisd.ClientPort)+1] = true
+						allocatedPorts[int(nisd.NetInfo[0].Port)+1] = true
 						// Mark the gap port after client port + 1 as allocated for spacing
-						allocatedPorts[int(nisd.ClientPort)+2] = true
+						allocatedPorts[int(nisd.NetInfo[0].Port)+2] = true
 					}
 				}
 			}
@@ -504,9 +503,9 @@ func (c *Config) GetDeviceSize(hvUUID, deviceName string) (int64, error) {
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return 0, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return 0, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -520,7 +519,12 @@ func (c *Config) GetDeviceSize(hvUUID, deviceName string) (int64, error) {
 		return 0, fmt.Errorf("failed to check device %s: %v", devicePath, err)
 	}
 	if strings.TrimSpace(result) != "exists" {
-		return 0, fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+		ip, err := hv.GetPrimaryIP()
+		if err != nil {
+			log.Error("GetDeviceSize():failed to fetch network info: ", err)
+		}
+
+		return 0, fmt.Errorf("device %s not found on hypervisor %s", devicePath, ip)
 	}
 
 	// Get device size in bytes using blockdev
@@ -546,9 +550,9 @@ func (c *Config) DeleteAllPartitionsFromDevice(hvUUID, deviceName string) error 
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -562,7 +566,7 @@ func (c *Config) DeleteAllPartitionsFromDevice(hvUUID, deviceName string) error 
 		return fmt.Errorf("failed to check device %s: %v", devicePath, err)
 	}
 	if strings.TrimSpace(result) != "exists" {
-		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddrs)
 	}
 
 	// Create new GPT partition table (this removes all existing partitions)
@@ -605,9 +609,9 @@ func (c *Config) CreateMultipleEqualPartitions(hvUUID, deviceName string, numPar
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -651,9 +655,9 @@ func (c *Config) GetDevicePartitionNames(hvUUID, deviceName string) ([]string, e
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -693,9 +697,9 @@ func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePart
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -777,9 +781,9 @@ func (c *Config) getDeviceByIdName(hvUUID, deviceName string) (string, error) {
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return "", fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -805,9 +809,9 @@ func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) 
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -821,7 +825,7 @@ func (c *Config) CreatePhysicalPartition(hvUUID, deviceName string, size int64) 
 		return fmt.Errorf("failed to check device %s: %v", devicePath, err)
 	}
 	if strings.TrimSpace(result) != "exists" {
-		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddrs)
 	}
 
 	// Get current partition table info
@@ -911,9 +915,9 @@ func (c *Config) ListPhysicalPartitions(hvUUID, deviceName string) ([]string, er
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return nil, fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -1087,9 +1091,9 @@ func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNum
 	}
 
 	// Create SSH connection to hypervisor
-	sshClient, err := NewSSHClient(hv.IPAddress)
+	sshClient, err := NewSSHClient(hv.IPAddrs)
 	if err != nil {
-		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddress, err)
+		return fmt.Errorf("failed to connect to hypervisor %s: %v", hv.IPAddrs, err)
 	}
 	defer sshClient.Close()
 
@@ -1103,7 +1107,7 @@ func (c *Config) DeletePhysicalPartition(hvUUID, deviceName string, partitionNum
 		return fmt.Errorf("failed to check device %s: %v", devicePath, err)
 	}
 	if strings.TrimSpace(result) != "exists" {
-		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddress)
+		return fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.IPAddrs)
 	}
 
 	// Check if partition exists
