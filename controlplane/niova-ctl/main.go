@@ -297,28 +297,28 @@ func isValidIP(ip string) bool {
 
 // formatIPAddresses formats multiple IP addresses for display
 func formatIPAddresses(hv ctlplfl.Hypervisor) string {
-	hv.EnsureIPAddresses()
-	if len(hv.IPAddresses) == 0 {
-		return hv.IPAddress // Fallback to old field
+	// hv.EnsureIPAddresses()
+	if len(hv.IPAddress) == 0 {
+		return "no network info" // Fallback to old field
 	}
-	if len(hv.IPAddresses) == 1 {
-		return hv.IPAddresses[0]
+	if len(hv.IPAddress) == 1 {
+		return hv.IPAddress[0]
 	}
-	return fmt.Sprintf("%s +%d more", hv.IPAddresses[0], len(hv.IPAddresses)-1)
+	return fmt.Sprintf("%s +%d more", hv.IPAddress[0], len(hv.IPAddress)-1)
 }
 
 // formatDetailedIPAddresses formats all IP addresses for detailed views
 func formatDetailedIPAddresses(hv ctlplfl.Hypervisor) string {
-	hv.EnsureIPAddresses()
-	if len(hv.IPAddresses) == 0 {
-		return hv.IPAddress // Fallback to old field
+	// hv.EnsureIPAddresses()
+	if len(hv.IPAddress) == 0 {
+		return "" // Fallback to old field
 	}
-	if len(hv.IPAddresses) == 1 {
-		return hv.IPAddresses[0]
+	if len(hv.IPAddress) == 1 {
+		return hv.IPAddress[0]
 	}
-	result := fmt.Sprintf("IP Addresses: %s", hv.IPAddresses[0])
-	for i := 1; i < len(hv.IPAddresses); i++ {
-		result += fmt.Sprintf(", %s", hv.IPAddresses[i])
+	result := fmt.Sprintf("IP Addresses: %s", hv.IPAddress[0])
+	for i := 1; i < len(hv.IPAddress); i++ {
+		result += fmt.Sprintf(", %s", hv.IPAddress[i])
 	}
 	return result
 }
@@ -988,13 +988,12 @@ func (m model) submitHypervisorForm() (model, tea.Cmd) {
 
 	selectedRackInfo := allRacks[m.selectedRackIdx]
 	hypervisor := Hypervisor{
-		ID:          m.editingUUID, // Will be generated if empty in AddHypervisor
-		Name:        name,
-		RackID:      selectedRackInfo.Rack.ID, // Use the correct Rack UUID
-		IPAddress:   allIPs[0],                // For backward compatibility
-		IPAddresses: allIPs,                   // Multiple IP addresses
-		SSHPort:     sshPort,
-		PortRange:   portRange,
+		ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
+		Name:      name,
+		RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
+		IPAddress: allIPs,                   // Multiple IP addresses
+		SSHPort:   sshPort,
+		PortRange: portRange,
 	}
 
 	// Store hypervisor data but don't add to config/PumiceDB yet
@@ -1826,9 +1825,9 @@ func (m *model) toggleTreeItemExpansion(item TreeItem) {
 func (m model) discoverDevices() tea.Cmd {
 	return func() tea.Msg {
 		// Use primary IP for SSH connection
-		primaryIP := m.currentHv.GetPrimaryIP()
+		// primaryIP := m.currentHv.GetPrimaryIP()
 
-		client, err := NewSSHClient(primaryIP)
+		client, err := NewSSHClient(m.currentHv.IPAddress)
 		if err != nil {
 			return deviceDiscoveredMsg{err: err}
 		}
@@ -1854,7 +1853,7 @@ func (m model) resetInputs() model {
 
 func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	// Ensure IP addresses are properly initialized for backward compatibility
-	hv.EnsureIPAddresses()
+	// hv.EnsureIPAddresses()
 
 	m.inputs[0].SetValue(hv.ID)
 
@@ -1864,8 +1863,8 @@ func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	m.ipManagementMode = false
 
 	// Create IP inputs for all existing IP addresses
-	if len(hv.IPAddresses) > 0 {
-		for _, ip := range hv.IPAddresses {
+	if len(hv.IPAddress) > 0 {
+		for _, ip := range hv.IPAddress {
 			ipInput := createIPInput()
 			ipInput.SetValue(ip)
 			m.ipInputs = append(m.ipInputs, ipInput)
@@ -1873,7 +1872,7 @@ func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	} else {
 		// Fallback to old field if no IPAddresses
 		ipInput := createIPInput()
-		ipInput.SetValue(hv.IPAddress)
+		ipInput.SetValue(hv.IPAddress[0])
 		m.ipInputs = append(m.ipInputs, ipInput)
 	}
 
@@ -2324,7 +2323,7 @@ func (m model) viewDeviceDiscovery() string {
 	// Use primary IP for connection
 	primaryIP := m.currentHv.GetPrimaryIP()
 
-	s.WriteString(fmt.Sprintf("Connecting to %s...\n", primaryIP))
+	s.WriteString(fmt.Sprintf("Connecting to  one of the IP's from: %+v...\n", primaryIP))
 	s.WriteString("Scanning for storage devices...\n\n")
 	s.WriteString("Please wait...")
 
@@ -6821,8 +6820,8 @@ func (m model) startNISDProcess() error {
 	fmt.Printf("Starting NISD process:\n")
 	fmt.Printf("  UUID: %s\n", m.selectedNISDToStart.ID)
 	fmt.Printf("  Device: %s\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_DEVICE])
-	// fmt.Printf("  Hypervisor: %s (%s)\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV], m.selectedNISDToStart.IPAddr)
-	// fmt.Printf("  Ports: %d/%d\n", m.selectedNISDToStart.ClientPort, m.selectedNISDToStart.PeerPort)
+	fmt.Printf("  Hypervisor: %s (%+v)\n", m.selectedNISDToStart.FailureDomain[ctlplfl.FD_HV], m.selectedNISDToStart.NetInfo)
+	fmt.Printf("  PeerPort: %d\n", m.selectedNISDToStart.PeerPort)
 
 	// Placeholder for actual implementation
 	// Real implementation would:
@@ -6895,8 +6894,11 @@ func (m model) viewAllNISDs() string {
 			s.WriteString(fmt.Sprintf("  UUID: %s\n", nisd.ID))
 			s.WriteString(fmt.Sprintf("  Device ID: %s\n", nisd.FailureDomain[ctlplfl.FD_DEVICE]))
 			s.WriteString(fmt.Sprintf("  Hypervisor: %s\n", nisd.FailureDomain[ctlplfl.FD_HV]))
-			// s.WriteString(fmt.Sprintf("  IP Address: %s\n", nisd.IPAddr))
-			// s.WriteString(fmt.Sprintf("  Client Port: %d\n", nisd.ClientPort))
+			for _, ni := range nisd.NetInfo { // netInfos []NetInfo
+				s.WriteString(fmt.Sprintf("  IP Address: %s\n", ni.IPAddr))
+				s.WriteString(fmt.Sprintf("  Client Port: %d\n", ni.Port))
+			}
+
 			s.WriteString(fmt.Sprintf("  Server Port: %d\n", nisd.PeerPort))
 			s.WriteString(fmt.Sprintf("  Total Size: %d bytes", nisd.TotalSize))
 			if nisd.TotalSize > 0 {

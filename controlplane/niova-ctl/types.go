@@ -390,11 +390,12 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 					if nisd.FailureDomain[ctlplfl.FD_HV] == hypervisorUUID {
 						// Mark the server port as allocated (NISD uses this)
 						allocatedPorts[int(nisd.PeerPort)] = true
+						// TODO maintain per - ip map and mark the ports in that map
 						// Mark the client port as allocated
 						// allocatedPorts[int(nisd.ClientPort)] = true
-						// // Mark client port + 1 as allocated (NISD uses this internally)
+						// Mark client port + 1 as allocated (NISD uses this internally)
 						// allocatedPorts[int(nisd.ClientPort)+1] = true
-						// // Mark the gap port after client port + 1 as allocated for spacing
+						// Mark the gap port after client port + 1 as allocated for spacing
 						// allocatedPorts[int(nisd.ClientPort)+2] = true
 					}
 				}

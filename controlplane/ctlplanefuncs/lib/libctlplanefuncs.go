@@ -395,3 +395,10 @@ func (n *NetInfoList) UnmarshalText(text []byte) error {
 	}
 	return nil
 }
+
+func (hv *Hypervisor) GetPrimaryIP() string {
+	if len(hv.IPAddress) == 0 {
+		return "invalid ip address"
+	}
+	return hv.IPAddress[0]
+}
