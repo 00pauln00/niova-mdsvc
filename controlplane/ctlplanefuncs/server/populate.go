@@ -109,13 +109,9 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 		})
 	}
 
-	for i, ni := range nisd.NetInfo {
+	for _, ni := range nisd.NetInfo {
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%d/%s", key, NETWORK_INFO, i, IP_ADDR)),
-			Value: []byte(ni.IPAddr),
-		})
-		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%d/%s", key, NETWORK_INFO, i, PORT)),
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, NETWORK_INFO, ni.IPAddr)),
 			Value: []byte(strconv.Itoa(int(ni.Port))),
 		})
 	}

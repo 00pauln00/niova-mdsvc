@@ -519,7 +519,12 @@ func (c *Config) GetDeviceSize(hvUUID, deviceName string) (int64, error) {
 		return 0, fmt.Errorf("failed to check device %s: %v", devicePath, err)
 	}
 	if strings.TrimSpace(result) != "exists" {
-		return 0, fmt.Errorf("device %s not found on hypervisor %s", devicePath, hv.GetPrimaryIP())
+		ip, err := hv.GetPrimaryIP()
+		if err != nil {
+			log.Error("GetDeviceSize():failed to fetch network info: ", err)
+		}
+
+		return 0, fmt.Errorf("device %s not found on hypervisor %s", devicePath, ip)
 	}
 
 	// Get device size in bytes using blockdev

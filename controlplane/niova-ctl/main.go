@@ -300,7 +300,7 @@ func formatIPAddresses(hv ctlplfl.Hypervisor) string {
 	if len(hv.IPAddrs) <= 0 {
 		return "no network info"
 	}
-	if len(hv.IPAddrs) == 1 { 
+	if len(hv.IPAddrs) == 1 {
 		return hv.IPAddrs[0]
 	}
 	return fmt.Sprintf("%s +%d more", hv.IPAddrs[0], len(hv.IPAddrs)-1)
@@ -1822,9 +1822,6 @@ func (m *model) toggleTreeItemExpansion(item TreeItem) {
 
 func (m model) discoverDevices() tea.Cmd {
 	return func() tea.Msg {
-		// Use primary IP for SSH connection
-		// primaryIP := m.currentHv.GetPrimaryIP()
-
 		client, err := NewSSHClient(m.currentHv.IPAddrs)
 		if err != nil {
 			return deviceDiscoveredMsg{err: err}
@@ -2318,7 +2315,10 @@ func (m model) viewDeviceDiscovery() string {
 	s.WriteString(title + "\n\n")
 
 	// Use primary IP for connection
-	primaryIP := m.currentHv.GetPrimaryIP()
+	primaryIP, err := m.currentHv.GetPrimaryIP()
+	if err != nil {
+		log.Error("viewDeviceDiscovery():failed to fetch network info: ", err)
+	}
 
 	s.WriteString(fmt.Sprintf("Connecting to  one of the IP's from: %+v...\n", primaryIP))
 	s.WriteString("Scanning for storage devices...\n\n")
@@ -2334,7 +2334,10 @@ func (m model) viewDeviceSelection() string {
 	s.WriteString(title + "\n\n")
 
 	// Use primary IP for display
-	primaryIP := m.currentHv.GetPrimaryIP()
+	primaryIP, err := m.currentHv.GetPrimaryIP()
+	if err != nil {
+		log.Error("viewDeviceSelection():failed to fetch network info: ", err)
+	}
 
 	s.WriteString(fmt.Sprintf("Hypervisor: %s (%s)\n\n",
 		m.currentHv.ID, primaryIP))

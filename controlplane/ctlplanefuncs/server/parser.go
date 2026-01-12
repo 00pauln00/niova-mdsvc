@@ -16,8 +16,7 @@ const ( // Key Prefixes
 	VDEV_CFG_C_KEY   = 2
 	VDEV_ELEMENT_KEY = 3
 
-	NET_IDX  = 3
-	NET_ADDR = 4
+	NET_IDX = 3
 )
 
 type Entity interface{}
@@ -233,25 +232,18 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 		}
 	}
 
-	// Handle network info keys: n/<nisd-id>/ni/<index>/(ip|ptr)
+	// Handle network info keys: n/<nisd-id>/ni/ip:ptr
 	if len(parts) > KEY_LEN && parts[ELEMENT_KEY] == NETWORK_INFO {
-		idx, err := strconv.Atoi(parts[NET_IDX])
-		if err != nil {
-			return
+
+		p, _ := strconv.Atoi(string(value))
+		netInfo := ctlplfl.NetworkInfo{
+			IPAddr: parts[NET_IDX],
+			Port:   uint16(p),
 		}
 
 		// Ensure slice capacity
-		for len(nisd.NetInfo) <= idx {
-			nisd.NetInfo = append(nisd.NetInfo, ctlplfl.NetworkInfo{})
-		}
+		nisd.NetInfo = append(nisd.NetInfo, netInfo)
 
-		switch parts[NET_ADDR] {
-		case IP_ADDR:
-			nisd.NetInfo[idx].IPAddr = string(value)
-		case PORT:
-			p, _ := strconv.Atoi(string(value))
-			nisd.NetInfo[idx].Port = uint16(p)
-		}
 	}
 }
 

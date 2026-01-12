@@ -396,11 +396,11 @@ func (n *NetInfoList) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func (hv *Hypervisor) GetPrimaryIP() string {
+func (hv *Hypervisor) GetPrimaryIP() (string, error) {
 	if len(hv.IPAddrs) == 0 {
-		return "invalid ip address"
+		return "", fmt.Errorf("invalid ip address")
 	}
-	return hv.IPAddrs[0]
+	return hv.IPAddrs[0], nil
 }
 
 func (hv *Hypervisor) ValidateIPs() error {
