@@ -377,13 +377,11 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 	if cpClient != nil {
 		// Type assert to get the actual client interface
 		if client, ok := cpClient.(interface {
-			GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
+			GetNisds() ([]ctlplfl.Nisd, error)
 		}); ok {
 			// Create a request to get all NISDs
 			// Get all NISDs and filter by hypervisor UUID locally
-			req := ctlplfl.GetReq{GetAll: true} // Empty ID to get all NISDs
-
-			nisds, err := client.GetNisds(req)
+			nisds, err := client.GetNisds()
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {
@@ -392,11 +390,11 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 						allocatedPorts[int(nisd.PeerPort)] = true
 						// TODO maintain per - ip map and mark the ports in that map
 						// Mark the client port as allocated
-						// allocatedPorts[int(nisd.ClientPort)] = true
+						allocatedPorts[int(nisd.NetInfo[0].Port)] = true
 						// Mark client port + 1 as allocated (NISD uses this internally)
-						// allocatedPorts[int(nisd.ClientPort)+1] = true
+						allocatedPorts[int(nisd.NetInfo[0].Port)+1] = true
 						// Mark the gap port after client port + 1 as allocated for spacing
-						// allocatedPorts[int(nisd.ClientPort)+2] = true
+						allocatedPorts[int(nisd.NetInfo[0].Port)+2] = true
 					}
 				}
 			}

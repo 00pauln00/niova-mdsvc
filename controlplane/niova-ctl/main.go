@@ -297,7 +297,10 @@ func isValidIP(ip string) bool {
 
 // formatIPAddresses formats multiple IP addresses for display
 func formatIPAddresses(hv ctlplfl.Hypervisor) string {
-	if len(hv.IPAddrs) == 1 {
+	if len(hv.IPAddrs) <= 0 {
+		return "no network info"
+	}
+	if len(hv.IPAddrs) == 1 { 
 		return hv.IPAddrs[0]
 	}
 	return fmt.Sprintf("%s +%d more", hv.IPAddrs[0], len(hv.IPAddrs)-1)
