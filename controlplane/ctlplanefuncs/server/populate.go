@@ -79,11 +79,9 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	key := getConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_ID, CLIENT_PORT, PEER_PORT, hvKey, FAILURE_DOMAIN, IP_ADDR, TOTAL_SPACE, AVAIL_SPACE, pduKey, rackKey} {
+	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, pduKey, rackKey, NETWORK_INFO_CNT} {
 		var value string
 		switch field {
-		case CLIENT_PORT:
-			value = strconv.Itoa(int(nisd.ClientPort))
 		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
 		case hvKey:
@@ -92,20 +90,29 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 			value = nisd.FailureDomain[cpLib.FD_PDU]
 		case rackKey:
 			value = nisd.FailureDomain[cpLib.FD_RACK]
-		case IP_ADDR:
-			value = nisd.IPAddr
 		case TOTAL_SPACE:
 			value = strconv.Itoa(int(nisd.TotalSize))
 		case AVAIL_SPACE:
 			value = strconv.Itoa(int(nisd.AvailableSize))
 		case DEVICE_ID:
 			value = nisd.FailureDomain[cpLib.FD_DEVICE]
+		case SOCKET_PATH:
+			value = nisd.SocketPath
+		case NETWORK_INFO_CNT:
+			value = strconv.Itoa(nisd.NetInfoCnt)
 		default:
 			continue
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
 			Value: []byte(value),
+		})
+	}
+
+	for _, ni := range nisd.NetInfo {
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, NETWORK_INFO, ni.IPAddr)),
+			Value: []byte(strconv.Itoa(int(ni.Port))),
 		})
 	}
 }
@@ -173,19 +180,19 @@ type hvPopulator struct{}
 func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	hv := entity.(*cpLib.Hypervisor)
 	key := getConfKey(entityKey, hv.ID)
-	for _, field := range []string{rackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT} {
+	for _, field := range []string{rackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT, ENABLE_RDMA} {
 		var value string
 		switch field {
 		case NAME:
 			value = hv.Name
-		case IP_ADDR:
-			value = hv.IPAddress
 		case PORT_RANGE:
 			value = hv.PortRange
 		case SSH_PORT:
 			value = hv.SSHPort
 		case rackKey:
 			value = hv.RackID
+		case ENABLE_RDMA:
+			value = strconv.FormatBool(hv.RDMAEnabled)
 
 		default:
 			continue
@@ -193,6 +200,12 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
 			Key:   []byte(fmt.Sprintf("%s/%s", key, field)),
 			Value: []byte(value),
+		})
+	}
+	for i, ip := range hv.IPAddrs {
+		*commitChgs = append(*commitChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s/%d", key, IP_ADDR, i)),
+			Value: []byte(ip),
 		})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -118,15 +119,21 @@ type NisdArgs struct {
 	AllowDefragMCIBCache bool   // -x
 }
 
+type NetworkInfo struct {
+	IPAddr string
+	Port   uint16
+}
+
 type Nisd struct {
-	XMLName       xml.Name `xml:"NisdInfo"`
-	ClientPort    uint16   `xml:"ClientPort" json:"ClientPort"`
-	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
-	ID            string   `xml:"ID" json:"ID"`
-	FailureDomain []string
-	IPAddr        string `xml:"IPAddr" json:"IPAddr"`
-	TotalSize     int64  `xml:"TotalSize"`
-	AvailableSize int64  `xml:"AvailableSize"`
+	XMLName       xml.Name    `xml:"NisdInfo"`
+	PeerPort      uint16      `xml:"PeerPort" json:"PeerPort"`
+	ID            string      `xml:"ID" json:"ID"`
+	FailureDomain []string    `xml:"FailureDomain"`
+	TotalSize     int64       `xml:"TotalSize"`
+	AvailableSize int64       `xml:"AvailableSize"`
+	SocketPath    string      `xml:"SocketPath"`
+	NetInfo       NetInfoList `xml:"NetInfo"`
+	NetInfoCnt    int         `xml:"NetInfoCnt"`
 }
 
 type PDU struct {
@@ -148,13 +155,14 @@ type Rack struct {
 }
 
 type Hypervisor struct {
-	ID        string // Unique hypervisor identifier
-	RackID    string
-	Name      string
-	IPAddress string
-	PortRange string
-	SSHPort   string // SSH port for connection
-	Dev       []Device
+	ID          string // Unique hypervisor identifier
+	RackID      string
+	Name        string
+	IPAddrs     []string
+	PortRange   string
+	SSHPort     string // SSH port for connection
+	Dev         []Device
+	RDMAEnabled bool
 }
 
 type NisdChunk struct {
@@ -239,6 +247,19 @@ func Count8GBChunks(size int64) int64 {
 	return count + 1
 }
 
+func MatchIPs(a, b []string) bool {
+	set := make(map[string]struct{}, len(a))
+	for _, v := range a {
+		set[v] = struct{}{}
+	}
+	for _, v := range b {
+		if _, ok := set[v]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 type ChunkNisd struct {
 	XMLName     xml.Name `xml:"ChunkNisd"`
 	NumReplicas uint8    `xml:"NREPLICAS"`
@@ -261,6 +282,7 @@ func RegisterGOBStructs() {
 	gob.Register(VdevCfg{})
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
+	gob.Register(NetworkInfo{})
 }
 
 func (req *GetReq) ValidateRequest() error {
@@ -323,6 +345,10 @@ func (n *Nisd) Validate() error {
 		return errors.New("available Size exceeds total size")
 	}
 
+	if len(n.NetInfo) != n.NetInfoCnt {
+		return fmt.Errorf("network interface cnt %d doesn't match with the total interface details provided %d", n.NetInfoCnt, len(n.NetInfo))
+	}
+
 	return nil
 }
 
@@ -332,4 +358,61 @@ func NextFailureDomain(fd int) (int, error) {
 		return fd, nil
 	}
 	return fd, fmt.Errorf("max failure domain reached: %d", fd)
+}
+
+type NetInfoList []NetworkInfo
+
+func (n NetInfoList) MarshalText() ([]byte, error) {
+	parts := make([]string, 0, len(n))
+	for _, ni := range n {
+		parts = append(parts, ni.IPAddr+":"+strconv.FormatUint(uint64(ni.Port), 10))
+	}
+	return []byte(strings.Join(parts, ", ")), nil
+}
+
+func (n *NetInfoList) UnmarshalText(text []byte) error {
+	raw := strings.TrimSpace(string(text))
+	if raw == "" {
+		return nil
+	}
+
+	entries := strings.Split(raw, ",")
+	for _, e := range entries {
+		host, portStr, err := net.SplitHostPort(strings.TrimSpace(e))
+		if err != nil {
+			return err
+		}
+
+		p, err := strconv.ParseUint(portStr, 10, 16)
+		if err != nil {
+			return err
+		}
+
+		*n = append(*n, NetworkInfo{
+			IPAddr: host,
+			Port:   uint16(p),
+		})
+	}
+	return nil
+}
+
+func (hv *Hypervisor) GetPrimaryIP() (string, error) {
+	if len(hv.IPAddrs) == 0 {
+		return "", fmt.Errorf("invalid ip address")
+	}
+	return hv.IPAddrs[0], nil
+}
+
+func (hv *Hypervisor) ValidateIPs() error {
+	if len(hv.IPAddrs) == 0 {
+		return fmt.Errorf("no network info available")
+	}
+
+	for _, ip := range hv.IPAddrs {
+		parsed := net.ParseIP(strings.TrimSpace(ip))
+		if parsed != nil {
+			return fmt.Errorf("invalid ip %s ", ip)
+		}
+	}
+	return nil
 }
