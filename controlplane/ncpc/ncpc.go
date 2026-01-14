@@ -888,10 +888,13 @@ func main() {
 	case "CreateVdev":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		// Step 1: Create first Vdev
-		vdev := &cpLib.Vdev{Cfg: cpLib.VdevCfg{
+		vdev := cpLib.Vdev{Cfg: cpLib.VdevCfg{
 			Size: vdevSize,
 		}}
-		resp, err := c.CreateVdev(vdev)
+		req := &cpLib.VdevReq{
+			Vdev: &vdev.Cfg,
+		}
+		resp, err := c.CreateVdev(req)
 		if err != nil {
 			log.Error("failed to create vdev:", err)
 			os.Exit(-1)

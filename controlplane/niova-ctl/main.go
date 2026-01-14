@@ -7094,7 +7094,7 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 				}}
 
 			// Initialize the Vdev (generates ID)
-			if err := vdev.Init(); err != nil {
+			if err := vdev.Cfg.Init(); err != nil {
 				m.message = fmt.Sprintf("Failed to initialize Vdev: %v", err)
 				return m, nil
 			}
@@ -7102,7 +7102,10 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			// Call CreateVdev from control plane client
 			if m.cpClient != nil && m.cpConnected {
 				log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
-				resp, err := m.cpClient.CreateVdev(vdev)
+				req := &ctlplfl.VdevReq{
+					Vdev: &vdev.Cfg,
+				}
+				resp, err := m.cpClient.CreateVdev(req)
 				if err != nil {
 					log.Error("CreateVdev failed: ", err)
 					m.message = fmt.Sprintf("Failed to create Vdev: %v", err)

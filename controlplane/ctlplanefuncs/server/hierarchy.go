@@ -148,24 +148,8 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[string]struct{},
+func (hr *Hierarchy) PickNISD(ent *Entities, hash uint64, picked map[string]struct{},
 	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
-
-	if int(fd) >= cpLib.FD_MAX {
-		err := fmt.Errorf("invalid failure domain: %d", fd)
-		log.Error("PickNISD():", err)
-		return nil, err
-	}
-
-	fdRef := hr.FD[fd]
-
-	// Get the entity (PDU/Rack/HV/Device) object from the tree
-	ent, ok := fdRef.Tree.GetAt(entityIDX)
-	if !ok {
-		err := fmt.Errorf("failed to fetch entity tree from idx: %d, fd: %d", entityIDX, fd)
-		log.Error("GetAt(): ", err)
-		return nil, err
-	}
 
 	// select NISD inside entity
 	nisdCnt := ent.Nisds.Len()
@@ -203,7 +187,7 @@ func (hr *Hierarchy) PickNISD(fd int, entityIDX int, hash uint64, picked map[str
 		idx = (idx + 1) % ent.Nisds.Len()
 		log.Tracef("incrementing index : %d", idx)
 	}
-	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", entityIDX)
+	return nil, fmt.Errorf("failed to pick nisd from the entity: %d", ent.ID)
 }
 
 func BytesToGB(b int64) float64 {
@@ -246,4 +230,19 @@ func GetIdxForNisdAlloc(hash uint64, size int) (int, error) {
 		return 0, fmt.Errorf("invalid size: %d", size)
 	}
 	return int(hash % uint64(size)), nil
+}
+
+func GetEntityByID(ft cpLib.Filter) (*Entities, error) {
+	if ft.ID == "" {
+		return nil, fmt.Errorf("empty entityID")
+	}
+	if ft.Type == -1 {
+		return nil, fmt.Errorf("invalid fd level")
+	}
+	ent, ok := HR.FD[ft.Type].Tree.Get(&Entities{ID: ft.ID})
+	if !ok || ent == nil {
+		return nil, fmt.Errorf("entityID %s not found in fd %d", ft.ID, ft.Type)
+	}
+
+	return ent, nil
 }

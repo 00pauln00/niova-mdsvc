@@ -236,7 +236,7 @@ func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
 	return ncfg, nil
 }
 
-func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.Vdev) (*ctlplfl.ResponseXML, error) {
+func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.VdevReq) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
 	err := ccf.put(vdev, resp, ctlplfl.CREATE_VDEV)
 	if err != nil {
