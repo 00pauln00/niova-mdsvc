@@ -198,7 +198,7 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	c := newClient(t)
 
 	hv := cpLib.Hypervisor{
-		RackID:     "rack-1",
+		RackID:     "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 		ID:         "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
 		IPAddress:  "127.0.0.1",
 		PortRange:  "8000-9000",
@@ -231,8 +231,8 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 	c := newClient(t)
 
 	hypervisors := []cpLib.Hypervisor{
-		{RackID: "rack-1", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddress: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
-		{RackID: "rack-2", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
+		{RackID: "8a5303ae-ab23-11f0-bb87-632ad3e09c04", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddress: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
+		{RackID: "93e2925e-ab23-11f0-958d-87f55a6a9981", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
 	}
 
 	// PUT multiple hypervisor
@@ -291,7 +291,7 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 		ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
 		SerialNumber:  "SN112233445",
 		State:         2,
-		HypervisorID:  "hv-01",
+		HypervisorID:  "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
 		FailureDomain: "fd-02",
 		DevicePath:    "/temp/path3",
 		Name:          "dev-3",
@@ -349,7 +349,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
 			SerialNumber:  "SN123456789",
 			State:         1,
-			HypervisorID:  "hv-1",
+			HypervisorID:  "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
 			FailureDomain: "fd-01",
 			DevicePath:    "/temp/path1",
 			Name:          "dev-1",
@@ -358,7 +358,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
 			SerialNumber:  "SN987654321",
 			State:         0,
-			HypervisorID:  "hv-2",
+			HypervisorID:  "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
 			FailureDomain: "fd-01",
 			DevicePath:    "/temp/path2",
 			Name:          "dev-2",
@@ -382,7 +382,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
 			SerialNumber:  "SN112233445",
 			State:         2,
-			HypervisorID:  "hv-1",
+			HypervisorID:  "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
 			FailureDomain: "fd-02",
 			DevicePath:    "/temp/path3",
 			Name:          "dev-3",
@@ -441,10 +441,10 @@ func TestPutAndGetSingleNisd(t *testing.T) {
            PeerPort:      8001,
            ID:            "nisd-001",
            FailureDomain: []string{
-               "pdu-01",
-               "rack-01",
-               "hv-01",
-               "dev-001",
+               "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+               "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+               "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+               "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
            },
            IPAddr:        "192.168.1.10",
            TotalSize:     1_000_000_000_000, // 1 TB
@@ -487,10 +487,10 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			PeerPort:   8001,
 			ID:         "nisd-001",
 			FailureDomain: []string{
-				"pdu-01",
-				"rack-01",
-				"hv-01",
-				"dev-001",
+				"95f62aee-997e-11f0-9f1b-a70cff4b660b",
+				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+				"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+				"6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
 			},
 			IPAddr:        "192.168.1.10",
 			TotalSize:     1_000_000_000_000, // 1 TB
@@ -501,10 +501,10 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			PeerPort:   8002,
 			ID:         "nisd-002",
 			FailureDomain: []string{
-				"pdu-02",
-				"rack-02",
-				"hv-02",
-				"dev-002",
+				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
+				"3e2925e-ab23-11f0-958d-87f55a6a9981",
+				"8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
+				"6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
 			},
 			IPAddr:        "192.168.1.11",
 			TotalSize:     500_000_000_000, // 500 GB
@@ -515,10 +515,10 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			PeerPort:   8003,
 			ID:         "nisd-003",
 			FailureDomain: []string{
-				"pdu-03",
-				"rack-03",
-				"hv-03",
-				"dev-003",
+				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
+				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+				"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+				"60447cd0-ab3e-11f0-aa15-1f40dd976538",
 			},
 			IPAddr:        "192.168.1.12",
 			TotalSize:     2_000_000_000_000, // 2 TB
@@ -557,10 +557,10 @@ func TestMultiCreateVdev(t *testing.T) {
 		PeerPort: 8001,
 		ID:       "nisd-001",
 		FailureDomain: []string{
-			"pdu-01",
-			"rack-01",
-			"hv-01",
-			"dev-006",
+			"95f62aee-997e-11f0-9f1b-a70cff4b660b",
+			"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+			"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+			"60447cd0-ab3e-11f0-aa15-1f40dd976538",
 		},
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
