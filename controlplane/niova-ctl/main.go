@@ -206,6 +206,7 @@ type model struct {
 	// Vdev Management
 	vdevMgmtCursor         int
 	vdevDeleteCursor       int
+	vdevViewCursor         int
 	currentVdev            ctlplfl.Vdev
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
 	vdevSizeInput          textinput.Model
@@ -6953,6 +6954,7 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 			case 2: // View Vdev
 				m.state = stateViewVdev
 				m.message = ""
+				m.vdevViewCursor = 0
 				return m, nil
 			case 3: // Delete Vdev
 				m.state = stateDeleteVdev
@@ -7187,9 +7189,22 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "up", "k":
+			if m.vdevViewCursor > 0 {
+				m.vdevViewCursor--
+			}
+		case "down", "j":
+			// Get Vdevs from control plane for navigation
+			if m.cpClient != nil && m.cpConnected {
+				vdevs, err := m.cpClient.GetVdevCfgs()
+				if err == nil && m.vdevViewCursor < len(vdevs)-1 {
+					m.vdevViewCursor++
+				}
+			}
 		case "esc":
 			m.state = stateVdevManagement
 			m.message = ""
+			m.vdevViewCursor = 0
 			return m, nil
 		}
 	}
@@ -7212,27 +7227,59 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true}
-		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
+		vdevs, err := m.cpClient.GetVdevCfgs()
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
 			s.WriteString("No Vdevs found.\n\n")
 		} else {
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
-			for i, vdev := range vdevs {
-				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.Cfg.ID))
-				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Cfg.Size))
-				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.Cfg.NumChunks))
-				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.Cfg.NumReplica))
-				s.WriteString("\n")
+
+			// DEBUG: Add cursor information
+			s.WriteString(fmt.Sprintf("DEBUG: cursor=%d\n\n", m.vdevViewCursor))
+
+			// Calculate pagination - show reasonable number of items per page
+			itemsPerPage := 10
+			totalPages := (len(vdevs) + itemsPerPage - 1) / itemsPerPage
+			currentPage := m.vdevViewCursor / itemsPerPage
+			startIdx := currentPage * itemsPerPage
+			endIdx := startIdx + itemsPerPage
+			if endIdx > len(vdevs) {
+				endIdx = len(vdevs)
+			}
+
+			if totalPages > 1 {
+				s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d)\n\n",
+					currentPage+1, totalPages, startIdx+1, endIdx))
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				vdev := vdevs[i]
+				cursor := "  "
+				if m.vdevViewCursor == i {
+					cursor = "▶ "
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. ID: %s", cursor, i+1, vdev.ID)))
+					s.WriteString("\n")
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Size: %d bytes", vdev.Size)))
+					s.WriteString("\n")
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Chunks: %d", vdev.NumChunks)))
+					s.WriteString("\n")
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Replicas: %d", vdev.NumReplica)))
+					s.WriteString("\n\n")
+				} else {
+					s.WriteString(fmt.Sprintf("%s%d. ID: %s\n", cursor, i+1, vdev.ID))
+					s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
+					s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
+					s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
+					s.WriteString("\n")
+				}
 			}
 		}
 	} else {
 		s.WriteString(errorStyle.Render("Control plane not connected") + "\n\n")
 	}
 
-	s.WriteString(helpStyle.Render("esc: back"))
+	s.WriteString(helpStyle.Render("↑/↓: navigate • esc: back"))
 
 	return s.String()
 }
