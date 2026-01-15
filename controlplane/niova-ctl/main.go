@@ -7225,8 +7225,7 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true}
-		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
+		vdevs, err := m.cpClient.GetVdevCfgs()
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -7234,10 +7233,10 @@ func (m model) viewViewVdev() string {
 		} else {
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
 			for i, vdev := range vdevs {
-				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.Cfg.ID))
-				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Cfg.Size))
-				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.Cfg.NumChunks))
-				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.Cfg.NumReplica))
+				s.WriteString(fmt.Sprintf("%d. ID: %s\n", i+1, vdev.ID))
+				s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
+				s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
+				s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
 				s.WriteString("\n")
 			}
 		}

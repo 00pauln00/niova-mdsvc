@@ -970,6 +970,24 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(ENC_TYPE, vdevInfo)
 }
 
+func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	rqResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
+		ColFamily: colmfamily,
+		Key:       vdevKey,
+		BufSize:   cbArgs.ReplySize,
+		Prefix:    vdevKey,
+	})
+	if err != nil {
+		log.Error("RangeReadKV failure: ", err)
+		return nil, err
+	}
+
+	// TODO: move this to parsing file
+	vdevList := ParseEntities[ctlplfl.VdevCfg](rqResult.ResultMap, vdevParser{})
+	return pmCmn.Encoder(ENC_TYPE, vdevList)
+}
+
 func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
