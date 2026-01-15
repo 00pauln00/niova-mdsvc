@@ -293,6 +293,8 @@ func RegisterGOBStructs() {
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
+	gob.Register(Filter{})
+	gob.Register(VdevReq{})
 }
 
 func (req *GetReq) ValidateRequest() error {

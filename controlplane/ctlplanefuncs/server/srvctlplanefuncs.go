@@ -434,7 +434,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(value),
 		})
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, req.Vdev)
+	r, err := pmCmn.Encoder(pmCmn.GOB, req)
 	if err != nil {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
