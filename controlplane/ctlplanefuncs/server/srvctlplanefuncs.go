@@ -456,13 +456,15 @@ func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string, commitChgs
 	}
 
 	// track NISDs already selected for this allocation
-	picked := make(map[string]struct{})
+	pickedNISD := make(map[string]struct{})
+
+	// track entities already selected for allocation
+	pickedEntity := make(map[int]struct{})
 
 	treeLen := HR.FD[fd].Tree.Len()
 	if treeLen == 0 {
 		return fmt.Errorf("no entities available in failure domain %d", fd)
 	}
-	hash := ctlplfl.NisdAllocHash([]byte(req.Vdev.ID + chunk))
 
 	if req.Filter.ID != "" {
 		en, err := GetEntityByID(req.Filter)
@@ -470,19 +472,15 @@ func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string, commitChgs
 			return err
 		}
 		for i := 0; i < int(req.Vdev.NumReplica); i++ {
-			nisd, err := HR.PickNISD(en, hash, picked, nisdMap)
+			nisd, err := HR.PickNISD(en, pickedNISD, nisdMap)
 			if err != nil {
 				return err
 			}
 			genAllocationKV(req.Vdev.ID, chunk, nisd, i, commitChgs)
-			// decorrelate next replica
-			var buf [ctlplfl.HASH_SIZE]byte
-			binary.BigEndian.PutUint64(buf[:], hash)
-			hash = ctlplfl.NisdAllocHash(buf[:])
 		}
 
 	} else {
-
+		hash := ctlplfl.NisdAllocHash([]byte(req.Vdev.ID + chunk))
 		log.Debugf("hash generated %d for chunk: %s, fd: %d", hash, chunk, fd)
 
 		// select entity by index
@@ -492,25 +490,31 @@ func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string, commitChgs
 			return err
 		}
 
-	log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
-
-	// track NISDs already selected for this allocation
-	pickedNISD := make(map[string]struct{})
-
-	// track entities already selected for allocation
-	pickedEntity := make(map[int]struct{})
+		log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
 
 		// chunk's replica's are stored in different NISD's from different entities
 		for i := 0; i < int(req.Vdev.NumReplica); i++ {
 			var (
 				nisd      *ctlplfl.NisdVdevAlloc
 				pickedIdx = -1
-			lastErr   error
-					attempts  = 0
-			startIdx  = entityIDX
-		)
+				lastErr   error
+				attempts  = 0
+				startIdx  = entityIDX
+			)
 
 			for attempts < treeLen {
+
+				curIdx := entityIDX
+
+				// advance for next iteration deterministically
+				entityIDX = (entityIDX + 1) % treeLen
+				attempts++
+
+				// Skip a entity if already found in map, to prevent selecting multiple NISDs from the same entity.
+				if _, used := pickedEntity[curIdx]; used {
+					log.Infof("skipping entity IDX: %d, already picked", curIdx)
+					continue
+				}
 
 				// Get the entity (PDU/Rack/HV/Device) object from the tree
 				ent, ok := HR.FD[fd].Tree.GetAt(entityIDX)
@@ -520,7 +524,7 @@ func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string, commitChgs
 					return err
 				}
 
-				nisd, err = HR.PickNISD(ent, hash, picked, nisdMap)
+				nisd, err = HR.PickNISD(ent, pickedNISD, nisdMap)
 				if err == nil {
 					break
 				}
@@ -528,8 +532,6 @@ func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string, commitChgs
 					"pick failed for chunk=%s replica=%d entityIDX=%d attempt=%d/%d err=%v", chunk,
 					i, entityIDX, attempts, treeLen, err,
 				)
-				entityIDX = (entityIDX + 1) % treeLen
-				attempts++
 
 			}
 
@@ -543,7 +545,8 @@ func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string, commitChgs
 			log.Debugf("picked nisd: %s, for chunk %s/R.%d", nisd.Ptr.ID, chunk, i)
 			genAllocationKV(req.Vdev.ID, chunk, nisd, i, commitChgs)
 
-		pickedEntity[pickedIdx] = struct{}{}
+			pickedEntity[pickedIdx] = struct{}{}
+		}
 	}
 	return nil
 }
