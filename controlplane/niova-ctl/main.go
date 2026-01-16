@@ -6494,6 +6494,12 @@ func (m *model) initializeNISD() error {
 		return fmt.Errorf("hypervisor %s not found", m.selectedHvForNISD.ID)
 	}
 
+	// Get Rack info to populate PDU-ID in NISD
+	rack, found := m.config.GetRack(hv.RackID)
+	if !found {
+		return fmt.Errorf("rack %s not found", hv.RackID)
+	}
+
 	// Allocate ports for NISD
 	clientPort, serverPort, err := m.config.AllocatePortPair(m.selectedHvForNISD.ID, hv.PortRange, m.cpClient)
 	if err != nil {
@@ -6515,7 +6521,7 @@ func (m *model) initializeNISD() error {
 		AvailableSize: m.selectedPartitionForNISD.Size,
 		NetInfo:       netInfos,
 		FailureDomain: []string{
-			"", // TODO Pass PDU-ID
+			rack.PDUID,
 			hv.RackID,
 			m.selectedHvForNISD.ID,
 			m.selectedPartitionForNISD.PartitionID,
@@ -6562,6 +6568,12 @@ func (m *model) initializeSelectedNISDs() error {
 			continue
 		}
 
+		// Get Rack info to populate PDU-ID in NISD
+		rack, found := m.config.GetRack(hv.RackID)
+		if !found {
+			return fmt.Errorf("rack %s not found", hv.RackID)
+		}
+
 		// Allocate ports for NISD
 		clientPort, serverPort, err := m.config.AllocatePortPair(partitionInfo.HvUUID, hv.PortRange, m.cpClient)
 		if err != nil {
@@ -6576,6 +6588,7 @@ func (m *model) initializeSelectedNISDs() error {
 				Port:   uint16(clientPort),
 			})
 		}
+
 		// Create NISD struct using DevicePartition data
 		nisd := &ctlplfl.Nisd{
 			ID:            partitionInfo.Partition.NISDUUID, // Use NISD UUID from partition
@@ -6584,8 +6597,8 @@ func (m *model) initializeSelectedNISDs() error {
 			AvailableSize: partitionInfo.Partition.Size,
 			NetInfo:       netInfos,
 			FailureDomain: []string{
-				"",
-				"",
+				rack.PDUID,
+				hv.RackID,
 				partitionInfo.HvUUID,
 				partitionInfo.Partition.PartitionID,
 			},
