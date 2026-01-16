@@ -36,6 +36,7 @@ const (
 	PUT_PARTITION       = "PutPartition"
 	GET_PARTITION       = "GetPartition"
 	GET_VDEV_INFO       = "get_vdev_info" // new
+	GET_ALL_VDEV        = "get_all_vdev"
 	GET_CHUNK_NISD      = "get_chunk_nisd"
 	GET_NISD_INFO       = "get_nisd_info"
 

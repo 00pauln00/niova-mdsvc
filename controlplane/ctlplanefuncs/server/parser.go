@@ -375,26 +375,26 @@ type vdevParser struct{}
 
 func (vdevParser) GetRootKey() string { return vdevKey }
 func (vdevParser) NewEntity(id string) Entity {
-	return &ctlplfl.Vdev{Cfg: ctlplfl.VdevCfg{ID: id}}
+	return &ctlplfl.VdevCfg{ID: id}
 }
 func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
-	vdev := entity.(*ctlplfl.Vdev)
+	vdev := entity.(*ctlplfl.VdevCfg)
 	if len(parts) > KEY_LEN {
 		switch parts[VDEV_ELEMENT_KEY] {
 		case SIZE:
 			if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
-				vdev.Cfg.Size = sz
+				vdev.Size = sz
 			}
 		case NUM_CHUNKS:
 			if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
-				vdev.Cfg.NumChunks = uint32(nc)
+				vdev.NumChunks = uint32(nc)
 			}
 		case NUM_REPLICAS:
 			if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
-				vdev.Cfg.NumReplica = uint8(nr)
+				vdev.NumReplica = uint8(nr)
 			}
 		}
 	}
 }
 
-func (vdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Vdev) }
+func (vdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.VdevCfg) }
