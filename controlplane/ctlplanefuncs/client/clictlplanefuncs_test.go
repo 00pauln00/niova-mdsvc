@@ -7,13 +7,11 @@ import (
 	"sync"
 	"testing"
     "time"
-    "golang.org/x/sync/errgroup"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Global maps to store test results for reuse between tests
@@ -1238,7 +1236,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
 
-	nisd := cpLib.Nisd{
+	nisd1 := cpLib.Nisd{
         PeerPort:      8001,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e55",
         FailureDomain: []string{
@@ -1251,7 +1249,7 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp, err := c.PutNisd(&nisd)
+   resp, err := c.PutNisd(&nisd1)
    assert.NoError(t, err)
    assert.True(t, resp.Success)
 
@@ -1266,7 +1264,7 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, er)
 	log.Infof("vdev1 response status: %v", res)
 
-	nisd := cpLib.Nisd{
+	nisd2 := cpLib.Nisd{
         PeerPort:      8002,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e56",
         FailureDomain: []string{
@@ -1279,7 +1277,7 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp1, err1 := c.PutNisd(&nisd)
+   resp1, err1 := c.PutNisd(&nisd2)
    assert.NoError(t, err1)
    assert.True(t, resp1.Success)
 
@@ -1294,7 +1292,7 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, er1)
 	log.Infof("vdev2 response status: %v", res1)
 
-	nisd := cpLib.Nisd{
+	nisd3 := cpLib.Nisd{
         PeerPort:      8003,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e57",
         FailureDomain: []string{
@@ -1307,7 +1305,7 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp2, err2 := c.PutNisd(&nisd)
+   resp2, err2 := c.PutNisd(&nisd3)
    assert.NoError(t, err2)
    assert.True(t, resp2.Success)
 
@@ -1322,7 +1320,7 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, er2)
 	log.Infof("vdev3 response status: %v", res2)
 
-	nisd := cpLib.Nisd{
+	nisd4 := cpLib.Nisd{
         PeerPort:      8004,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e58",
         FailureDomain: []string{
@@ -1335,7 +1333,7 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp3, err3 := c.PutNisd(&nisd)
+   resp3, err3 := c.PutNisd(&nisd4)
    assert.NoError(t, err3)
    assert.True(t, resp3.Success)
 
@@ -1350,7 +1348,7 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, er3)
 	log.Infof("vdev4 response status: %v", res3)
 
-	nisd := cpLib.Nisd{
+	nisd5 := cpLib.Nisd{
         PeerPort:      8005,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e59",
         FailureDomain: []string{
@@ -1363,7 +1361,7 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp4, err4 := c.PutNisd(&nisd)
+   resp4, err4 := c.PutNisd(&nisd5)
    assert.NoError(t, err4)
    assert.True(t, resp4.Success)
 
