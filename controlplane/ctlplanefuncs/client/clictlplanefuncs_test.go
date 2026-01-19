@@ -200,7 +200,7 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	hv := cpLib.Hypervisor{
 		RackID:     "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 		ID:         "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-		IPAddress:  "127.0.0.1",
+		IPAddrs:  	"127.0.0.1",
 		PortRange:  "8000-9000",
 		SSHPort:    "6999",
 		Name:       "hv-1",
@@ -220,7 +220,7 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	assert.Equal(t, hv.ID, getResp[0].ID)
 	assert.Equal(t, hv.Name, getResp[0].Name)
 	assert.Equal(t, hv.RackID, getResp[0].RackID)
-	assert.Equal(t, hv.IPAddress, getResp[0].IPAddress)
+	assert.Equal(t, hv.IPAddrs, getResp[0].IPAddrs)
 	assert.Equal(t, hv.PortRange, getResp[0].PortRange)
 	assert.Equal(t, hv.SSHPort, getResp[0].SSHPort)
 
@@ -231,8 +231,8 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 	c := newClient(t)
 
 	hypervisors := []cpLib.Hypervisor{
-		{RackID: "8a5303ae-ab23-11f0-bb87-632ad3e09c04", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddress: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
-		{RackID: "93e2925e-ab23-11f0-958d-87f55a6a9981", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddress: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
+		{RackID: "8a5303ae-ab23-11f0-bb87-632ad3e09c04", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddrs: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
+		{RackID: "93e2925e-ab23-11f0-958d-87f55a6a9981", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddrs: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
 	}
 
 	// PUT multiple hypervisor
@@ -260,7 +260,7 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 			if got.ID == expected.ID {
 				assert.Equal(t, expected.Name, got.Name, "Mismatch in Name for ID %s", expected.ID)
 				assert.Equal(t, expected.RackID, got.RackID, "Mismatch in RackID for ID %s", expected.ID)
-				assert.Equal(t, expected.IPAddress, got.IPAddress, "Mismatch in IPAddress for ID %s", expected.ID)
+				assert.Equal(t, expected.IPAddrs, got.IPAddrs, "Mismatch in IPAddress for ID %s", expected.ID)
 				assert.Equal(t, expected.PortRange, got.PortRange, "Mismatch in PortRange for ID %s", expected.ID)
 				assert.Equal(t, expected.SSHPort, got.SSHPort, "Mismatch in SSHPort for ID %s", expected.ID)
 				found = true
@@ -288,7 +288,7 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 	c := newClient(t)
 
 	device := cpLib.Device{
-		ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+		ID:            "nvme-fb6358162001",
 		SerialNumber:  "SN112233445",
 		State:         2,
 		HypervisorID:  "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
@@ -346,7 +346,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 
 	mockDevices := []cpLib.Device{
 		{
-			ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+			ID:            "nvme-fb6358162001",
 			SerialNumber:  "SN123456789",
 			State:         1,
 			HypervisorID:  "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
@@ -355,7 +355,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			Name:          "dev-1",
 		},
 		{
-			ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
+			ID:            "nvme-fb6358162002",
 			SerialNumber:  "SN987654321",
 			State:         0,
 			HypervisorID:  "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
@@ -373,13 +373,13 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
 				PartitionPath: "/part/path2",
 				NISDUUID:      "1",
-				DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
+				DevID:         "nvme-fb6358162002",
 				Size:          123467,
 			},
 			},
 		},
 		{
-			ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+			ID:            "nvme-fb6358162003",
 			SerialNumber:  "SN112233445",
 			State:         2,
 			HypervisorID:  "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
@@ -391,7 +391,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
 				PartitionPath: "/part/path3",
 				NISDUUID:      "1",
-				DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				DevID:         "nvme-fb6358162003",
 				Size:          123467,
 			},
 			},
@@ -437,20 +437,29 @@ func TestPutAndGetSingleNisd(t *testing.T) {
    c := newClient(t)
 
    nisd := cpLib.Nisd{
-           ClientPort:    7001,
            PeerPort:      8001,
-           ID:            "nisd-001",
+           ID:            "3355858e-ea0e-11f0-9768-e71fc352cd1d",
            FailureDomain: []string{
                "95f62aee-997e-11f0-9f1b-a70cff4b660b",
                "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
                "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-               "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+               "nvme-fb6358162001",
            },
-           IPAddr:        "192.168.1.10",
-           TotalSize:     1_000_000_000_000, // 1 TB
+		   TotalSize:     1_000_000_000_000, // 1 TB
            AvailableSize: 750_000_000_000,   // 750 GB
+           SocketPath:    "/path/sockets1",
+		   NetInfo: cpLib.NetInfoList{
+			 	cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+		   },
+		   NetInfoCnt: 2,
    }
-
 
    // PUT operation
    resp, err := c.PutNisd(&nisd)
@@ -483,46 +492,76 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			ClientPort: 7001,
 			PeerPort:   8001,
-			ID:         "nisd-001",
+			ID:         "3355858e-ea0e-11f0-9768-e71fc352cd1d",
 			FailureDomain: []string{
 				"95f62aee-997e-11f0-9f1b-a70cff4b660b",
 				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 				"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-				"6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+				"nvme-fb6358162001",
 			},
-			IPAddr:        "192.168.1.10",
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
+			SocketPath:    "/path/sockets1",
+		    NetInfo: cpLib.NetInfoList{
+			 	cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+		    },
+		    NetInfoCnt: 2,
 		},
 		{
-			ClientPort: 7002,
 			PeerPort:   8002,
-			ID:         "nisd-002",
+			ID:         "397fc08c-ea0e-11f0-9e9a-47f5587ee2a6",
 			FailureDomain: []string{
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
 				"3e2925e-ab23-11f0-958d-87f55a6a9981",
 				"8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
-				"6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
+				"nvme-fb6358162002",
 			},
-			IPAddr:        "192.168.1.11",
 			TotalSize:     500_000_000_000, // 500 GB
 			AvailableSize: 200_000_000_000, // 200 GB
+			SocketPath:    "/path/sockets2",
+			NetInfo: cpLib.NetInfoList{
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+			},
+			NetInfoCnt: 2,
 		},
 		{
-			ClientPort: 7003,
 			PeerPort:   8003,
-			ID:         "nisd-003",
+			ID:         "397fc08c-ea0e-11f0-9e9a-47f5587ee1f8",
 			FailureDomain: []string{
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
 				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 				"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-				"60447cd0-ab3e-11f0-aa15-1f40dd976538",
+				"nvme-fb6358162003",
 			},
-			IPAddr:        "192.168.1.12",
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
+			SocketPath:    "/path/sockets3",
+			NetInfo: cpLib.NetInfoList{
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+			},
+			NetInfoCnt: 2,
 		},
 	}
 
@@ -555,15 +594,27 @@ func TestMultiCreateVdev(t *testing.T) {
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
 		PeerPort: 8001,
-		ID:       "nisd-001",
+		ID:       "3355858e-ea0e-11f0-9768-e71fc352cd1d",
 		FailureDomain: []string{
 			"95f62aee-997e-11f0-9f1b-a70cff4b660b",
 			"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 			"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-			"60447cd0-ab3e-11f0-aa15-1f40dd976538",
+			"nvme-fb6358162001",
 		},
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
+		SocketPath:    "/path/sockets1",
+		NetInfo: cpLib.NetInfoList{
+			 	cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+		    },
+		NetInfoCnt: 2,
 	}
 	_, err := c.PutNisd(&n)
 	assert.NoError(t, err)
@@ -729,6 +780,18 @@ func TestVdevNisdChunk(t *testing.T) {
 		},
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
+		SocketPath:    "/path/sockets1",
+		NetInfo: cpLib.NetInfoList{
+			 	cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.1",
+					Port:   5444,
+				},
+				cpLib.NetworkInfo{
+					IPAddr: "192.168.0.0.2",
+					Port:   6444,
+				},
+		},
+		NetInfoCnt: 2,
 	}
 	resp, err := c.PutNisd(&mockNisd)
 	assert.NoError(t, err)
@@ -1038,7 +1101,6 @@ func TestHierarchy(t *testing.T) {
 		int64(0),
 		"Expected remaining space due to fault tolerance constraints",
 	)
-
 }
 
 func TestCreateSmallHierarchy(t *testing.T) {
@@ -1179,7 +1241,6 @@ func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
 
 	nisd := cpLib.Nisd{
-        ClientPort:    7001,
         PeerPort:      8001,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e55",
         FailureDomain: []string{
@@ -1188,7 +1249,6 @@ func TestCreateVdev(t *testing.T) {
             "bde1f08a-df63-11f0-88ef-430ddec19901",
             "nvme-fb6358163001",
         },
-        IPAddr:        "192.168.1.10",
         TotalSize:     1_000_000_000_000, // 1 TB
         AvailableSize: 750_000_000_000,   // 750 GB
    }
@@ -1209,8 +1269,7 @@ func TestCreateVdev(t *testing.T) {
 	log.Infof("vdev1 response status: %v", resp1)
 
 	nisd := cpLib.Nisd{
-        ClientPort:    7001,
-        PeerPort:      8001,
+        PeerPort:      8002,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e56",
         FailureDomain: []string{
             "9bc244bc-df29-11f0-a93b-277aec17e402",
@@ -1218,7 +1277,6 @@ func TestCreateVdev(t *testing.T) {
             "bde1f08a-df63-11f0-88ef-430ddec19902",
             "nvme-fb6358163002",
         },
-        IPAddr:        "192.168.1.10",
         TotalSize:     1_000_000_000_000, // 1 TB
         AvailableSize: 750_000_000_000,   // 750 GB
    }
@@ -1239,8 +1297,7 @@ func TestCreateVdev(t *testing.T) {
 	log.Infof("vdev2 response status: %v", resp2)
 
 	nisd := cpLib.Nisd{
-        ClientPort:    7001,
-        PeerPort:      8001,
+        PeerPort:      8003,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e57",
         FailureDomain: []string{
             "9bc244bc-df29-11f0-a93b-277aec17e403",
@@ -1248,7 +1305,6 @@ func TestCreateVdev(t *testing.T) {
             "bde1f08a-df63-11f0-88ef-430ddec19903",
             "nvme-fb6358163003",
         },
-        IPAddr:        "192.168.1.10",
         TotalSize:     1_000_000_000_000, // 1 TB
         AvailableSize: 750_000_000_000,   // 750 GB
    }
@@ -1269,8 +1325,7 @@ func TestCreateVdev(t *testing.T) {
 	log.Infof("vdev3 response status: %v", resp3)
 
 	nisd := cpLib.Nisd{
-        ClientPort:    7001,
-        PeerPort:      8001,
+        PeerPort:      8004,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e58",
         FailureDomain: []string{
             "9bc244bc-df29-11f0-a93b-277aec17e404",
@@ -1278,7 +1333,6 @@ func TestCreateVdev(t *testing.T) {
             "bde1f08a-df63-11f0-88ef-430ddec19904",
             "nvme-fb6358163004",
         },
-        IPAddr:        "192.168.1.10",
         TotalSize:     1_000_000_000_000, // 1 TB
         AvailableSize: 750_000_000_000,   // 750 GB
    }
@@ -1299,8 +1353,7 @@ func TestCreateVdev(t *testing.T) {
 	log.Infof("vdev4 response status: %v", resp4)
 
 	nisd := cpLib.Nisd{
-        ClientPort:    7001,
-        PeerPort:      8001,
+        PeerPort:      8005,
         ID:            "e3a6c2f1-9b7d-4a5e-8c42-1f0d6b9a7e59",
         FailureDomain: []string{
             "9bc244bc-df29-11f0-a93b-277aec17e405",
@@ -1308,7 +1361,6 @@ func TestCreateVdev(t *testing.T) {
             "bde1f08a-df63-11f0-88ef-430ddec19905",
             "nvme-fb6358163005",
         },
-        IPAddr:        "192.168.1.10",
         TotalSize:     1_000_000_000_000, // 1 TB
         AvailableSize: 750_000_000_000,   // 750 GB
    }
