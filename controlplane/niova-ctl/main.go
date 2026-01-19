@@ -7235,9 +7235,6 @@ func (m model) viewViewVdev() string {
 		} else {
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
 
-			// DEBUG: Add cursor information
-			s.WriteString(fmt.Sprintf("DEBUG: cursor=%d\n\n", m.vdevViewCursor))
-
 			// Calculate pagination - show reasonable number of items per page
 			itemsPerPage := 10
 			totalPages := (len(vdevs) + itemsPerPage - 1) / itemsPerPage
