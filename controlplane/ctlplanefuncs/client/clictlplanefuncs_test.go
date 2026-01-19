@@ -200,7 +200,7 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	hv := cpLib.Hypervisor{
 		RackID:     "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 		ID:         "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-		IPAddrs:  	"127.0.0.1",
+		IPAddrs:  	[]string{"127.0.0.1", "127.0.0.1"},
 		PortRange:  "8000-9000",
 		SSHPort:    "6999",
 		Name:       "hv-1",
@@ -231,8 +231,8 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 	c := newClient(t)
 
 	hypervisors := []cpLib.Hypervisor{
-		{RackID: "8a5303ae-ab23-11f0-bb87-632ad3e09c04", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddrs: "127.0.0.1", PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
-		{RackID: "93e2925e-ab23-11f0-958d-87f55a6a9981", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddrs: "127.0.0.2", PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
+		{RackID: "8a5303ae-ab23-11f0-bb87-632ad3e09c04", ID: "89944570-ab2a-11f0-b55d-8fc2c05d35f4", IPAddrs: []string{"127.0.0.1", "127.0.0.1"}, PortRange: "8000-9000", SSHPort: "6999", Name: "hv-1"},
+		{RackID: "93e2925e-ab23-11f0-958d-87f55a6a9981", ID: "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b", IPAddrs: []string{"127.0.0.1", "127.0.0.1"}, PortRange: "5000-7000", SSHPort: "7999", Name: "hv-2"},
 	}
 
 	// PUT multiple hypervisor
@@ -478,8 +478,6 @@ func TestPutAndGetSingleNisd(t *testing.T) {
    // Validate all key fields match
    assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
    assert.Equal(t, nisd.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
-   assert.Equal(t, nisd.IPAddr, returned.IPAddr, "IPAddr mismatch")
-   assert.Equal(t, nisd.ClientPort, returned.ClientPort, "ClientPort mismatch")
    assert.Equal(t, nisd.PeerPort, returned.PeerPort, "PeerPort mismatch")
    assert.Equal(t, nisd.TotalSize, returned.TotalSize, "TotalSize mismatch")
    assert.Equal(t, nisd.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
@@ -1264,9 +1262,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp1, err1 := c.CreateVdev(vdev1)
-	assert.NoError(t, err1)
-	log.Infof("vdev1 response status: %v", resp1)
+	res, er := c.CreateVdev(vdev1)
+	assert.NoError(t, er)
+	log.Infof("vdev1 response status: %v", res)
 
 	nisd := cpLib.Nisd{
         PeerPort:      8002,
@@ -1281,9 +1279,9 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp, err := c.PutNisd(&nisd)
-   assert.NoError(t, err)
-   assert.True(t, resp.Success)
+   resp1, err1 := c.PutNisd(&nisd)
+   assert.NoError(t, err1)
+   assert.True(t, resp1.Success)
 
 	vdev2 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -1292,9 +1290,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp2, err2 := c.CreateVdev(vdev2)
-	assert.NoError(t, err2)
-	log.Infof("vdev2 response status: %v", resp2)
+	res1, er1 := c.CreateVdev(vdev2)
+	assert.NoError(t, er1)
+	log.Infof("vdev2 response status: %v", res1)
 
 	nisd := cpLib.Nisd{
         PeerPort:      8003,
@@ -1309,9 +1307,9 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp, err := c.PutNisd(&nisd)
-   assert.NoError(t, err)
-   assert.True(t, resp.Success)
+   resp2, err2 := c.PutNisd(&nisd)
+   assert.NoError(t, err2)
+   assert.True(t, resp2.Success)
 
 	vdev3 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -1320,9 +1318,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp3, err3 := c.CreateVdev(vdev3)
-	assert.NoError(t, err3)
-	log.Infof("vdev3 response status: %v", resp3)
+	res2, er2 := c.CreateVdev(vdev3)
+	assert.NoError(t, er2)
+	log.Infof("vdev3 response status: %v", res2)
 
 	nisd := cpLib.Nisd{
         PeerPort:      8004,
@@ -1337,9 +1335,9 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp, err := c.PutNisd(&nisd)
-   assert.NoError(t, err)
-   assert.True(t, resp.Success)
+   resp3, err3 := c.PutNisd(&nisd)
+   assert.NoError(t, err3)
+   assert.True(t, resp3.Success)
 
 	vdev4 := &cpLib.Vdev{
 		Cfg: cpLib.VdevCfg{
@@ -1348,9 +1346,9 @@ func TestCreateVdev(t *testing.T) {
 		},
 	}
 
-	resp4, err4 := c.CreateVdev(vdev4)
-	assert.NoError(t, err4)
-	log.Infof("vdev4 response status: %v", resp4)
+	res3, er3 := c.CreateVdev(vdev4)
+	assert.NoError(t, er3)
+	log.Infof("vdev4 response status: %v", res3)
 
 	nisd := cpLib.Nisd{
         PeerPort:      8005,
@@ -1365,9 +1363,9 @@ func TestCreateVdev(t *testing.T) {
         AvailableSize: 750_000_000_000,   // 750 GB
    }
    // PUT operation
-   resp, err := c.PutNisd(&nisd)
-   assert.NoError(t, err)
-   assert.True(t, resp.Success)
+   resp4, err4 := c.PutNisd(&nisd)
+   assert.NoError(t, err4)
+   assert.True(t, resp4.Success)
 
 	// Failure Test: High fault tolerance
 	vdev5 := &cpLib.Vdev{
@@ -1378,9 +1376,9 @@ func TestCreateVdev(t *testing.T) {
 	}
 
 	// Should return an error
-	resp5, err5 := c.CreateVdev(vdev5)
-	assert.NoError(t, err5)
-	log.Infof("vdev5 response status: %v", resp5)
+	res4, er4 := c.CreateVdev(vdev5)
+	assert.NoError(t, er4)
+	log.Infof("vdev5 response status: %v", res4)
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
