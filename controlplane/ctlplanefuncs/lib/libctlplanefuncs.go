@@ -52,6 +52,7 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
+	FD_ANY    = -1
 	FD_PDU    = 0
 	FD_RACK   = 1
 	FD_HV     = 2
