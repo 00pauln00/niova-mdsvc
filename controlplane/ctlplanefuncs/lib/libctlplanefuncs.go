@@ -52,6 +52,7 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
+	FD_ANY    = -1
 	FD_PDU    = 0
 	FD_RACK   = 1
 	FD_HV     = 2
@@ -191,22 +192,32 @@ type Vdev struct {
 	NisdToChkMap []NisdChunk
 }
 
+type Filter struct {
+	ID   string
+	Type int
+}
+
+type VdevReq struct {
+	Vdev   *VdevCfg
+	Filter Filter
+}
+
 type GetReq struct {
 	ID     string
 	GetAll bool
 }
 
-func (vdev *Vdev) Init() error {
+func (vdev *VdevCfg) Init() error {
 
 	id, err := uuid.NewV7()
 	if err != nil {
 		log.Error("failed to generate uuid:", err)
 		return err
 	}
-	vdev.Cfg.ID = id.String()
-	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
-	vdev.Cfg.NumDataBlk = 0
-	vdev.Cfg.NumParityBlk = 0
+	vdev.ID = id.String()
+	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
+	vdev.NumDataBlk = 0
+	vdev.NumParityBlk = 0
 	return nil
 }
 
@@ -284,6 +295,8 @@ func RegisterGOBStructs() {
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
+	gob.Register(Filter{})
+	gob.Register(VdevReq{})
 }
 
 func (req *GetReq) ValidateRequest() error {
