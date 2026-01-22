@@ -382,7 +382,11 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	dev := args[0].(ctlplfl.Device)
-
+	err := dev.Validate()
+	if err != nil {
+		log.Error("failed to validate device: ", err)
+		return nil, err
+	}
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    dev.ID,
 		Success: true,
@@ -745,6 +749,11 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	pt := args[0].(ctlplfl.DevicePartition)
+	err := pt.Validate()
+	if err != nil {
+		log.Error("failed to validate partition: ", err)
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    pt.PartitionID,
 		Success: true,
@@ -790,6 +799,11 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 		Name:    pdu.ID,
 		Success: true,
 	}
+	err := pdu.Validate()
+	if err != nil {
+		log.Error("failed to validate PDU: ", err)
+		return nil, err
+	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to  encode pdu response: %v", err)
@@ -832,6 +846,11 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 	resp := &ctlplfl.ResponseXML{
 		Name:    rack.ID,
 		Success: true,
+	}
+	err := rack.Validate()
+	if err != nil {
+		log.Error("failed to validate Rack: ", err)
+		return nil, err
 	}
 	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
@@ -876,6 +895,11 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	// Decode the input buffer into structure format
 	hv := args[0].(ctlplfl.Hypervisor)
+	err := hv.Validate()
+	if err != nil {
+		log.Error("failed to validate hv: ", err)
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    hv.ID,
 		Success: true,
