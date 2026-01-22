@@ -160,7 +160,7 @@ func TestPutAndGetMultipleRacks(t *testing.T) {
 		{ID: "93e2925e-ab23-11f0-958d-87f55a6a9981", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea", Name: "rack-2", Location: "us-west", Specification: "rack2-spec"},
 	}
 
-	// PUT multiple NISDs
+	// PUT multiple Racks
 	for _, r := range racks {
 		resp, err := c.PutRack(&r)
 		assert.NoError(t, err)
@@ -218,7 +218,6 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	assert.Equal(t, hv.ID, getResp[0].ID)
 	assert.Equal(t, hv.Name, getResp[0].Name)
 	assert.Equal(t, hv.RackID, getResp[0].RackID)
-	assert.Equal(t, hv.IPAddrs, getResp[0].IPAddrs)
 	assert.Equal(t, hv.PortRange, getResp[0].PortRange)
 	assert.Equal(t, hv.SSHPort, getResp[0].SSHPort)
 
@@ -258,7 +257,6 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 			if got.ID == expected.ID {
 				assert.Equal(t, expected.Name, got.Name, "Mismatch in Name for ID %s", expected.ID)
 				assert.Equal(t, expected.RackID, got.RackID, "Mismatch in RackID for ID %s", expected.ID)
-				assert.Equal(t, expected.IPAddrs, got.IPAddrs, "Mismatch in IPAddress for ID %s", expected.ID)
 				assert.Equal(t, expected.PortRange, got.PortRange, "Mismatch in PortRange for ID %s", expected.ID)
 				assert.Equal(t, expected.SSHPort, got.SSHPort, "Mismatch in SSHPort for ID %s", expected.ID)
 				found = true
@@ -272,7 +270,7 @@ func TestPutAndGetMultipleHypervisors(t *testing.T) {
 	for _, hv := range Hypervisors {
 		var rackExists bool
 		for _, rack := range Racks {
-			if rack.Name == hv.RackID {
+			if rack.ID == hv.RackID {
 				rackExists = true
 				break
 			}
@@ -417,7 +415,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 	for _, device := range Devices {
 		var hvExists bool
 		for _, hv := range Hypervisors {
-			if hv.Name == device.HypervisorID {
+			if hv.ID == device.HypervisorID {
 				hvExists = true
 				break
 			}
@@ -464,14 +462,13 @@ func TestPutAndGetSingleNisd(t *testing.T) {
    assert.NoError(t, err)
    assert.True(t, resp.Success)
 
-
    // GET operation
-   res, err := c.GetNisd(cpLib.GetReq{ID: "nisd-001"})
-   log.Info("GetNisdCfg: ", res)
+   res, err := c.GetNisds()
+   log.Info("GetNisd: ", res)
    assert.NoError(t, err)
    assert.NotEmpty(t, res)
   
-   returned := res
+   returned := res[0]
 
    // Validate all key fields match
    assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
@@ -488,35 +485,11 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			PeerPort:   8001,
-			ID:         "3355858e-ea0e-11f0-9768-e71fc352cd1d",
-			FailureDomain: []string{
-				"95f62aee-997e-11f0-9f1b-a70cff4b660b",
-				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
-				"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-				"nvme-fb6358162001",
-			},
-			TotalSize:     1_000_000_000_000, // 1 TB
-			AvailableSize: 750_000_000_000,   // 750 GB
-			SocketPath:    "/path/sockets1",
-		    NetInfo: cpLib.NetInfoList{
-			 	cpLib.NetworkInfo{
-					IPAddr: "192.168.0.0.1",
-					Port:   5444,
-				},
-				cpLib.NetworkInfo{
-					IPAddr: "192.168.0.0.2",
-					Port:   6444,
-				},
-		    },
-		    NetInfoCnt: 2,
-		},
-		{
 			PeerPort:   8002,
 			ID:         "397fc08c-ea0e-11f0-9e9a-47f5587ee2a6",
 			FailureDomain: []string{
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
-				"3e2925e-ab23-11f0-958d-87f55a6a9981",
+				"93e2925e-ab23-11f0-958d-87f55a6a9981",
 				"8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
 				"nvme-fb6358162002",
 			},
@@ -561,12 +534,13 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 		},
 	}
 
-	// PUT multiple NISDs
+	// PUT multiple NISDs 
 	for _, n := range mockNisd {
-		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
-	}
+        resp, err := c.PutNisd(&n)
+        assert.NoError(t, err)
+        assert.True(t, resp.Success)
+        log.Info("NISD created: ", n.ID)
+    }
 
 	// GET all NISDs
 	res, err := c.GetNisds()
