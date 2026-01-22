@@ -1,7 +1,12 @@
 package authorizer
 
+import (
+	"github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+)
+
 type Authorizer struct {
-	Config Config
+	Config    Config
+	ColFamily string
 }
 
 // RBAC check
@@ -24,10 +29,18 @@ func (a *Authorizer) CheckRBAC(funcName string, userRoles []string) bool {
 	return false
 }
 
-func abacMatch(prefix, userID, value string) bool {
-	// User prefix to query the rocksdb
-	// value should be atleast in one of the key's substring
-	// obtained using rangeRead(prefix := prefix + userID)
+func (a *Authorizer) prefixQuery(prefix, userID, value string) bool {
+	var p pumiceserver.PmdbCbArgs
+	res, err := p.PmdbReadKV(a.ColFamily, prefix+value+"/u/"+userID)
+	if err != nil {
+		return false
+	}
+	if res == nil {
+		return false
+	}
+	if string(res) == "1" {
+		return true
+	}
 	return false
 }
 
@@ -40,8 +53,7 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 
 	for _, rule := range policy.ABAC {
 		value, exists := attributes[rule.Argument]
-		//TODO: Change the check!
-		if !exists || !abacMatch(rule.Prefix, userID, value) {
+		if !exists || !a.prefixQuery(rule.Prefix, userID, value) {
 			return false
 		}
 	}
@@ -50,5 +62,5 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 
 // Combined authorization
 func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string) bool {
-	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, attributes)
+	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, userID, attributes)
 }
