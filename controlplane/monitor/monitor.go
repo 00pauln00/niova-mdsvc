@@ -23,7 +23,7 @@ var (
 	totalSpace = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "nisd_total_space_bytes",
-			Help: "Total space per NID",
+			Help: "Total space per nisd",
 		},
 		[]string{"nisd"},
 	)
@@ -31,7 +31,7 @@ var (
 	availableSpace = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "nisd_available_space_bytes",
-			Help: "Available space per NID",
+			Help: "Available space per nisd",
 		},
 		[]string{"nisd"},
 	)
@@ -39,7 +39,7 @@ var (
 	availableRatio = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "nisd_available_space_ratio",
-			Help: "Available space ratio per NID",
+			Help: "Available space ratio per nisd",
 		},
 		[]string{"nisd"},
 	)
@@ -104,7 +104,7 @@ func runLDB(dbPath string) error {
 			continue
 		}
 
-		nid := m[1]
+		nisd := m[1]
 		field := m[2]
 
 		val, err := strconv.ParseUint(valStr, 10, 64)
@@ -112,25 +112,25 @@ func runLDB(dbPath string) error {
 			continue
 		}
 
-		e, ok := state[nid]
+		e, ok := state[nisd]
 		if !ok {
 			e = &entry{}
-			state[nid] = e
+			state[nisd] = e
 		}
 
 		switch field {
 		case "ts":
 			e.ts = val
-			totalSpace.WithLabelValues(nid).Set(float64(val))
+			totalSpace.WithLabelValues(nisd).Set(float64(val))
 		case "as":
 			e.as = val
-			availableSpace.WithLabelValues(nid).Set(float64(val))
+			availableSpace.WithLabelValues(nisd).Set(float64(val))
 		}
 	}
 
-	for nid, e := range state {
+	for nisd, e := range state {
 		if e.ts > 0 {
-			availableRatio.WithLabelValues(nid).
+			availableRatio.WithLabelValues(nisd).
 				Set(float64(e.as) / float64(e.ts))
 		}
 	}
