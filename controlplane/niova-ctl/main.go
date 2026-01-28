@@ -87,6 +87,8 @@ const (
 	stateViewVdev
 	stateDeleteVdev
 	stateShowAddedVdev
+	stateVdevCreationProgress
+	stateVdevCreationSummary
 	// Configuration View
 	stateViewConfig
 )
@@ -109,6 +111,7 @@ const (
 	inputNISDInstance
 	inputPartitionSize
 	// Vdev specific
+	inputVdevCount
 	inputVdevSize
 )
 
@@ -210,6 +213,12 @@ type model struct {
 	currentVdev            ctlplfl.Vdev
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
 	vdevSizeInput          textinput.Model
+	vdevCountInput         textinput.Model
+	vdevFormActiveField    inputField     // Track which field is currently active
+	createdVdevs           []ctlplfl.Vdev // Store created Vdevs for summary
+	vdevCreationProgress   int            // Track creation progress
+	vdevCreationTotal      int            // Total Vdevs to create
+	vdevCreationErrors     []string       // Store any creation errors
 
 	// Control Plane
 	cpClient            *ctlplcl.CliCFuncs
@@ -407,6 +416,12 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	vdevSizeInput.Placeholder = "e.g., 10GB, 1TB, 1PB"
 	vdevSizeInput.CharLimit = 32
 
+	// Initialize vdev count input
+	vdevCountInput := textinput.New()
+	vdevCountInput.Placeholder = "1"
+	vdevCountInput.CharLimit = 10
+	vdevCountInput.SetValue("1")
+
 	isConnected := false
 	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
 	if cpClient != nil {
@@ -443,6 +458,8 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
 		vdevSizeInput:         vdevSizeInput,
+		vdevCountInput:        vdevCountInput,
+		vdevFormActiveField:   inputVdevCount,
 		// Control plane configuration
 		cpEnabled:    cpEnabled,
 		cpRaftUUID:   cpRaftUUID,
@@ -632,6 +649,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateDeleteVdev(msg)
 	case stateShowAddedVdev:
 		m, cmd = m.updateShowAddedVdev(msg)
+	case stateVdevCreationProgress:
+		m, cmd = m.updateVdevCreationProgress(msg)
+	case stateVdevCreationSummary:
+		m, cmd = m.updateVdevCreationSummary(msg)
 	// Control Plane
 	// Configuration View
 	case stateViewConfig:
@@ -2151,6 +2172,10 @@ func (m model) View() string {
 		return m.viewDeleteVdev()
 	case stateShowAddedVdev:
 		return m.viewShowAddedVdev()
+	case stateVdevCreationProgress:
+		return m.viewVdevCreationProgress()
+	case stateVdevCreationSummary:
+		return m.viewVdevCreationSummary()
 	// Control Plane Views
 	// Configuration View
 	case stateViewConfig:
@@ -6956,9 +6981,17 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 			case 0: // Create Vdev
 				m.state = stateVdevForm
 				m.message = ""
-				// Initialize the size input field
+				// Initialize input fields
+				m.vdevCountInput.SetValue("1")
 				m.vdevSizeInput.SetValue("")
-				m.vdevSizeInput.Focus()
+				m.vdevFormActiveField = inputVdevCount
+				m.vdevCountInput.Focus()
+				m.vdevSizeInput.Blur()
+				// Reset creation tracking
+				m.createdVdevs = nil
+				m.vdevCreationErrors = nil
+				m.vdevCreationProgress = 0
+				m.vdevCreationTotal = 0
 				return m, textinput.Blink
 			case 1: // Edit Vdev
 				m.state = stateEditVdev
@@ -7085,48 +7118,86 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab", "shift+tab", "up", "down":
-			// Only one input field for now (size)
+		case "tab":
+			// Switch to next field
+			if m.vdevFormActiveField == inputVdevCount {
+				m.vdevFormActiveField = inputVdevSize
+				m.vdevCountInput.Blur()
+				m.vdevSizeInput.Focus()
+			} else {
+				m.vdevFormActiveField = inputVdevCount
+				m.vdevSizeInput.Blur()
+				m.vdevCountInput.Focus()
+			}
+			return m, textinput.Blink
+		case "shift+tab", "up":
+			// Switch to previous field
+			if m.vdevFormActiveField == inputVdevSize {
+				m.vdevFormActiveField = inputVdevCount
+				m.vdevSizeInput.Blur()
+				m.vdevCountInput.Focus()
+			} else {
+				m.vdevFormActiveField = inputVdevSize
+				m.vdevCountInput.Blur()
+				m.vdevSizeInput.Focus()
+			}
+			return m, textinput.Blink
+		case "down":
+			// Switch to next field (same as tab)
+			if m.vdevFormActiveField == inputVdevCount {
+				m.vdevFormActiveField = inputVdevSize
+				m.vdevCountInput.Blur()
+				m.vdevSizeInput.Focus()
+			} else {
+				m.vdevFormActiveField = inputVdevCount
+				m.vdevSizeInput.Blur()
+				m.vdevCountInput.Focus()
+			}
+			return m, textinput.Blink
 		case "enter":
-			// Create the Vdev
+			// Validate inputs and create Vdevs
+			countStr := m.vdevCountInput.Value()
 			sizeStr := m.vdevSizeInput.Value()
+
+			if countStr == "" {
+				m.message = "Please enter number of Vdevs"
+				return m, nil
+			}
 			if sizeStr == "" {
 				m.message = "Please enter Vdev size"
 				return m, nil
 			}
 
-			// Parse size (basic implementation)
+			// Parse count
+			count, err := strconv.Atoi(countStr)
+			if err != nil || count <= 0 {
+				m.message = "Please enter a valid number of Vdevs (positive integer)"
+				return m, nil
+			}
+			if count > 100 {
+				m.message = "Maximum 100 Vdevs can be created at once"
+				return m, nil
+			}
+
+			// Parse size
 			size, err := parseSize(sizeStr)
 			if err != nil {
 				m.message = fmt.Sprintf("Invalid size format: %v", err)
 				return m, nil
 			}
 
-			// Create Vdev
-			vdev := &ctlplfl.Vdev{
-				Cfg: ctlplfl.VdevCfg{
-					Size:       size,
-					NumReplica: 1,
-				}}
+			// Initialize creation tracking
+			m.vdevCreationTotal = count
+			m.vdevCreationProgress = 0
+			m.createdVdevs = make([]ctlplfl.Vdev, 0, count)
+			m.vdevCreationErrors = make([]string, 0)
 
-			// Call CreateVdev from control plane client
-			if m.cpClient != nil && m.cpConnected {
-				log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
-				resp, err := m.cpClient.CreateVdev(vdev)
-				if err != nil {
-					log.Error("CreateVdev failed: ", err)
-					m.message = fmt.Sprintf("Failed to create Vdev: %v", err)
-					return m, nil
-				}
-				log.Info("Vdev created successfully: ", resp.ID)
-				vdev.Cfg.ID = resp.ID
-				m.currentVdev = *vdev
-				m.state = stateShowAddedVdev
-				m.message = "Vdev created successfully"
-			} else {
-				log.Warn("Control plane not connected: cpClient=", m.cpClient != nil, " cpConnected=", m.cpConnected)
-				m.message = "Control plane not connected"
-			}
+			// Start creation process
+			m.state = stateVdevCreationProgress
+			m.message = ""
+
+			// Start creating Vdevs
+			return m, m.createVdevsCommand(size, count)
 		case "esc":
 			m.state = stateVdevManagement
 			m.message = ""
@@ -7134,12 +7205,18 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 		}
 	}
 
-	m.vdevSizeInput, cmd = m.vdevSizeInput.Update(msg)
+	// Update the active input field
+	if m.vdevFormActiveField == inputVdevCount {
+		m.vdevCountInput, cmd = m.vdevCountInput.Update(msg)
+	} else {
+		m.vdevSizeInput, cmd = m.vdevSizeInput.Update(msg)
+	}
+
 	return m, cmd
 }
 
 func (m model) viewVdevForm() string {
-	title := titleStyle.Render("Create Vdev")
+	title := titleStyle.Render("Create Vdev(s)")
 
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
@@ -7152,17 +7229,42 @@ func (m model) viewVdevForm() string {
 		}
 	}
 
-	s.WriteString("Enter the size for the Vdev:\n\n")
+	s.WriteString("Enter configuration for Vdev creation:\n\n")
+
+	// Count input
+	s.WriteString("Number of Vdevs: ")
+	s.WriteString(m.vdevCountInput.View())
+	s.WriteString("\n\n")
 
 	// Size input
 	s.WriteString("Vdev Size: ")
 	s.WriteString(m.vdevSizeInput.View())
 	s.WriteString("\n\n")
 
-	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n\n")
-	s.WriteString("The control plane will automatically allocate available storage.\n\n")
+	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n")
+	s.WriteString("The control plane will automatically allocate\n")
+	s.WriteString("available storage for all Vdevs.\n\n")
 
-	s.WriteString(helpStyle.Render("enter: create Vdev • esc: back"))
+	// Show summary if both fields have values
+	countStr := m.vdevCountInput.Value()
+	sizeStr := m.vdevSizeInput.Value()
+	if countStr != "" && sizeStr != "" {
+		if count, err := strconv.Atoi(countStr); err == nil && count > 0 {
+			if count == 1 {
+				s.WriteString(fmt.Sprintf("This will create 1 Vdev of size %s\n\n", sizeStr))
+			} else {
+				s.WriteString(fmt.Sprintf("This will create %d Vdevs of size %s each\n", count, sizeStr))
+				if size, err := parseSize(sizeStr); err == nil {
+					totalSize := size * int64(count)
+					s.WriteString(fmt.Sprintf("Total storage allocation: %s\n\n", formatSize(totalSize)))
+				} else {
+					s.WriteString("\n")
+				}
+			}
+		}
+	}
+
+	s.WriteString(helpStyle.Render("tab/shift+tab: navigate • enter: create • esc: back"))
 
 	return s.String()
 }
@@ -7414,7 +7516,212 @@ func (m model) viewShowAddedVdev() string {
 	return s.String()
 }
 
+// updateVdevCreationProgress handles Vdev creation progress
+func (m model) updateVdevCreationProgress(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "esc" {
+			// Allow canceling during creation (though Vdevs already created won't be rolled back)
+			m.state = stateVdevManagement
+			m.message = "Vdev creation canceled"
+			return m, nil
+		}
+	case VdevCreationMsg:
+		// Handle creation result
+		m.vdevCreationProgress++
+
+		if msg.Success {
+			m.createdVdevs = append(m.createdVdevs, *msg.Vdev)
+		} else {
+			m.vdevCreationErrors = append(m.vdevCreationErrors, fmt.Sprintf("Vdev %d: %v", msg.Index+1, msg.Error))
+		}
+
+		// Check if we need to create more Vdevs
+		if m.vdevCreationProgress < m.vdevCreationTotal {
+			// Get the size and create next Vdev
+			sizeStr := m.vdevSizeInput.Value()
+			if size, err := parseSize(sizeStr); err == nil {
+				return m, func() tea.Msg {
+					return m.createSingleVdev(size, m.vdevCreationProgress)
+				}
+			} else {
+				// Error parsing size, stop creation
+				m.vdevCreationErrors = append(m.vdevCreationErrors, fmt.Sprintf("Failed to parse size: %v", err))
+				m.state = stateVdevCreationSummary
+				return m, nil
+			}
+		} else {
+			// All done, show summary
+			m.state = stateVdevCreationSummary
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+// viewVdevCreationProgress shows progress of Vdev creation
+func (m model) viewVdevCreationProgress() string {
+	title := titleStyle.Render("Creating Vdevs")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	countStr := m.vdevCountInput.Value()
+	sizeStr := m.vdevSizeInput.Value()
+	s.WriteString(fmt.Sprintf("Creating %s Vdevs of size %s each...\n\n", countStr, sizeStr))
+
+	// Show progress for each Vdev
+	for i := 0; i < m.vdevCreationTotal; i++ {
+		if i < len(m.createdVdevs) {
+			s.WriteString(fmt.Sprintf("✓ Vdev %d/%d: ID %s created successfully\n", i+1, m.vdevCreationTotal, m.createdVdevs[i].Cfg.ID))
+		} else if i < m.vdevCreationProgress {
+			// This means there was an error for this Vdev
+			if i < len(m.vdevCreationErrors) {
+				s.WriteString(fmt.Sprintf("✗ Vdev %d/%d: Failed - %s\n", i+1, m.vdevCreationTotal, m.vdevCreationErrors[i]))
+			} else {
+				s.WriteString(fmt.Sprintf("✗ Vdev %d/%d: Failed - unknown error\n", i+1, m.vdevCreationTotal))
+			}
+		} else if i == m.vdevCreationProgress {
+			s.WriteString(fmt.Sprintf("⟳ Vdev %d/%d: Creating...\n", i+1, m.vdevCreationTotal))
+		} else {
+			s.WriteString(fmt.Sprintf("  Vdev %d/%d: Waiting...\n", i+1, m.vdevCreationTotal))
+		}
+	}
+
+	// Progress bar
+	s.WriteString("\n")
+	progress := float64(m.vdevCreationProgress) / float64(m.vdevCreationTotal)
+	barWidth := 40
+	filledWidth := int(progress * float64(barWidth))
+
+	s.WriteString("[")
+	for i := 0; i < barWidth; i++ {
+		if i < filledWidth {
+			s.WriteString("█")
+		} else {
+			s.WriteString("░")
+		}
+	}
+	s.WriteString(fmt.Sprintf("] %.0f%%\n\n", progress*100))
+
+	s.WriteString(helpStyle.Render("esc: cancel (already created Vdevs will remain)"))
+
+	return s.String()
+}
+
+// updateVdevCreationSummary handles the summary view
+func (m model) updateVdevCreationSummary(msg tea.Msg) (model, tea.Cmd) {
+	switch msg.(type) {
+	case tea.KeyMsg:
+		m.state = stateVdevManagement
+		m.message = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+// viewVdevCreationSummary shows the final summary of Vdev creation
+func (m model) viewVdevCreationSummary() string {
+	title := titleStyle.Render("Vdev Creation Summary")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	successCount := len(m.createdVdevs)
+	errorCount := len(m.vdevCreationErrors)
+
+	if errorCount == 0 {
+		s.WriteString(successStyle.Render(fmt.Sprintf("Successfully created %d Vdevs:", successCount)))
+	} else {
+		s.WriteString(fmt.Sprintf("Creation completed with %d successes and %d failures:\n", successCount, errorCount))
+	}
+	s.WriteString("\n\n")
+
+	// Show successful Vdevs
+	if successCount > 0 {
+		s.WriteString("✓ Successfully created:\n")
+		for i, vdev := range m.createdVdevs {
+			s.WriteString(fmt.Sprintf("%d. Vdev ID: %s\n", i+1, vdev.Cfg.ID))
+			s.WriteString(fmt.Sprintf("   Size: %s (%d bytes)\n", formatSize(vdev.Cfg.Size), vdev.Cfg.Size))
+			s.WriteString(fmt.Sprintf("   Status: Active\n\n"))
+		}
+	}
+
+	// Show errors if any
+	if errorCount > 0 {
+		s.WriteString("✗ Failed to create:\n")
+		for _, err := range m.vdevCreationErrors {
+			s.WriteString(fmt.Sprintf("   %s\n", err))
+		}
+		s.WriteString("\n")
+	}
+
+	if successCount > 0 {
+		sizeStr := m.vdevSizeInput.Value()
+		if size, err := parseSize(sizeStr); err == nil {
+			totalAllocated := size * int64(successCount)
+			s.WriteString(fmt.Sprintf("Total allocated: %s\n\n", formatSize(totalAllocated)))
+		}
+	}
+
+	s.WriteString(helpStyle.Render("enter: back to Vdev management"))
+
+	return s.String()
+}
+
 // Helper function to parse size strings like "10GB", "1TB", "1PB"
+// VdevCreationMsg represents a message for Vdev creation progress
+type VdevCreationMsg struct {
+	Index   int
+	Success bool
+	Vdev    *ctlplfl.Vdev
+	Error   error
+}
+
+// createVdevsCommand returns a command that creates multiple Vdevs
+func (m model) createVdevsCommand(size int64, count int) tea.Cmd {
+	return func() tea.Msg {
+		// Create the first Vdev
+		return m.createSingleVdev(size, 0)
+	}
+}
+
+// createSingleVdev creates a single Vdev and returns a VdevCreationMsg
+func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
+	vdev := &ctlplfl.Vdev{
+		Cfg: ctlplfl.VdevCfg{
+			Size:       size,
+			NumReplica: 1,
+		},
+	}
+
+	if m.cpClient != nil && m.cpConnected {
+		log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
+		resp, err := m.cpClient.CreateVdev(vdev)
+		if err != nil {
+			log.Error("CreateVdev failed: ", err)
+			return VdevCreationMsg{
+				Index:   index,
+				Success: false,
+				Error:   err,
+			}
+		}
+		log.Info("Vdev created successfully: ", resp.ID)
+		vdev.Cfg.ID = resp.ID
+		return VdevCreationMsg{
+			Index:   index,
+			Success: true,
+			Vdev:    vdev,
+		}
+	}
+
+	return VdevCreationMsg{
+		Index:   index,
+		Success: false,
+		Error:   fmt.Errorf("control plane not connected"),
+	}
+}
+
 func parseSize(sizeStr string) (int64, error) {
 	sizeStr = strings.TrimSpace(strings.ToUpper(sizeStr))
 
@@ -7465,6 +7772,21 @@ func parseSize(sizeStr string) (int64, error) {
 	}
 
 	return int64(num * float64(multiplier)), nil
+}
+
+// formatSize converts bytes to human readable format
+func formatSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp+1])
 }
 
 // validateDeviceInfo ensures device has required fields populated
