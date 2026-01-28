@@ -7,10 +7,12 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+	"time"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	"github.com/tidwall/btree"
@@ -938,8 +940,16 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
+	authtoken, err := auth.CreateAuthToken("my-vdev", req.ID, req.ID, time.Minute)
+	if err != nil {
+		log.Error("Token Creation failed with: ", err)
+		return nil, err
+	}
+	log.Info("Created AuthToken ", authtoken, " for vdev ", req.ID)
+	
 	vdevInfo := ctlplfl.VdevCfg{
 		ID: req.ID,
+		AuthToken: authtoken,
 	}
 
 	// TODO: move this to parsing file
