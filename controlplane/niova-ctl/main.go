@@ -7105,14 +7105,9 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			// Create Vdev
 			vdev := &ctlplfl.Vdev{
 				Cfg: ctlplfl.VdevCfg{
-					Size: size,
+					Size:       size,
+					NumReplica: 1,
 				}}
-
-			// Initialize the Vdev (generates ID)
-			if err := vdev.Init(); err != nil {
-				m.message = fmt.Sprintf("Failed to initialize Vdev: %v", err)
-				return m, nil
-			}
 
 			// Call CreateVdev from control plane client
 			if m.cpClient != nil && m.cpConnected {
@@ -7124,7 +7119,7 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 					return m, nil
 				}
 				log.Info("Vdev created successfully: ", resp.ID)
-				// TODO: Remove this here
+				vdev.Cfg.ID = resp.ID
 				m.currentVdev = *vdev
 				m.state = stateShowAddedVdev
 				m.message = "Vdev created successfully"
