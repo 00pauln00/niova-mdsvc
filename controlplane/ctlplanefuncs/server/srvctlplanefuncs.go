@@ -561,6 +561,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Infof("allocating vdev for ID: %s", vdev.Cfg.ID)
+	resp.ID = vdev.Cfg.ID
 	nisdMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	HR.Dump()
 	// allocate nisd chunks to vdev
