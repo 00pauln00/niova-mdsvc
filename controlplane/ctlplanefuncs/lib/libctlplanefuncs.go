@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	"github.com/google/uuid"
 )
 
@@ -284,6 +285,11 @@ func RegisterGOBStructs() {
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
+	gob.Register(userlib.GetReq{})
+	gob.Register(userlib.Capability{})
+	gob.Register(userlib.UserReq{})
+	gob.Register(userlib.User{})
+	gob.Register(userlib.UserResp{})
 }
 
 func (req *GetReq) ValidateRequest() error {
