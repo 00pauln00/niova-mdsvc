@@ -184,6 +184,7 @@ type VdevCfg struct {
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+	AuthToken    string
 }
 
 type Vdev struct {
