@@ -43,6 +43,10 @@ jobs:
     - name: Install python libraries
       run:  pip3 install setuptools wheel func_timeout sockets psutil dpath jmespath
 
+    - name: Install RocksDB tools
+      run: sudo apt-get install -y rocksdb-tools
+      shell: bash
+
     - name: build libbacktrace
       run: cd modules/niova-pumicedb/modules/libbacktrace/ && 
            ./configure && 
