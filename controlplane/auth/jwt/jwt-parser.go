@@ -1,16 +1,11 @@
 package auth
 
 import (
-	"fmt"
 	"time"
+	"log"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-type Claims struct {
-	Vdevuuid string
-	jwt.RegisteredClaims
-}
 
 type TokenCreator struct {
 	secret []byte
@@ -26,43 +21,38 @@ func NewTokenCreator(secret, userid string, ttl time.Duration) *TokenCreator {
 	}
 }
 
-func (tc *TokenCreator) CreateToken(vdevID string) (string, error) {
+func (tc *TokenCreator) CreateToken(customClaims map[string]any) (string, error) {
 	now := time.Now()
 
-	claims := Claims{
-		Vdevuuid: vdevID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    tc.userID,
-			ExpiresAt: jwt.NewNumericDate(now.Add(tc.ttl)),
-		},
+	claims := jwt.MapClaims{}
+
+	for k, v := range customClaims {
+		claims[k] = v
 	}
-
-	// 🔍 Print claims before signing
-	fmt.Printf("Claims:\n  Vdevuuid: %s\n Issuer: %s\n  ExpiresAt: %v\n",
-		claims.Vdevuuid,
-		claims.Issuer,
-		claims.ExpiresAt.Time,
-	)
-
+	// Enforce registered claims
+	claims["iss"] = tc.userID
+	claims["exp"] = jwt.NewNumericDate(now.Add(tc.ttl))
+	
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
 
 	tokenString, err := token.SignedString(tc.secret)
 	if err != nil {
+		log.Fatal( "Failed to create the token string: ", err)
 		return "", err
 	}
 
-	// 🔐 Print token string and size
-	fmt.Println("JWT Token:", tokenString)
-	fmt.Println("Token size (bytes):", len(tokenString))
+	log.Println("JWT Token:", tokenString)
+	log.Println("Token size (bytes):", len(tokenString))
 
 	return tokenString, nil
 }
 
-func CreateAuthToken (secret, userid, vdevID string, ttl time.Duration)( string, error) {
+func CreateAuthToken (secret, userid string, claims map[string]any, ttl time.Duration)( string, error) {
 	tc := NewTokenCreator(secret, userid, ttl)
-	authtoken, err := tc.CreateToken(vdevID)
+	authtoken, err := tc.CreateToken(claims)
 	if err != nil {
-		fmt.Println("Error creating Auth Token: ",err)
+		log.Fatal("Error creating Auth Token: ",err)
+		return "", err
 	}
 	return authtoken, nil
 }

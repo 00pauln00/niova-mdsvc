@@ -941,12 +941,17 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
-	authtoken, err := auth.CreateAuthToken("my-vdev", req.ID, req.ID, time.Minute)
+
+	claims := map[string]any{
+		"vdevID": req.ID,
+	}
+
+	authtoken, err := auth.CreateAuthToken("my-vdev", req.ID, claims, time.Minute)
 	if err != nil {
 		log.Error("Token Creation failed with: ", err)
 		return nil, err
 	}
-	log.Info("Created AuthToken ", authtoken, " for vdev ", req.ID)
+	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
 	
 	vdevInfo := ctlplfl.VdevCfg{
 		ID: req.ID,

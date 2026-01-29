@@ -15,8 +15,11 @@ func TestCreateToken(t *testing.T) {
 	vdevID := "17bb86da-f796-11f0-bc55-dbe415d16723"
 
 	fmt.Println("Populated: vdevid= ", vdevID, " userid= ", userID, " claims.ExpiresAt= ", ttl)
+	customclaims := map[string]any{
+		"vdevID": vdevID,
+	}
 
-	tokenString, err := CreateAuthToken(secret, userID, vdevID, ttl)
+	tokenString, err := CreateAuthToken(secret, userID, customclaims, ttl)
 	if err != nil {
 		t.Fatalf("CreateToken failed: %v", err)
 	}
@@ -25,7 +28,7 @@ func TestCreateToken(t *testing.T) {
 		t.Fatal("expected token string, got empty")
 	}
 
-	claims := &Claims{}
+	claims := jwt.MapClaims{}
 
 	token, err := jwt.ParseWithClaims(
 		tokenString,
@@ -46,22 +49,42 @@ func TestCreateToken(t *testing.T) {
 	if !token.Valid {
 		t.Fatal("token is invalid")
 	}
+	// ---- CLAIM CHECKS ----
 
-	// Validate claims
-	if claims.Vdevuuid != vdevID {
-		t.Errorf("expected vdevuuid %q, got %q", vdevID, claims.Vdevuuid)
+	// vdevID (custom claim)
+	gotVdevID, ok := claims["vdevID"].(string)
+	if !ok {
+		t.Fatal("vdevID claim missing or not a string")
+	}
+	if gotVdevID != vdevID {
+		t.Fatalf("unexpected vdevID: got=%s want=%s", gotVdevID, vdevID)
 	}
 
-	if claims.Issuer != userID {
-		t.Errorf("expected issuer %q, got %q", userID, claims.Issuer)
+	// issuer (iss)
+	iss, ok := claims["iss"].(string)
+	if !ok {
+		t.Fatal("iss claim missing or not a string")
+	}
+	if iss != userID {
+		t.Fatalf("unexpected issuer: got=%s want=%s", iss, userID)
 	}
 
-	if claims.ExpiresAt == nil {
-		t.Fatal("expected ExpiresAt to be set")
+	// expiration (exp)
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		t.Fatal("exp claim missing or not numeric")
 	}
 
-	if time.Until(claims.ExpiresAt.Time) <= 0 {
-		t.Fatal("token already expired")
+	expTime := time.Unix(int64(exp), 0)
+	now := time.Now()
+
+	if expTime.Before(now) {
+		t.Fatalf("token already expired: exp=%v now=%v", expTime, now)
 	}
-	fmt.Println(" Parsed from token: vdevid= ", claims.Vdevuuid, " userid= ", claims.Issuer, " claims.ExpiresAt= ", claims.ExpiresAt)
+
+	// sanity check: expiration roughly matches ttl
+	if expTime.After(now.Add(ttl + 5*time.Second)) {
+		t.Fatalf("expiration too far in future: exp=%v", expTime)
+	}
+	t.Logf("PASS: JWT created and validated successfully | vdevID=%s issuer=%s expires_at=%v", gotVdevID, iss, expTime,)
 }
