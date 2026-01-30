@@ -4,7 +4,16 @@ import (
 	"testing"
 	"time"
 	"fmt"
+	"os"
+
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 )
+
+func TestMain(m *testing.M) {
+    logLevel := "ERROR" // try TRACE / INFO / ERROR
+    log.InitXlog("", &logLevel)
+    os.Exit(m.Run())
+}
 
 func TestCreateToken(t *testing.T) {
 	secret := "mysecretkey"

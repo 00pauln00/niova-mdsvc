@@ -2,27 +2,23 @@ package auth
 
 import (
 	"time"
-	"log"
 	"fmt"
-
+	
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type TokenCreator struct {
+type Token struct {
 	secret []byte
 	userID string
 	ttl    time.Duration
 }
 
-func NewTokenCreator(secret, userid string, ttl time.Duration) *TokenCreator {
-	return &TokenCreator{
-		secret: []byte(secret),
-		userID: userid,
-		ttl:    ttl,
-	}
-}
+func (tc *Token) CreateToken(customClaims map[string]any) (string, error) {
 
-func (tc *TokenCreator) CreateToken(customClaims map[string]any) (string, error) {
+	xlog.Trace("CreateToken: enter")
+	defer xlog.Trace("CreateToken: exit")
+
 	now := time.Now()
 
 	claims := jwt.MapClaims{}
@@ -33,32 +29,49 @@ func (tc *TokenCreator) CreateToken(customClaims map[string]any) (string, error)
 	// Enforce registered claims
 	claims["iss"] = tc.userID
 	claims["exp"] = jwt.NewNumericDate(now.Add(tc.ttl))
+
+	xlog.Debug("Provided token claims: ", claims)
 	
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
 
 	tokenString, err := token.SignedString(tc.secret)
 	if err != nil {
-		log.Fatal( "Failed to create the token string: ", err)
+		xlog.Error( "Failed to create the token string: ", err)
 		return "", err
 	}
 
-	log.Println("JWT Token:", tokenString)
-	log.Println("Token size (bytes):", len(tokenString))
+	xlog.Debug("Token size in (bytes):", len(tokenString))
 
 	return tokenString, nil
 }
 
 func CreateAuthToken (secret, userid string, claims map[string]any, ttl time.Duration)( string, error) {
-	tc := NewTokenCreator(secret, userid, ttl)
+
+	xlog.Trace("CreateAuthToken: enter")
+	defer xlog.Trace("CreateAuthToken: exit")
+
+	xlog.Debugf("Creating auth token: issuer=%s ttl=%s", userid, ttl)
+	tc := &Token{
+		secret: []byte(secret),
+		userID: userid,
+		ttl:    ttl,
+	}
+	
 	authtoken, err := tc.CreateToken(claims)
 	if err != nil {
-		log.Fatal("Error creating Auth Token: ",err)
+		xlog.Error("Error creating Auth Token: ",err)
 		return "", err
 	}
+	xlog.Info("JWT token created successfully: ", authtoken)
 	return authtoken, nil
 }
 
 func VerifyAuthToken( tokenString, secret string) (jwt.MapClaims, error) {
+
+	xlog.Trace("VerifyAuthToken: enter")
+	defer xlog.Trace("VerifyAuthToken: exit")
+
+	xlog.Debug("Verifying auth token with token: ", tokenString, " secret: ", secret)
 	
 	claims := jwt.MapClaims{}
 
@@ -66,6 +79,7 @@ func VerifyAuthToken( tokenString, secret string) (jwt.MapClaims, error) {
 		func(token *jwt.Token) (any, error) {
 			// Enforce signing algorithm
 			if token.Method != jwt.SigningMethodHS512 {
+				xlog.Error("Unexpected signing method: ", token.Method)
 				return nil, fmt.Errorf("unexpected signing method: %v",
 					token.Header["alg"],
 				)
@@ -73,18 +87,18 @@ func VerifyAuthToken( tokenString, secret string) (jwt.MapClaims, error) {
 			return []byte(secret), nil
 			},
 	)
-
+	
     if err != nil {
-        log.Println("jwt verify: parse failed:", err)
+        xlog.Error("jwt verify: parse failed:", err)
         return nil, err
     }
 
     if !token.Valid {
         err := fmt.Errorf("invalid token")
-        log.Println("jwt verify: token invalid")
+        xlog.Error("jwt verify: token invalid")
         return nil, err
     }
 
-    log.Println("jwt verify: token verified successfully", claims)
+    xlog.Info("jwt verify: token verified successfully", claims)
     return claims, nil
 }
