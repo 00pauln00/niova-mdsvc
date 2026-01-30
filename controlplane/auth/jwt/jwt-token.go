@@ -3,6 +3,7 @@ package auth
 import (
 	"time"
 	"log"
+	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -57,3 +58,33 @@ func CreateAuthToken (secret, userid string, claims map[string]any, ttl time.Dur
 	return authtoken, nil
 }
 
+func VerifyAuthToken( tokenString, secret string) (jwt.MapClaims, error) {
+	
+	claims := jwt.MapClaims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims,
+		func(token *jwt.Token) (any, error) {
+			// Enforce signing algorithm
+			if token.Method != jwt.SigningMethodHS512 {
+				return nil, fmt.Errorf("unexpected signing method: %v",
+					token.Header["alg"],
+				)
+			}
+			return []byte(secret), nil
+			},
+	)
+
+    if err != nil {
+        log.Println("jwt verify: parse failed:", err)
+        return nil, err
+    }
+
+    if !token.Valid {
+        err := fmt.Errorf("invalid token")
+        log.Println("jwt verify: token invalid")
+        return nil, err
+    }
+
+    log.Println("jwt verify: token verified successfully", claims)
+    return claims, nil
+}
