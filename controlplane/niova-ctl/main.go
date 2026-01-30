@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -3823,7 +3824,7 @@ func (m model) viewPartitionCreate() string {
 		s.WriteString(line + "\n")
 	}
 
-		s.WriteString("\nControls: ↑/↓ navigate, enter select device, esc back")
+	s.WriteString("\nControls: ↑/↓ navigate, enter select device, esc back")
 
 	return s.String()
 }
@@ -3886,11 +3887,34 @@ func (m model) viewPartitionView() string {
 		hvDeviceGroups[partition.HvName][partition.DeviceName] = append(hvDeviceGroups[partition.HvName][partition.DeviceName], partition)
 	}
 
+	// Sort hypervisor names to ensure consistent ordering
+	var hvNames []string
+	for hvName := range hvDeviceGroups {
+		hvNames = append(hvNames, hvName)
+	}
+	sort.Strings(hvNames)
+
 	partitionIndex := 0
-	for hvName, devices := range hvDeviceGroups {
+	for _, hvName := range hvNames {
+		devices := hvDeviceGroups[hvName]
 		s.WriteString(fmt.Sprintf("Hypervisor: %s\n", hvName))
-		for deviceName, partitions := range devices {
+
+		// Sort device names to ensure consistent ordering
+		var deviceNames []string
+		for deviceName := range devices {
+			deviceNames = append(deviceNames, deviceName)
+		}
+		sort.Strings(deviceNames)
+
+		for _, deviceName := range deviceNames {
+			partitions := devices[deviceName]
 			s.WriteString(fmt.Sprintf("  Device: %s\n", deviceName))
+
+			// Sort partitions by PartitionID to ensure consistent ordering
+			sort.Slice(partitions, func(i, j int) bool {
+				return partitions[i].Partition.PartitionID < partitions[j].Partition.PartitionID
+			})
+
 			for _, partition := range partitions {
 				cursor := "    "
 				if partitionIndex == m.selectedPartitionIdx {
@@ -4017,11 +4041,34 @@ func (m model) viewPartitionDelete() string {
 		hvDeviceGroups[partition.HvName][partition.DeviceName] = append(hvDeviceGroups[partition.HvName][partition.DeviceName], partition)
 	}
 
+	// Sort hypervisor names to ensure consistent ordering
+	var hvNames []string
+	for hvName := range hvDeviceGroups {
+		hvNames = append(hvNames, hvName)
+	}
+	sort.Strings(hvNames)
+
 	partitionIndex := 0
-	for hvName, devices := range hvDeviceGroups {
+	for _, hvName := range hvNames {
+		devices := hvDeviceGroups[hvName]
 		s.WriteString(fmt.Sprintf("Hypervisor: %s\n", hvName))
-		for deviceName, partitions := range devices {
+
+		// Sort device names to ensure consistent ordering
+		var deviceNames []string
+		for deviceName := range devices {
+			deviceNames = append(deviceNames, deviceName)
+		}
+		sort.Strings(deviceNames)
+
+		for _, deviceName := range deviceNames {
+			partitions := devices[deviceName]
 			s.WriteString(fmt.Sprintf("  Device: %s\n", deviceName))
+
+			// Sort partitions by PartitionID to ensure consistent ordering
+			sort.Slice(partitions, func(i, j int) bool {
+				return partitions[i].Partition.PartitionID < partitions[j].Partition.PartitionID
+			})
+
 			for _, partition := range partitions {
 				cursor := "    "
 				if partitionIndex == m.selectedPartitionIdx {
