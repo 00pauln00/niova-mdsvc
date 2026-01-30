@@ -7320,8 +7320,15 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
 				vdevs, err := m.cpClient.GetVdevCfgs()
-				if err == nil && m.vdevViewCursor < len(vdevs)-1 {
-					m.vdevViewCursor++
+				if err == nil && len(vdevs) > 0 {
+					// Sort to ensure consistent ordering for navigation bounds
+					sort.Slice(vdevs, func(i, j int) bool {
+						return vdevs[i].ID < vdevs[j].ID
+					})
+					// Ensure cursor stays within bounds
+					if m.vdevViewCursor < len(vdevs)-1 {
+						m.vdevViewCursor++
+					}
 				}
 			}
 		case "esc":
@@ -7356,11 +7363,26 @@ func (m model) viewViewVdev() string {
 		} else if len(vdevs) == 0 {
 			s.WriteString("No Vdevs found.\n\n")
 		} else {
+			// Sort vdevs by ID to ensure consistent ordering
+			sort.Slice(vdevs, func(i, j int) bool {
+				return vdevs[i].ID < vdevs[j].ID
+			})
+
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
 
-			// Calculate pagination - show reasonable number of items per page
-			itemsPerPage := 10
+			// Calculate pagination - show 7 items per page to keep header visible
+			itemsPerPage := 7 // Show 7 items per page for optimal display
 			totalPages := (len(vdevs) + itemsPerPage - 1) / itemsPerPage
+
+			// Ensure cursor is within bounds
+			if m.vdevViewCursor < 0 {
+				m.vdevViewCursor = 0
+			}
+			if m.vdevViewCursor >= len(vdevs) {
+				m.vdevViewCursor = len(vdevs) - 1
+			}
+
+			// Calculate which page the cursor is on
 			currentPage := m.vdevViewCursor / itemsPerPage
 			startIdx := currentPage * itemsPerPage
 			endIdx := startIdx + itemsPerPage
@@ -7368,9 +7390,13 @@ func (m model) viewViewVdev() string {
 				endIdx = len(vdevs)
 			}
 
+			// Always show pagination info when there are multiple pages or for debugging
 			if totalPages > 1 {
-				s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d)\n\n",
-					currentPage+1, totalPages, startIdx+1, endIdx))
+				s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d of %d) | Cursor at position %d\n\n",
+					currentPage+1, totalPages, startIdx+1, endIdx, len(vdevs), m.vdevViewCursor+1))
+			} else {
+				// Show cursor position for debugging even on single page
+				s.WriteString(fmt.Sprintf("Cursor at position %d of %d\n\n", m.vdevViewCursor+1, len(vdevs)))
 			}
 
 			for i := startIdx; i < endIdx; i++ {
@@ -7417,8 +7443,14 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 			if m.cpClient != nil && m.cpConnected {
 				req := &ctlplfl.GetReq{ID: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
-				if err == nil && m.vdevDeleteCursor < len(vdevs)-1 {
-					m.vdevDeleteCursor++
+				if err == nil {
+					// Sort to ensure consistent ordering for navigation bounds
+					sort.Slice(vdevs, func(i, j int) bool {
+						return vdevs[i].Cfg.ID < vdevs[j].Cfg.ID
+					})
+					if m.vdevDeleteCursor < len(vdevs)-1 {
+						m.vdevDeleteCursor++
+					}
 				}
 			}
 		case "enter", " ":
@@ -7434,6 +7466,10 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 					m.message = "No Vdevs available to delete"
 					return m, nil
 				}
+				// Sort to ensure consistent ordering for selection
+				sort.Slice(vdevs, func(i, j int) bool {
+					return vdevs[i].Cfg.ID < vdevs[j].Cfg.ID
+				})
 				if m.vdevDeleteCursor >= 0 && m.vdevDeleteCursor < len(vdevs) {
 					selectedVdev := vdevs[m.vdevDeleteCursor]
 					// TODO: Implement actual DeleteVdev function when available
@@ -7478,6 +7514,11 @@ func (m model) viewDeleteVdev() string {
 		} else if len(vdevs) == 0 {
 			s.WriteString("No Vdevs found to delete.\n\n")
 		} else {
+			// Sort vdevs by ID to ensure consistent ordering
+			sort.Slice(vdevs, func(i, j int) bool {
+				return vdevs[i].Cfg.ID < vdevs[j].Cfg.ID
+			})
+
 			s.WriteString("Select a Vdev to delete:\n\n")
 			for i, vdev := range vdevs {
 				cursor := "  "
