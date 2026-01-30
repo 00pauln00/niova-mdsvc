@@ -647,6 +647,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &req)
 	log.Infof("allocating vdev for ID: %s", req.Vdev.ID)
+	resp.ID = req.Vdev.ID
 	allocMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	defer allocMap.Clear()
 	HR.Dump()

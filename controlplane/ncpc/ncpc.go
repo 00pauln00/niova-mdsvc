@@ -11,6 +11,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -730,13 +731,44 @@ func isSingleWriteReqValid(cli *clientHandler) bool {
 	return true
 }
 
+func DumpVdevCfgsToJSON(vdevs []cpLib.VdevCfg, filePath string) error {
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(dir, ".vdevcfg-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	enc := json.NewEncoder(tmpFile)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(vdevs); err != nil {
+		tmpFile.Close()
+		return err
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpFile.Name(), filePath)
+}
+
 func main() {
 	//Intialize client object
 	clientObj := clientHandler{}
-	var nisdDetails string
+	var nisdDetails, vdevOutputFile string
 	var vdevSize int64
 	flag.StringVar(&nisdDetails, "nd", "", "enter nisd details in json format")
 	flag.Int64Var(&vdevSize, "vds", 100*1024*1024*1024, "enter vdev size in bytes")
+	flag.StringVar(&vdevOutputFile, "vo", "vdev-config.json", "Path to the output JSON file where VDEV configuration will be written")
 
 	//Get commandline parameters.
 	clientObj.getCmdParams()
@@ -900,16 +932,15 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Info("Vdev created successfully with UUID:", resp)
-		// case "GetVdev":
-		// 	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		// 	vdev, err := c.GetVdevCfg(&cpLib.GetReq{
-		// 		GetAll: true,
-		// 	})
-		// 	if err != nil {
-		// 		log.Error("failed to get vdev info:", err)
-		// 		os.Exit(-1)
-		// 	}
-		// 	log.Info("Vdev info retrieved successfully:", vdev)
+	case "GetVdevs":
+		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
+		vdevs, err := c.GetVdevCfgs()
+		if err != nil {
+			log.Error("failed to get vdev info:", err)
+			os.Exit(-1)
+		}
+		log.Info("Vdev info retrieved successfully: count:", len(vdevs))
+		DumpVdevCfgsToJSON(vdevs, vdevOutputFile)
 
 	}
 
