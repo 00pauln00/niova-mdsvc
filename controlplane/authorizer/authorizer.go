@@ -1,12 +1,53 @@
 package authorizer
 
 import (
+	"os"
+
 	"github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"gopkg.in/yaml.v3"
 )
 
 type Authorizer struct {
-	Config    Config
-	ColFamily string
+	Config Config
+}
+
+type Config map[string]FunctionPolicy
+
+type FunctionPolicy struct {
+	RBAC []string   `yaml:"RBAC"`
+	ABAC []ABACRule `yaml:"ABAC"`
+}
+
+type ABACRule struct {
+	Argument string `yaml:"argument"`
+	Prefix   string `yaml:"prefix"`
+}
+
+func (a *Authorizer) LoadConfig(filePath string) error {
+	// Implementation for loading configuration goes here
+	// Its an YAML file with following format
+	/*
+		function_name:
+		  RBAC:
+		    - role1
+		    - role2
+		  ABAC:
+		    - argument: "arg1"
+		      prefix: "prefix1/"
+		    - argument: "arg2"
+		      prefix: "prefix2/"
+	*/
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	err = yaml.Unmarshal(data, a.Config)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // RBAC check
@@ -29,9 +70,8 @@ func (a *Authorizer) CheckRBAC(funcName string, userRoles []string) bool {
 	return false
 }
 
-func (a *Authorizer) prefixQuery(prefix, userID, value string) bool {
-	var p pumiceserver.PmdbCbArgs
-	res, err := p.PmdbReadKV(a.ColFamily, prefix+value+"/u/"+userID)
+func prefixQuery(prefix, userID, value string, pumicecb *pumiceserver.PmdbCbArgs, colFamily string) bool {
+	res, err := pumicecb.PmdbReadKV(colFamily, "/u/"+userID+"/"+prefix+"/"+value)
 	if err != nil {
 		return false
 	}
@@ -45,7 +85,7 @@ func (a *Authorizer) prefixQuery(prefix, userID, value string) bool {
 }
 
 // ABAC check
-func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[string]string) bool {
+func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[string]string, pumicecb *pumiceserver.PmdbCbArgs, colFamily string) bool {
 	policy, ok := a.Config[funcName]
 	if !ok {
 		return false
@@ -53,7 +93,7 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 
 	for _, rule := range policy.ABAC {
 		value, exists := attributes[rule.Argument]
-		if !exists || !a.prefixQuery(rule.Prefix, userID, value) {
+		if !exists || !prefixQuery(rule.Prefix, userID, value, pumicecb, colFamily) {
 			return false
 		}
 	}
@@ -61,6 +101,6 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 }
 
 // Combined authorization
-func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string) bool {
-	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, userID, attributes)
+func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string, pumicecb *pumiceserver.PmdbCbArgs, colfamily string) bool {
+	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, userID, attributes, pumicecb, colfamily)
 }
