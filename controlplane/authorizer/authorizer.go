@@ -3,7 +3,7 @@ package authorizer
 import (
 	"os"
 
-	"github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,8 +70,8 @@ func (a *Authorizer) CheckRBAC(funcName string, userRoles []string) bool {
 	return false
 }
 
-func prefixQuery(prefix, userID, value string, pumicecb *pumiceserver.PmdbCbArgs, colFamily string) bool {
-	res, err := pumicecb.PmdbReadKV(colFamily, "/u/"+userID+"/"+prefix+"/"+value)
+func prefixQuery(prefix, userID, value string, ds pumicestore.DataStore, colFamily string) bool {
+	res, err := ds.Read("/u/"+userID+"/"+prefix+value, colFamily)
 	if err != nil {
 		return false
 	}
@@ -85,7 +85,7 @@ func prefixQuery(prefix, userID, value string, pumicecb *pumiceserver.PmdbCbArgs
 }
 
 // ABAC check
-func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[string]string, pumicecb *pumiceserver.PmdbCbArgs, colFamily string) bool {
+func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[string]string, ds pumicestore.DataStore, colFamily string) bool {
 	policy, ok := a.Config[funcName]
 	if !ok {
 		return false
@@ -93,7 +93,7 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 
 	for _, rule := range policy.ABAC {
 		value, exists := attributes[rule.Argument]
-		if !exists || !prefixQuery(rule.Prefix, userID, value, pumicecb, colFamily) {
+		if !exists || !prefixQuery(rule.Prefix, userID, value, ds, colFamily) {
 			return false
 		}
 	}
@@ -101,6 +101,6 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 }
 
 // Combined authorization
-func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string, pumicecb *pumiceserver.PmdbCbArgs, colfamily string) bool {
-	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, userID, attributes, pumicecb, colfamily)
+func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string, ds pumicestore.DataStore, colfamily string) bool {
+	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, userID, attributes, ds, colfamily)
 }

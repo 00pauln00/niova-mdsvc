@@ -15,6 +15,7 @@ import (
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
 	"github.com/tidwall/btree"
 )
 
@@ -94,7 +95,7 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	//FIX: Arbitrary read size
 	key := fmt.Sprintf("snap/%s", Snap.SnapName)
 	log.Info("Key to be read : ", key)
-	readResult, err := cbargs.PmdbReadKV(colmfamily, key)
+	readResult, err := cbargs.Pstore.Read(key, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -109,14 +110,14 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	Snap := args[1].(ctlplfl.SnapXML)
 
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-	rrargs := PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	rrargs := pumicestore.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     key,
 	}
-	readResult, err := cbArgs.PmdbRangeRead(rrargs)
+	readResult, err := cbArgs.Pstore.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -186,18 +187,18 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
-func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
+func applyKV(chgs []funclib.CommitChg, ds pumicestore.DataStore) error {
 	for _, chg := range chgs {
-		var rc int
+		var err error
 		if len(chg.Value) == 0 {
 			log.Info("Deleting key: ", string(chg.Key))
-			rc = cbargs.PmdbDeleteKV(colmfamily, string(chg.Key))
+			err = ds.Delete(string(chg.Key), colmfamily)
 		} else {
 			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
-			rc = cbargs.PmdbWriteKV(colmfamily, string(chg.Key), string(chg.Value))
+			err = ds.Write(string(chg.Key), string(chg.Value), colmfamily)
 		}
-		if rc < 0 {
-			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
+		if err != nil {
+			log.Error("Failed to apply changes for key: ", string(chg.Key), " err: ", err)
 			return fmt.Errorf("failed to apply changes for key: %s", string(chg.Key))
 		}
 	}
@@ -215,7 +216,7 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	err = applyKV(intrm.Changes, cbargs)
+	err = applyKV(intrm.Changes, cbargs.Pstore)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		return nil, err
@@ -243,7 +244,7 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	err = applyKV(intrm.Changes, cbargs)
+	err = applyKV(intrm.Changes, cbargs.Pstore)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		return nil, err
@@ -261,14 +262,14 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	log.Trace("fetching nisd details for key : ", NisdCfgKey)
-	rrargs := PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	rrargs := pumicestore.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     NisdCfgKey,
 	}
-	readResult, err := cbArgs.PmdbRangeRead(rrargs)
+	readResult, err := cbArgs.Pstore.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -287,14 +288,14 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	}
 	key := getConfKey(NisdCfgKey, req.ID)
 	log.Trace("fetching nisd details for key : ", key)
-	rrargs := PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	rrargs := pumicestore.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     key,
 	}
-	readResult, err := cbArgs.PmdbRangeRead(rrargs)
+	readResult, err := cbArgs.Pstore.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -304,8 +305,8 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -347,8 +348,8 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 	key := getConfKey(deviceCfgKey, req.ID)
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -706,11 +707,11 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(ptKey, req.ID)
 	}
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -746,11 +747,11 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -790,11 +791,11 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -840,11 +841,11 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		key = getConfKey(hvKey, req.ID)
 	}
 
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -865,11 +866,11 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		key = getConfKey(vdevKey, req.ID)
 	}
 
-	nisdResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       NisdCfgKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    NisdCfgKey,
+	nisdResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      NisdCfgKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   NisdCfgKey,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -878,11 +879,11 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	// ParseEntitiesMap now returns map[string]Entity
 	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, NisdParser{})
 
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -990,11 +991,11 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	vKey := getConfKey(vdevKey, req.ID)
-	rqResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       vKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    vKey,
+	rqResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   vKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
@@ -1052,11 +1053,11 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	rqResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       vdevKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    vdevKey,
+	rqResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vdevKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   vdevKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
@@ -1084,11 +1085,11 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 
 	log.Info("searching for key:", vcKey)
 
-	rqResult, err := cbargs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       vcKey,
-		BufSize:   cbargs.ReplySize,
-		Prefix:    vcKey,
+	rqResult, err := cbargs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vcKey,
+		BufSize:  cbargs.ReplySize,
+		Prefix:   vcKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
@@ -1130,11 +1131,11 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 
 func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       argsKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    argsKey,
+	readResult, err := cbArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      argsKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   argsKey,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
