@@ -1,18 +1,21 @@
 #!/bin/bash
 # start_pumice.sh
-# Starts CTLPlane proxy and server.
-
-# Usage: ./start_pumice.sh <config.yaml>
+# Starts CTLPlane proxy and server with execution logging.
 
 set -e
 
-CFG_FILE="$1"
-[ -f "$CFG_FILE" ] || exit 1
+log() {
+    echo "[start_pumice][$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
 
-# ---- Parse YAML (simple, dependency-free) ----
+CFG_FILE="$(readlink -f "$1")"
+[ -f "$CFG_FILE" ] || { echo "Config file not found"; exit 1; }
+
+log "Using config file: $CFG_FILE"
+
+# ---- Parse YAML ----
 
 BASE_DIR=$(awk -F: '$1=="base_dir" {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' "$CFG_FILE")
-
 [ -n "$BASE_DIR" ] || exit 1
 
 CONFIGS_DIR="${BASE_DIR}/configs"
@@ -21,6 +24,12 @@ LIBEXEC_DIR="${BASE_DIR}/libexec/niova"
 CTL_DIR="${BASE_DIR}/ctl"
 LOG_DIR="${BASE_DIR}/logs"
 
+log "BASE_DIR=${BASE_DIR}"
+log "CONFIGS_DIR=${CONFIGS_DIR}"
+
+[ -d "${CONFIGS_DIR}" ] || { log "configs dir missing"; exit 1; }
+[ -f "${CONFIGS_DIR}/gossipNodes" ] || { log "gossipNodes missing"; exit 1; }
+
 # ---- Environment ----
 
 export NIOVA_LOCAL_CTL_SVC_DIR="${CONFIGS_DIR}"
@@ -28,23 +37,32 @@ export LD_LIBRARY_PATH="/lib:${LIB_DIR}"
 export NIOVA_INOTIFY_BASE_PATH="${CTL_DIR}"
 export NIOVA_APPLY_HANDLER_VERSION=0
 
+log "Environment variables exported"
+
 # ---- Detect container IP ----
 
 MY_IP=$(hostname -I | awk '{print $1}')
+log "Detected container IP: ${MY_IP}"
 
 # ---- Raft UUID ----
 
 RAFT_FILE=$(ls -1 "${CONFIGS_DIR}"/*.raft | head -n1)
-[ -n "$RAFT_FILE" ] || exit 1
-RAFT_UUID=$(basename "$RAFT_FILE" .raft)
+[ -n "$RAFT_FILE" ] || { log "No .raft file found"; exit 1; }
 
-# ---- Peer UUID (match IPADDR) ----
+RAFT_UUID=$(basename "$RAFT_FILE" .raft)
+log "Using RAFT_UUID=${RAFT_UUID}"
+
+# ---- Peer UUID ----
 
 PEER_FILE=$(grep -il "IPADDR[[:space:]]\+${MY_IP}" "${CONFIGS_DIR}"/*.peer | head -n1)
-[ -n "$PEER_FILE" ] || exit 1
+[ -n "$PEER_FILE" ] || { log "No peer file for IP ${MY_IP}"; exit 1; }
+
 PEER_UUID=$(basename "$PEER_FILE" .peer)
+log "Using PEER_UUID=${PEER_UUID}"
 
 # ---- Start pmdb server ----
+
+log "Starting CTLPlane_pmdbServer"
 
 "${LIBEXEC_DIR}/CTLPlane_pmdbServer" \
     -r "${RAFT_UUID}" \
@@ -54,11 +72,14 @@ PEER_UUID=$(basename "$PEER_FILE" .peer)
     -p 1 \
     > "${LOG_DIR}/pmdb_server_${PEER_UUID}_stdouterr" 2>&1 &
 
+log "pmdb server launched (PID $!)"
+
 sleep 5
 
 # ---- Start proxy client ----
 
 CUUID=$(uuidgen)
+log "Starting CTLPlane_proxy with client UUID=${CUUID}"
 
 "${LIBEXEC_DIR}/CTLPlane_proxy" \
     -r "${RAFT_UUID}" \
@@ -67,3 +88,5 @@ CUUID=$(uuidgen)
     -n "Node_${CUUID}" \
     -l "${LOG_DIR}/pmdb_client_${CUUID}.log" \
     > "${LOG_DIR}/pmdb_client_${CUUID}_stdouterr" 2>&1
+
+log "CTLPlane_proxy exited"

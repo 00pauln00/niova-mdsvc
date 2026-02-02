@@ -1,63 +1,51 @@
 #!/bin/bash
-
-# Usage: ./deploy.sh <config.yaml>
-# YAML format:
-# nodes:
-#   - 192.168.96.84
-#   - 192.168.96.85
-#   - 192.168.96.86
-#   - 192.168.96.87
-#   - 192.168.96.88
-# 
-# gossip:
-#   port_range:
-#     start: 10010
-#     end: 10020
-#
-# ports:
-#   peer: 10000
-#   client: 10005
-#
-# base_dir: /work/ctlplane
-
-
 set -e
 
-CFG_FILE="$1"
-[ -f "$CFG_FILE" ] || exit 1
+# Usage: sudo ./deploy.sh config.yaml
 
-# Extract nodes (assumes simple YAML, no inline comments)
+CFG_FILE="$(readlink -f "$1")"
+[ -f "$CFG_FILE" ] || { echo "Config file not found"; exit 1; }
+
+# ---------------- YAML PARSING ----------------
+
+# nodes
 mapfile -t IPS < <(awk '
-    $1 == "nodes:" {in_nodes=1; next}
-    in_nodes && $1 ~ "-" {print $2; next}
-    in_nodes && $1 !~ "-" {exit}
+    $1=="nodes:" {flag=1; next}
+    flag && $1=="-" {print $2; next}
+    flag && $1!~"-" {exit}
 ' "$CFG_FILE")
 
-# Extract base_dir
-BASE_DIR=$(awk -F: '$1 == "base_dir" {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' "$CFG_FILE")
+# gossip ports
+START_GOSSIP_PORT=$(awk '/start:/ {print $2}' "$CFG_FILE")
+END_GOSSIP_PORT=$(awk '/end:/ {print $2}' "$CFG_FILE")
 
-[ "${#IPS[@]}" -gt 0 ] || exit 1
-[ -n "$BASE_DIR" ] || exit 1
+# peer / client ports
+PEER_PORT=$(awk '/peer:/ {print $2}' "$CFG_FILE")
+CLIENT_PORT=$(awk '/client:/ {print $2}' "$CFG_FILE")
 
-# Build pdsh hostlist
+# base_dir
+BASE_DIR=$(awk -F: '$1=="base_dir" {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' "$CFG_FILE")
+
+[ "${#IPS[@]}" -gt 0 ] || { echo "No nodes found"; exit 1; }
+[ -n "$BASE_DIR" ] || { echo "base_dir missing"; exit 1; }
+
 PDSH_HOSTS=$(IFS=','; echo "${IPS[*]}")
+
+# ---------------- FRESH SETUP ----------------
 
 echo "WARNING: A fresh run will DELETE the existing database at ${BASE_DIR}/db!"
 read -p "Do you want to continue with a fresh setup? [y/N]: " FRESH
 
 if [[ "$FRESH" =~ ^[Yy]$ ]]; then
     rm -rf "${BASE_DIR}"
-    mkdir -p "${BASE_DIR}/db"
-    mkdir -p "${BASE_DIR}/ctl"
-    mkdir -p "${BASE_DIR}/logs"
+    mkdir -p "${BASE_DIR}/"{db,ctl,logs}
+    cp "$CFG_FILE" "${BASE_DIR}/"
 
     rm -rf configs
     ./gen_raft_cfgs.sh "$CFG_FILE"
 
     cp -r configs "${BASE_DIR}/"
-    cp -r lib "${BASE_DIR}/"
-    cp -r libexec "${BASE_DIR}/"
-    cp start_pumice.sh "${BASE_DIR}/"
+    cp -r lib libexec start_pumice.sh "${BASE_DIR}/"
 fi
 
 pdsh -w "${PDSH_HOSTS}" "${BASE_DIR}/start_pumice.sh"

@@ -17,19 +17,20 @@
 
 set -e
 
-CFG_FILE="$1"
+# Resolve config file to absolute path (required before cd)
+CFG_FILE="$(readlink -f "$1")"
 [ -f "$CFG_FILE" ] || exit 1
 
 mkdir -p configs
 cd configs || exit 1
 
-# ---- Parse YAML (simple awk-based parser, no dependencies) ----
+# ---- Parse YAML (awk, no external deps, BusyBox-safe) ----
 
 # nodes
 mapfile -t GOSSIP_IPS < <(awk '
-    $1=="nodes:" {in=1; next}
-    in && $1=="-" {print $2; next}
-    in && $1!~"-" {exit}
+    $1=="nodes:" {flag=1; next}
+    flag && $1=="-" {print $2; next}
+    flag && $1!~"-" {exit}
 ' "$CFG_FILE")
 
 # gossip ports
