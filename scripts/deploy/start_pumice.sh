@@ -39,10 +39,10 @@ export NIOVA_APPLY_HANDLER_VERSION=0
 
 log "Environment variables exported"
 
-# ---- Detect container IP ----
+# Collect all IPs (space-separated → newline)
+IPS=$(hostname -I | tr ' ' '\n')
 
-MY_IP=$(hostname -I | awk '{print $1}')
-log "Detected container IP: ${MY_IP}"
+log "Detected nodes IPs: $(echo "$IPS" | tr '\n' ' ')"
 
 # ---- Raft UUID ----
 
@@ -53,9 +53,16 @@ RAFT_UUID=$(basename "$RAFT_FILE" .raft)
 log "Using RAFT_UUID=${RAFT_UUID}"
 
 # ---- Peer UUID ----
+# Match if ANY detected IP appears in any .peer file
 
-PEER_FILE=$(grep -il "IPADDR[[:space:]]\+${MY_IP}" "${CONFIGS_DIR}"/*.peer | head -n1)
-[ -n "$PEER_FILE" ] || { log "No peer file for IP ${MY_IP}"; exit 1; }
+PEER_FILE=$(
+  for ip in $IPS; do
+    grep -il "IPADDR[[:space:]]\+${ip}" "${CONFIGS_DIR}"/*.peer 2>/dev/null && break
+  done | head -n1
+)
+
+[ -n "$PEER_FILE" ] || { log "No peer file matching detected IPs"; exit 1; }
+
 
 PEER_UUID=$(basename "$PEER_FILE" .peer)
 log "Using PEER_UUID=${PEER_UUID}"
