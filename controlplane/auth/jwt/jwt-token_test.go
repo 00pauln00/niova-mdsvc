@@ -12,7 +12,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-    logLevel := "ERROR" // try TRACE / INFO / ERROR
+    logLevel := "TRACE" // try TRACE / INFO / ERROR
     log.InitXlog("", &logLevel)
     os.Exit(m.Run())
 }
@@ -25,10 +25,10 @@ func TestCreateToken(t *testing.T) {
 	fmt.Println("Populated: vdevid= ", vdevID, " userid= ", userID, " claims.ExpiresAt= ", ttl)
 	customclaims := map[string]any{
 		"vdevID": vdevID,
+		"userID": userID,
 	}
 	tc := &Token {
 		Secret: []byte(secret),
-		UserID: userID,
 		TTL: ttl,
 	}
 	tokenString, err := tc.CreateToken(customclaims)
@@ -56,8 +56,8 @@ func TestCreateToken(t *testing.T) {
 	if !ok {
 		t.Fatal("iss claim missing or not a string")
 	}
-	if iss != userID {
-		t.Fatalf("unexpected issuer: got=%s want=%s", iss, userID)
+	if iss != TOKEN_ISSUER {
+		t.Fatalf("unexpected issuer: got=%s want=%s", iss, TOKEN_ISSUER)
 	}
 	// expiration (exp)
 	exp, ok := claims["exp"].(float64)
@@ -78,7 +78,6 @@ func TestCreateToken(t *testing.T) {
 
 func TestVerifyAuthToken(t *testing.T) {
 	secret := "mysecretkey"
-	issuer := "239f524c-f796-11f0-8b18-f703cba9e01d"
 	ttl := time.Minute
 	vdevID := "17bb86da-f796-11f0-bc55-dbe415d16723"
 	customClaims := map[string]any{
@@ -86,7 +85,6 @@ func TestVerifyAuthToken(t *testing.T) {
 	}
 	tc := &Token {
 			Secret: []byte(secret),
-			UserID: issuer,
 			TTL: ttl,
 		}
 	// Step 1: Create token
@@ -100,7 +98,6 @@ func TestVerifyAuthToken(t *testing.T) {
 	testsecret := "testsecret"
 	tc2 := &Token {
 			Secret: []byte(testsecret),
-			UserID: issuer,
 			TTL: ttl,
 		  }
 	// Step 2: Verify token
@@ -121,8 +118,8 @@ func TestVerifyAuthToken(t *testing.T) {
 	if !ok {
 		t.Fatal("iss claim missing or not string")
 	}
-	if iss != issuer {
-		t.Fatalf("unexpected issuer: got=%s want=%s", iss, issuer)
+	if iss != TOKEN_ISSUER {
+		t.Fatalf("unexpected issuer: got=%s want=%s", iss, TOKEN_ISSUER)
 	}
 	// Step 5: Validate expiration
 	exp, ok := claims["exp"].(float64)
@@ -139,7 +136,6 @@ func TestVerifyAuthToken(t *testing.T) {
 
 func TestVerifyToken_TamperedToken(t *testing.T) {
 	secret := "mysecretkey"
-	issuer := "239f524c-f796-11f0-8b18-f703cba9e01d"
 	ttl := time.Minute
 	vdevID := "17bb86da-f796-11f0-bc55-dbe415d16723"
 	customClaims := map[string]any{
@@ -147,7 +143,6 @@ func TestVerifyToken_TamperedToken(t *testing.T) {
 	}
 	tc := &Token{
 		Secret: []byte(secret),
-		UserID: issuer,
 		TTL:    ttl,
 	}
 	// Step 1: Create valid token
@@ -176,12 +171,12 @@ func TestVerifyToken_ExpiryAfterTTL(t *testing.T) {
 	vdevID := "17bb86da-f796-11f0-bc55-dbe415d16723"
 	customClaims := map[string]any{
 		"vdevID": vdevID,
+		"userID": issuer,
 	}
 	// Very short TTL
 	ttl := 1 * time.Second
 	tc := &Token{
 		Secret: []byte(secret),
-		UserID: issuer,
 		TTL:    ttl,
 	}
 	// Step 1: Create token

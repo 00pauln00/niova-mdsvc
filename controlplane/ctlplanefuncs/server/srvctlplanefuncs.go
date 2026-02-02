@@ -944,7 +944,6 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	
 	authtc := &auth.Token{
 		Secret: []byte(ctlplfl.NISD_SECRET),
-		UserID: req.ID,
 		TTL: time.Minute,
 	}
 

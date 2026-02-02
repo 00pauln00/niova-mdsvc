@@ -8,23 +8,27 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const TOKEN_ISSUER = "ControlPlane"
+
 type Token struct {
-	Secret []byte
-	UserID string
+	Secret []byte 
 	TTL    time.Duration
 }
 
 func (tc *Token) CreateToken(customClaims map[string]any) (string, error) {
 	xlog.Trace("CreateToken: enter")
 	defer xlog.Trace("CreateToken: exit")
-	xlog.Debugf("Creating token: issuer=%s ttl=%s", tc.UserID, tc.TTL)
+	xlog.Debugf("Creating token with ttl=%s", tc.TTL)
 	now := time.Now()
 	claims := jwt.MapClaims{}
 	for k, v := range customClaims {
 		claims[k] = v
 	}
 	// Enforce registered claims
-	claims["iss"] = tc.UserID
+	// In the case of a service token, the user ID is excluded as 
+	// NISD does not maintain user information. For authentication tokens, 
+	// the user ID may be included as part of the token claims.
+	claims["iss"] = TOKEN_ISSUER
 	claims["exp"] = jwt.NewNumericDate(now.Add(tc.TTL))
 	xlog.Debug("Provided token claims: ", claims)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
