@@ -67,6 +67,11 @@ PEER_FILE=$(
 PEER_UUID=$(basename "$PEER_FILE" .peer)
 log "Using PEER_UUID=${PEER_UUID}"
 
+STORE=$(grep -E '^STORE[[:space:]]+' "$PEER_FILE" | awk '{print $2}')
+[ -n "$STORE" ] || { log "STORE not found in $PEER_FILE"; exit 1; }
+
+log "Using STORE=${STORE}"
+
 # ---- Start pmdb server ----
 
 log "Starting CTLPlane_pmdbServer"
@@ -88,12 +93,22 @@ sleep 5
 CUUID=$(uuidgen)
 log "Starting CTLPlane_proxy with client UUID=${CUUID}"
 
+# Start CTLPlane_proxy in background
 "${LIBEXEC_DIR}/CTLPlane_proxy" \
     -r "${RAFT_UUID}" \
     -u "${CUUID}" \
     -pa "${CONFIGS_DIR}/gossipNodes" \
     -n "Node_${CUUID}" \
     -l "${LOG_DIR}/pmdb_client_${CUUID}.log" \
-    > "${LOG_DIR}/pmdb_client_${CUUID}_stdouterr" 2>&1
+    > "${LOG_DIR}/pmdb_client_${CUUID}_stdouterr" 2>&1 &
 
-log "CTLPlane_proxy exited"
+log "CTLPlane_proxy started"
+
+log "Starting cp-monitor tool"
+
+# Start cp-monitor in background (parallel)
+"${LIBEXEC_DIR}/cp-monitor" \
+    -db "${STORE}/db" \
+    > "${LOG_DIR}/cp_monitor_${CUUID}_stdouterr" 2>&1 &
+
+log "cp-monitor started"
