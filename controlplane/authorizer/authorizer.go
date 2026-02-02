@@ -3,7 +3,7 @@ package authorizer
 import (
 	"os"
 
-	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
+	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,7 +70,7 @@ func (a *Authorizer) CheckRBAC(funcName string, userRoles []string) bool {
 	return false
 }
 
-func prefixQuery(prefix, userID, value string, ds pumicestore.DataStore, colFamily string) bool {
+func prefixQuery(prefix, userID, value string, ds storageiface.DataStore, colFamily string) bool {
 	res, err := ds.Read("/u/"+userID+"/"+prefix+value, colFamily)
 	if err != nil {
 		return false
@@ -85,7 +85,7 @@ func prefixQuery(prefix, userID, value string, ds pumicestore.DataStore, colFami
 }
 
 // ABAC check
-func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[string]string, ds pumicestore.DataStore, colFamily string) bool {
+func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[string]string, ds storageiface.DataStore, colFamily string) bool {
 	policy, ok := a.Config[funcName]
 	if !ok {
 		return false
@@ -101,6 +101,6 @@ func (a *Authorizer) CheckABAC(funcName string, userID string, attributes map[st
 }
 
 // Combined authorization
-func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string, ds pumicestore.DataStore, colfamily string) bool {
+func (a *Authorizer) Authorize(funcName string, userID string, userRoles []string, attributes map[string]string, ds storageiface.DataStore, colfamily string) bool {
 	return a.CheckRBAC(funcName, userRoles) && a.CheckABAC(funcName, userID, attributes, ds, colfamily)
 }

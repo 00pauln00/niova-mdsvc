@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
+	"github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/memstore"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -99,7 +99,7 @@ func TestCheckABAC(t *testing.T) {
 		},
 	}
 
-	ds := pumicestore.NewMemStore()
+	ds := memstore.NewMemStore()
 	ds.Write("/u/user1/ns/dev", "1", "")
 	ds.Write("/u/user1/obj-owner/resource1", "1", "")
 
@@ -139,7 +139,7 @@ func TestAuthorize(t *testing.T) {
 		},
 	}
 
-	ds := pumicestore.NewMemStore()
+	ds := memstore.NewMemStore()
 	ds.Write("/u/user1/ns/dev", "1", "")
 
 	testCases := []struct {
