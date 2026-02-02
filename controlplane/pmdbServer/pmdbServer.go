@@ -31,11 +31,11 @@ import (
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
 	leaseServerLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/server"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
-	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	lookout "github.com/00pauln00/niova-pumicedb/go/pkg/utils/ctlmonitor"
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	uuid "github.com/satori/go.uuid"
@@ -83,7 +83,7 @@ func PopulateHierarchy() error {
 	var cbargs PumiceDBServer.PmdbCbArgs
 	for {
 		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
-		readResult, err := cbargs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		readResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
 			Selector: colmfamily,
 			Key:      key,
 			Prefix:   prefix,
@@ -558,7 +558,7 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	byteToStr := string(applyNiovaKV.Value)
 
 	log.Trace("Write the KeyValue by calling PmdbWriteKV")
-	err := applyArgs.Pstore.Write(applyNiovaKV.Key, byteToStr, colmfamily)
+	err := applyArgs.Store.Write(applyNiovaKV.Key, byteToStr, colmfamily)
 	if err != nil {
 		log.Error("Value not written to rocksdb")
 		return -1
@@ -598,7 +598,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if reqStruct.Operation == requestResponseLib.KV_READ {
 
 		log.Trace("read - ", reqStruct.SeqNum)
-		readResult, err := readArgs.Pstore.Read(reqStruct.Key, colmfamily)
+		readResult, err := readArgs.Store.Read(reqStruct.Key, colmfamily)
 		singleReadMap := make(map[string][]byte)
 		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
@@ -610,7 +610,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult, err := readArgs.Pstore.RangeRead(pumicestore.RangeReadArgs{
+		readResult, err := readArgs.Store.RangeRead(storageiface.RangeReadArgs{
 			Selector:   colmfamily,
 			Key:        reqStruct.Key,
 			BufSize:    readArgs.ReplySize - int64(encodingOverhead),
