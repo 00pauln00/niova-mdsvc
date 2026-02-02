@@ -56,8 +56,8 @@ func TestCreateToken(t *testing.T) {
 	if !ok {
 		t.Fatal("iss claim missing or not a string")
 	}
-	if iss != TOKEN_ISSUER {
-		t.Fatalf("unexpected issuer: got=%s want=%s", iss, TOKEN_ISSUER)
+	if iss != TokenIssuer {
+		t.Fatalf("unexpected issuer: got=%s want=%s", iss, TokenIssuer)
 	}
 	// expiration (exp)
 	exp, ok := claims["exp"].(float64)
@@ -118,8 +118,8 @@ func TestVerifyAuthToken(t *testing.T) {
 	if !ok {
 		t.Fatal("iss claim missing or not string")
 	}
-	if iss != TOKEN_ISSUER {
-		t.Fatalf("unexpected issuer: got=%s want=%s", iss, TOKEN_ISSUER)
+	if iss != TokenIssuer {
+		t.Fatalf("unexpected issuer: got=%s want=%s", iss, TokenIssuer)
 	}
 	// Step 5: Validate expiration
 	exp, ok := claims["exp"].(float64)
@@ -134,7 +134,7 @@ func TestVerifyAuthToken(t *testing.T) {
 	t.Logf("PASS: VerifyAuthToken succeeded | vdevID=%s issuer=%s expires_at=%v", gotVdevID, iss, expTime,)
 }
 
-func TestVerifyToken_TamperedToken(t *testing.T) {
+func TestVerifyTamperedToken(t *testing.T) {
 	secret := "mysecretkey"
 	ttl := time.Minute
 	vdevID := "17bb86da-f796-11f0-bc55-dbe415d16723"
@@ -165,7 +165,7 @@ func TestVerifyToken_TamperedToken(t *testing.T) {
 		t.Logf("PASS: tampered JWT correctly rejected | error=%v", err)
 }
 
-func TestVerifyToken_ExpiryAfterTTL(t *testing.T) {
+func TestVerifyTokenExpiryAfterTTL(t *testing.T) {
 	secret := "mysecretkey"
 	issuer := "239f524c-f796-11f0-8b18-f703cba9e01d"
 	vdevID := "17bb86da-f796-11f0-bc55-dbe415d16723"
