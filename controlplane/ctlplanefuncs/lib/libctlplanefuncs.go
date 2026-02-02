@@ -46,6 +46,8 @@ const (
 	MAX_REPLY_SIZE = 4 * 1024 * 1024
 	NAME           = "name"
 
+	NISD_SECRET    = "Nisd-secret"
+
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
 	RUNNING       = 3
@@ -185,6 +187,7 @@ type VdevCfg struct {
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+	AuthToken    string
 }
 
 type Vdev struct {

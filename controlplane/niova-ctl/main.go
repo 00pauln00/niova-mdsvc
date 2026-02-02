@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,7 +62,6 @@ const (
 	stateDeviceInitialization
 	stateDevicePartitioning
 	stateInitializeDeviceForm
-	stateViewAllDevices
 	// Partition Management States
 	statePartitionManagement
 	statePartitionCreate
@@ -119,6 +119,10 @@ type model struct {
 	state      state
 	config     *Config
 	configPath string
+
+	// Terminal dimensions for dynamic pagination
+	termWidth  int
+	termHeight int
 
 	// Menu
 	menuCursor int
@@ -195,6 +199,8 @@ type model struct {
 
 	// NISD Management
 	nisdMgmtCursor            int
+	nisdCursor                int // For NISD pagination
+	selectedNISDIdx           int // For NISD item navigation like partitions
 	selectedNISDPartitionIdx  int
 	selectedNISDHypervisorIdx int
 	selectedNISDDeviceIdx     int
@@ -387,7 +393,8 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
 		{"Manage Racks", "Add, edit, or delete server racks"},
 		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
-		{"Manage Devices", "Initialize and partition devices on hypervisors"},
+		{"Manage Devices", "Initialize devices on hypervisors"},
+		{"Manage Partitions", "Create, view, and delete NISD partitions"},
 		{"Manage NISDs", "Initialize NISD instances on device partitions"},
 		{"Manage Vdevs", "Create and manage virtual devices"},
 		{"View Configuration", "Display current hierarchical configuration"},
@@ -500,6 +507,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.termWidth = msg.Width
+		m.termHeight = msg.Height
 		m.deviceList.SetSize(msg.Width-4, msg.Height-8)
 		m.configViewport.Width = msg.Width - 4
 		m.configViewport.Height = msg.Height - 10 // Leave room for header and footer
@@ -600,8 +609,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateDevicePartitioning(msg)
 	case stateInitializeDeviceForm:
 		m, cmd = m.updateInitializeDeviceForm(msg)
-	case stateViewAllDevices:
-		m, cmd = m.updateViewAllDevices(msg)
 	// Partition Management
 	case statePartitionManagement:
 		m, cmd = m.updatePartitionManagement(msg)
@@ -702,7 +709,13 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedDeviceIdx = -1
 				m.message = ""
 				return m, nil
-			case 4: // Manage NISDs
+			case 4: // Manage Partitions
+				m.state = statePartitionManagement
+				m.partitionMgmtCursor = 0
+				m.selectedPartitionIdx = -1
+				m.message = ""
+				return m, nil
+			case 5: // Manage NISDs
 				m.state = stateNISDManagement
 				m.nisdMgmtCursor = 0
 				m.selectedNISDHypervisorIdx = -1
@@ -711,13 +724,13 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
 				return m, nil
-			case 5: // Manage Vdevs
+			case 6: // Manage Vdevs
 				m.state = stateVdevManagement
 				m.vdevMgmtCursor = 0
 				m.selectedDevicesForVdev = make(map[int]bool)
 				m.message = ""
 				return m, nil
-			case 6: // View Configuration
+			case 7: // View Configuration
 				m.state = stateViewConfig
 				// Reset config cursor and expand states
 				m.configCursor = 0
@@ -733,7 +746,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				}
 				m = m.updateConfigView()
 				return m, nil
-			case 7: // Save & Exit
+			case 8: // Save & Exit
 				if err := m.config.SaveToFile(m.configPath); err != nil {
 					m.message = fmt.Sprintf("Error saving config: %v", err)
 					return m, nil
@@ -741,7 +754,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = fmt.Sprintf("Configuration saved to %s", m.configPath)
 				m.quitting = true
 				return m, tea.Quit
-			case 8: // Exit
+			case 9: // Exit
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -1299,7 +1312,7 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.deviceMgmtCursor--
 			}
 		case "down", "j":
-			maxItems := 4 // Initialize Device, View All Devices, View Device, Manage Partitions
+			maxItems := 2 // Initialize Device, View Device
 			if m.deviceMgmtCursor < maxItems-1 {
 				m.deviceMgmtCursor++
 			}
@@ -1311,20 +1324,10 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedDeviceIdx = -1
 				m.message = ""
 				return m, nil
-			case 1: // View All Devices
-				m.state = stateViewAllDevices
-				m.message = ""
-				return m, nil
-			case 2: // View Device
+			case 1: // View Device
 				m.state = stateDeviceView
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
-				m.message = ""
-				return m, nil
-			case 3: // Manage Partitions
-				m.state = statePartitionManagement
-				m.partitionMgmtCursor = 0
-				m.selectedPartitionIdx = -1
 				m.message = ""
 				return m, nil
 			}
@@ -1433,6 +1436,15 @@ func (m model) updateDeviceView(msg tea.Msg) (model, tea.Cmd) {
 	// Get all devices across all hypervisors
 	allDevices := m.config.GetAllDevicesForPartitioning()
 
+	// Sort devices for consistent ordering (same as in view function)
+	sort.Slice(allDevices, func(i, j int) bool {
+		// First sort by hypervisor name, then by device ID
+		if allDevices[i].HvName != allDevices[j].HvName {
+			return allDevices[i].HvName < allDevices[j].HvName
+		}
+		return allDevices[i].Device.ID < allDevices[j].Device.ID
+	})
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -1441,7 +1453,7 @@ func (m model) updateDeviceView(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedDeviceIdx--
 			}
 		case "down", "j":
-			if m.selectedDeviceIdx < len(allDevices)-1 {
+			if len(allDevices) > 0 && m.selectedDeviceIdx < len(allDevices)-1 {
 				m.selectedDeviceIdx++
 			}
 		case "esc":
@@ -1626,6 +1638,34 @@ func (m model) getAllPartitionsAcrossDevices() []PartitionInfo {
 	}
 
 	return allPartitions
+}
+
+// Helper function to calculate optimal items per page based on terminal height
+func (m model) calculateItemsPerPage(linesPerItem int) int {
+	// Reserve space for:
+	// - Title (2 lines)
+	// - Pagination info (2 lines)
+	// - Help text (2 lines)
+	// - Some safety margin (4 lines)
+	reservedLines := 10
+
+	// Default to conservative fallback if terminal height is not available
+	if m.termHeight <= 0 {
+		return 5 // Conservative default when terminal size unknown
+	}
+
+	availableLines := m.termHeight - reservedLines
+
+	// Ensure we have some minimum space to work with
+	if availableLines < 3*linesPerItem {
+		return 3 // Minimum usable items regardless of screen size
+	}
+
+	itemsPerPage := availableLines / linesPerItem
+
+	// No arbitrary maximum - let screen size be the natural limit
+	// The calculation already ensures items fit within available space
+	return itemsPerPage
 }
 
 // Helper function to format bytes into human-readable format
@@ -2123,8 +2163,6 @@ func (m model) View() string {
 		return m.viewDevicePartitioning()
 	case stateInitializeDeviceForm:
 		return m.viewInitializeDeviceForm()
-	case stateViewAllDevices:
-		return m.viewAllDevices()
 	// Partition Management Views
 	case statePartitionManagement:
 		return m.viewPartitionManagement()
@@ -3193,9 +3231,7 @@ func (m model) viewDeviceManagement() string {
 
 	managementItems := []string{
 		"Initialize Device - Write device info to Control Plane",
-		"View All Devices - Query and display all devices from Control Plane",
 		"View Device - Display device details and status",
-		"Manage Partitions - Create, view, and delete NISD partitions",
 	}
 
 	for i, item := range managementItems {
@@ -3408,9 +3444,50 @@ func (m model) viewDeviceView() string {
 		return s.String()
 	}
 
+	// Sort devices for consistent ordering
+	sort.Slice(allDevices, func(i, j int) bool {
+		// First sort by hypervisor name, then by device ID
+		if allDevices[i].HvName != allDevices[j].HvName {
+			return allDevices[i].HvName < allDevices[j].HvName
+		}
+		return allDevices[i].Device.ID < allDevices[j].Device.ID
+	})
+
 	s.WriteString(fmt.Sprintf("Found %d devices across all hypervisors:\n\n", len(allDevices)))
 
-	for i, deviceInfo := range allDevices {
+	// Calculate dynamic pagination based on terminal height
+	// Each device takes ~1 line normally, ~5-8 lines when selected with details
+	// Use conservative estimate of 2 lines per item for calculation
+	itemsPerPage := m.calculateItemsPerPage(2)
+	totalPages := (len(allDevices) + itemsPerPage - 1) / itemsPerPage
+
+	// Ensure cursor is within bounds
+	if m.selectedDeviceIdx < 0 {
+		m.selectedDeviceIdx = 0
+	}
+	if m.selectedDeviceIdx >= len(allDevices) {
+		m.selectedDeviceIdx = len(allDevices) - 1
+	}
+
+	// Calculate which page the cursor is on
+	currentPage := m.selectedDeviceIdx / itemsPerPage
+	startIdx := currentPage * itemsPerPage
+	endIdx := startIdx + itemsPerPage
+	if endIdx > len(allDevices) {
+		endIdx = len(allDevices)
+	}
+
+	// Show pagination info when there are multiple pages
+	if totalPages > 1 {
+		s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d of %d) | Cursor at position %d\n\n",
+			currentPage+1, totalPages, startIdx+1, endIdx, len(allDevices), m.selectedDeviceIdx+1))
+	} else {
+		// Show cursor position for debugging even on single page
+		s.WriteString(fmt.Sprintf("Cursor at position %d of %d\n\n", m.selectedDeviceIdx+1, len(allDevices)))
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		deviceInfo := allDevices[i]
 		cursor := "  "
 		if i == m.selectedDeviceIdx {
 			cursor = "▶ "
@@ -3477,7 +3554,7 @@ func (m model) viewDeviceView() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString("Controls: ↑/↓ navigate, esc back to device management")
+	s.WriteString("Controls: ↑/↓ navigate • esc back to device management")
 
 	return s.String()
 }
@@ -3801,63 +3878,39 @@ func (m model) viewPartitionCreate() string {
 		return s.String()
 	}
 
-	if m.selectedDeviceIdx == -1 {
-		// Device selection phase
-		s.WriteString("Select device to partition:\n")
-		s.WriteString("(Note: Devices can be partitioned whether initialized or not)\n\n")
+	// Device selection phase
+	s.WriteString("Select device to partition:\n")
+	s.WriteString("(Note: Devices can be partitioned whether initialized or not)\n\n")
 
-		for i, deviceInfo := range devices {
-			cursor := "  "
-			if i == m.selectedHypervisorIdx {
-				cursor = "▶ "
-			}
-
-			// Build device info line with better status display
-			status := ""
-			if deviceInfo.Device.State == ctlplfl.INITIALIZED {
-				status = "[INIT]"
-			} else {
-				status = "[UNINITIALIZED]"
-			}
-
-			line := fmt.Sprintf("%s%s: %s %s", cursor, deviceInfo.HvName, deviceInfo.Device.Name, status)
-			if deviceInfo.Device.Size != 0 {
-				line += fmt.Sprintf(" (%s)", formatBytes(deviceInfo.Device.Size))
-			}
-			if len(deviceInfo.Device.Partitions) > 0 {
-				line += fmt.Sprintf(" [%d existing partitions]", len(deviceInfo.Device.Partitions))
-			}
-
-			if i == m.selectedHypervisorIdx {
-				line = selectedItemStyle.Render(line)
-			}
-			s.WriteString(line + "\n")
+	for i, deviceInfo := range devices {
+		cursor := "  "
+		if i == m.selectedHypervisorIdx {
+			cursor = "▶ "
 		}
 
-		s.WriteString("\nControls: ↑/↓ navigate, enter select device, esc back")
-	} else {
-		// Partition count input phase
-		deviceInfo := devices[m.selectedDeviceIdx]
-		s.WriteString(fmt.Sprintf("Creating partitions on: %s: %s\n\n", deviceInfo.HvName, deviceInfo.Device.Name))
-
-		// Display device size if available
-		if deviceInfo.Device.Size > 0 {
-			s.WriteString(fmt.Sprintf("Device Size: %s\n\n", formatBytes(deviceInfo.Device.Size)))
+		// Build device info line with better status display
+		status := ""
+		if deviceInfo.Device.State == ctlplfl.INITIALIZED {
+			status = "[INIT]"
+		} else {
+			status = "[UNINITIALIZED]"
 		}
 
-		s.WriteString("Enter number of partitions to create:\n")
-		s.WriteString("- All partitions will be equal in size\n")
-		s.WriteString("- Any existing partition table will be deleted\n")
-		s.WriteString("- Maximum 20 partitions allowed\n\n")
-		s.WriteString("Examples:\n")
-		s.WriteString("  2  (create 2 equal partitions)\n")
-		s.WriteString("  4  (create 4 equal partitions)\n")
-		s.WriteString("  8  (create 8 equal partitions)\n\n")
+		line := fmt.Sprintf("%s%s: %s %s", cursor, deviceInfo.HvName, deviceInfo.Device.Name, status)
+		if deviceInfo.Device.Size != 0 {
+			line += fmt.Sprintf(" (%s)", formatBytes(deviceInfo.Device.Size))
+		}
+		if len(deviceInfo.Device.Partitions) > 0 {
+			line += fmt.Sprintf(" [%d existing partitions]", len(deviceInfo.Device.Partitions))
+		}
 
-		s.WriteString("Number of partitions: " + m.partitionCountInput.View() + "\n")
-
-		s.WriteString("\nControls: enter create partitions, esc cancel")
+		if i == m.selectedHypervisorIdx {
+			line = selectedItemStyle.Render(line)
+		}
+		s.WriteString(line + "\n")
 	}
+
+	s.WriteString("\nControls: ↑/↓ navigate, enter select device, esc back")
 
 	return s.String()
 }
@@ -3909,7 +3962,36 @@ func (m model) viewPartitionView() string {
 		return s.String()
 	}
 
-	s.WriteString(fmt.Sprintf("Found %d NISD partitions across all devices:\n\n", len(allPartitions)))
+	// Calculate dynamic pagination based on terminal height
+	// Each partition takes ~2-3 lines (partition info + optional NISD UUID)
+	itemsPerPage := m.calculateItemsPerPage(3)
+	totalPages := (len(allPartitions) + itemsPerPage - 1) / itemsPerPage
+
+	// Ensure cursor is within bounds
+	if m.selectedPartitionIdx < 0 {
+		m.selectedPartitionIdx = 0
+	}
+	if m.selectedPartitionIdx >= len(allPartitions) {
+		m.selectedPartitionIdx = len(allPartitions) - 1
+	}
+
+	// Calculate which page the cursor is on
+	currentPage := m.selectedPartitionIdx / itemsPerPage
+	startIdx := currentPage * itemsPerPage
+	endIdx := startIdx + itemsPerPage
+	if endIdx > len(allPartitions) {
+		endIdx = len(allPartitions)
+	}
+
+	s.WriteString(fmt.Sprintf("Found %d NISD partitions across all devices:\n", len(allPartitions)))
+
+	// Show pagination info when there are multiple pages
+	if totalPages > 1 {
+		s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d) | Cursor at position %d\n\n",
+			currentPage+1, totalPages, startIdx+1, endIdx, m.selectedPartitionIdx+1))
+	} else {
+		s.WriteString(fmt.Sprintf("Cursor at position %d of %d\n\n", m.selectedPartitionIdx+1, len(allPartitions)))
+	}
 
 	// Group by hypervisor and device for better organization
 	hvDeviceGroups := make(map[string]map[string][]PartitionInfo)
@@ -3920,37 +4002,106 @@ func (m model) viewPartitionView() string {
 		hvDeviceGroups[partition.HvName][partition.DeviceName] = append(hvDeviceGroups[partition.HvName][partition.DeviceName], partition)
 	}
 
+	// Sort hypervisor names to ensure consistent ordering
+	var hvNames []string
+	for hvName := range hvDeviceGroups {
+		hvNames = append(hvNames, hvName)
+	}
+	sort.Strings(hvNames)
+
+	// Create a flat list of partitions for pagination, but maintain grouping info
+	type DisplayPartition struct {
+		PartitionInfo
+		DisplayIndex int
+		HvHeader     string
+		DeviceHeader string
+		IsFirstInHv  bool
+		IsFirstInDev bool
+	}
+
+	var displayPartitions []DisplayPartition
 	partitionIndex := 0
-	for hvName, devices := range hvDeviceGroups {
-		s.WriteString(fmt.Sprintf("Hypervisor: %s\n", hvName))
-		for deviceName, partitions := range devices {
-			s.WriteString(fmt.Sprintf("  Device: %s\n", deviceName))
-			for _, partition := range partitions {
-				cursor := "    "
-				if partitionIndex == m.selectedPartitionIdx {
-					cursor = "  ▶ "
-				}
+	for _, hvName := range hvNames {
+		devices := hvDeviceGroups[hvName]
 
-				partitionLine := fmt.Sprintf("%sPartition: %s", cursor, partition.Partition.PartitionID)
-				if partition.Partition.Size > 0 {
-					partitionLine += fmt.Sprintf(" (%s)", formatBytes(partition.Partition.Size))
-				}
+		// Sort device names to ensure consistent ordering
+		var deviceNames []string
+		for deviceName := range devices {
+			deviceNames = append(deviceNames, deviceName)
+		}
+		sort.Strings(deviceNames)
 
-				if partitionIndex == m.selectedPartitionIdx {
-					partitionLine = selectedItemStyle.Render(partitionLine)
-				}
+		for _, deviceName := range deviceNames {
+			partitions := devices[deviceName]
 
-				s.WriteString(partitionLine + "\n")
-				if partitionIndex == m.selectedPartitionIdx {
-					s.WriteString(fmt.Sprintf("      NISD UUID: %s\n", partition.Partition.NISDUUID))
-				}
+			// Sort partitions by PartitionID to ensure consistent ordering
+			sort.Slice(partitions, func(i, j int) bool {
+				return partitions[i].Partition.PartitionID < partitions[j].Partition.PartitionID
+			})
+
+			for j, partition := range partitions {
+				displayPartitions = append(displayPartitions, DisplayPartition{
+					PartitionInfo: partition,
+					DisplayIndex:  partitionIndex,
+					HvHeader:      hvName,
+					DeviceHeader:  deviceName,
+					IsFirstInHv:   partitionIndex == 0 || (partitionIndex > 0 && displayPartitions[partitionIndex-1].HvHeader != hvName),
+					IsFirstInDev:  j == 0,
+				})
 				partitionIndex++
 			}
-			s.WriteString("\n")
 		}
 	}
 
-	s.WriteString("Controls: ↑/↓ navigate, esc back")
+	// Show only the partitions for the current page
+	currentHv := ""
+	currentDevice := ""
+
+	for i := startIdx; i < endIdx && i < len(displayPartitions); i++ {
+		dp := displayPartitions[i]
+
+		// Show hypervisor header if needed
+		if dp.HvHeader != currentHv {
+			s.WriteString(fmt.Sprintf("Hypervisor: %s\n", dp.HvHeader))
+			currentHv = dp.HvHeader
+			currentDevice = ""
+		}
+
+		// Show device header if needed
+		if dp.DeviceHeader != currentDevice {
+			s.WriteString(fmt.Sprintf("  Device: %s\n", dp.DeviceHeader))
+			currentDevice = dp.DeviceHeader
+		}
+
+		cursor := "    "
+		if dp.DisplayIndex == m.selectedPartitionIdx {
+			cursor = "  ▶ "
+		}
+
+		partitionLine := fmt.Sprintf("%sPartition: %s", cursor, dp.Partition.PartitionID)
+		if dp.Partition.Size > 0 {
+			partitionLine += fmt.Sprintf(" (%s)", formatBytes(dp.Partition.Size))
+		}
+
+		if dp.DisplayIndex == m.selectedPartitionIdx {
+			partitionLine = selectedItemStyle.Render(partitionLine)
+		}
+
+		s.WriteString(partitionLine + "\n")
+		if dp.DisplayIndex == m.selectedPartitionIdx {
+			s.WriteString(fmt.Sprintf("      NISD UUID: %s\n", dp.Partition.NISDUUID))
+		}
+
+		// Add spacing after each partition
+		if i < endIdx-1 && i < len(displayPartitions)-1 {
+			nextDp := displayPartitions[i+1]
+			if nextDp.DeviceHeader != dp.DeviceHeader || nextDp.HvHeader != dp.HvHeader {
+				s.WriteString("\n")
+			}
+		}
+	}
+
+	s.WriteString("\nControls: ↑/↓ navigate, esc back")
 
 	return s.String()
 }
@@ -4051,11 +4202,34 @@ func (m model) viewPartitionDelete() string {
 		hvDeviceGroups[partition.HvName][partition.DeviceName] = append(hvDeviceGroups[partition.HvName][partition.DeviceName], partition)
 	}
 
+	// Sort hypervisor names to ensure consistent ordering
+	var hvNames []string
+	for hvName := range hvDeviceGroups {
+		hvNames = append(hvNames, hvName)
+	}
+	sort.Strings(hvNames)
+
 	partitionIndex := 0
-	for hvName, devices := range hvDeviceGroups {
+	for _, hvName := range hvNames {
+		devices := hvDeviceGroups[hvName]
 		s.WriteString(fmt.Sprintf("Hypervisor: %s\n", hvName))
-		for deviceName, partitions := range devices {
+
+		// Sort device names to ensure consistent ordering
+		var deviceNames []string
+		for deviceName := range devices {
+			deviceNames = append(deviceNames, deviceName)
+		}
+		sort.Strings(deviceNames)
+
+		for _, deviceName := range deviceNames {
+			partitions := devices[deviceName]
 			s.WriteString(fmt.Sprintf("  Device: %s\n", deviceName))
+
+			// Sort partitions by PartitionID to ensure consistent ordering
+			sort.Slice(partitions, func(i, j int) bool {
+				return partitions[i].Partition.PartitionID < partitions[j].Partition.PartitionID
+			})
+
 			for _, partition := range partitions {
 				cursor := "    "
 				if partitionIndex == m.selectedPartitionIdx {
@@ -7307,8 +7481,15 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
 				vdevs, err := m.cpClient.GetVdevCfgs()
-				if err == nil && m.vdevViewCursor < len(vdevs)-1 {
-					m.vdevViewCursor++
+				if err == nil && len(vdevs) > 0 {
+					// Sort to ensure consistent ordering for navigation bounds
+					sort.Slice(vdevs, func(i, j int) bool {
+						return vdevs[i].ID < vdevs[j].ID
+					})
+					// Ensure cursor stays within bounds
+					if m.vdevViewCursor < len(vdevs)-1 {
+						m.vdevViewCursor++
+					}
 				}
 			}
 		case "esc":
@@ -7343,11 +7524,26 @@ func (m model) viewViewVdev() string {
 		} else if len(vdevs) == 0 {
 			s.WriteString("No Vdevs found.\n\n")
 		} else {
+			// Sort vdevs by ID to ensure consistent ordering
+			sort.Slice(vdevs, func(i, j int) bool {
+				return vdevs[i].ID < vdevs[j].ID
+			})
+
 			s.WriteString(fmt.Sprintf("Found %d Vdev(s):\n\n", len(vdevs)))
 
-			// Calculate pagination - show reasonable number of items per page
-			itemsPerPage := 10
+			// Calculate pagination - show 7 items per page to keep header visible
+			itemsPerPage := 7 // Show 7 items per page for optimal display
 			totalPages := (len(vdevs) + itemsPerPage - 1) / itemsPerPage
+
+			// Ensure cursor is within bounds
+			if m.vdevViewCursor < 0 {
+				m.vdevViewCursor = 0
+			}
+			if m.vdevViewCursor >= len(vdevs) {
+				m.vdevViewCursor = len(vdevs) - 1
+			}
+
+			// Calculate which page the cursor is on
 			currentPage := m.vdevViewCursor / itemsPerPage
 			startIdx := currentPage * itemsPerPage
 			endIdx := startIdx + itemsPerPage
@@ -7355,9 +7551,13 @@ func (m model) viewViewVdev() string {
 				endIdx = len(vdevs)
 			}
 
+			// Always show pagination info when there are multiple pages or for debugging
 			if totalPages > 1 {
-				s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d)\n\n",
-					currentPage+1, totalPages, startIdx+1, endIdx))
+				s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d of %d) | Cursor at position %d\n\n",
+					currentPage+1, totalPages, startIdx+1, endIdx, len(vdevs), m.vdevViewCursor+1))
+			} else {
+				// Show cursor position for debugging even on single page
+				s.WriteString(fmt.Sprintf("Cursor at position %d of %d\n\n", m.vdevViewCursor+1, len(vdevs)))
 			}
 
 			for i := startIdx; i < endIdx; i++ {
@@ -7404,8 +7604,14 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 			if m.cpClient != nil && m.cpConnected {
 				req := &ctlplfl.GetReq{ID: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
-				if err == nil && m.vdevDeleteCursor < len(vdevs)-1 {
-					m.vdevDeleteCursor++
+				if err == nil {
+					// Sort to ensure consistent ordering for navigation bounds
+					sort.Slice(vdevs, func(i, j int) bool {
+						return vdevs[i].Cfg.ID < vdevs[j].Cfg.ID
+					})
+					if m.vdevDeleteCursor < len(vdevs)-1 {
+						m.vdevDeleteCursor++
+					}
 				}
 			}
 		case "enter", " ":
@@ -7421,6 +7627,10 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 					m.message = "No Vdevs available to delete"
 					return m, nil
 				}
+				// Sort to ensure consistent ordering for selection
+				sort.Slice(vdevs, func(i, j int) bool {
+					return vdevs[i].Cfg.ID < vdevs[j].Cfg.ID
+				})
 				if m.vdevDeleteCursor >= 0 && m.vdevDeleteCursor < len(vdevs) {
 					selectedVdev := vdevs[m.vdevDeleteCursor]
 					// TODO: Implement actual DeleteVdev function when available
@@ -7465,6 +7675,11 @@ func (m model) viewDeleteVdev() string {
 		} else if len(vdevs) == 0 {
 			s.WriteString("No Vdevs found to delete.\n\n")
 		} else {
+			// Sort vdevs by ID to ensure consistent ordering
+			sort.Slice(vdevs, func(i, j int) bool {
+				return vdevs[i].Cfg.ID < vdevs[j].Cfg.ID
+			})
+
 			s.WriteString("Select a Vdev to delete:\n\n")
 			for i, vdev := range vdevs {
 				cursor := "  "
@@ -7990,111 +8205,6 @@ func (m model) viewInitializeDeviceForm() string {
 	}
 
 	s.WriteString("\n" + helpStyle.Render("enter: Initialize all devices, esc: back to Device Management"))
-
-	return s.String()
-}
-
-// updateViewAllDevices handles viewing all devices from control plane
-func (m model) updateViewAllDevices(msg tea.Msg) (model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			m.state = stateDeviceManagement
-			m.message = ""
-			return m, nil
-		}
-	}
-	return m, nil
-}
-
-// viewAllDevices displays all devices from control plane
-func (m model) viewAllDevices() string {
-	title := titleStyle.Render("View All Devices")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
-			s.WriteString(errorStyle.Render(m.message) + "\n\n")
-		} else {
-			s.WriteString(successStyle.Render(m.message) + "\n\n")
-		}
-	}
-
-	// Check if control plane is connected
-	if m.cpClient == nil || !m.cpConnected {
-		s.WriteString(errorStyle.Render("Control plane not connected. Please connect to control plane first.") + "\n\n")
-		s.WriteString(helpStyle.Render("esc: back to Device Management"))
-		return s.String()
-	}
-
-	// Query all devices from control plane
-	req := ctlplfl.GetReq{ID: "", GetAll: true}
-	devices, err := m.cpClient.GetDevices(req)
-	if err != nil {
-		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query devices from control plane: %v", err)) + "\n\n")
-		s.WriteString(helpStyle.Render("esc: back to Device Management"))
-		return s.String()
-	}
-
-	// Debug: Log what we received from Control Plane
-	log.Info("Received ", len(devices), " devices from Control Plane")
-	for i, dev := range devices {
-		log.Info("Device ", i, " - ID: '", dev.ID, "', Name: '", dev.Name,
-			"', Path: '", dev.DevicePath, "', Size: ", dev.Size,
-			", Serial: '", dev.SerialNumber, "'")
-	}
-
-	if len(devices) == 0 {
-		s.WriteString(errorStyle.Render("No devices found in control plane.") + "\n\n")
-		s.WriteString(helpStyle.Render("esc: back to Device Management"))
-		return s.String()
-	}
-
-	s.WriteString(fmt.Sprintf("Found %d devices in control plane:\n\n", len(devices)))
-
-	// Group devices by hypervisor
-	devicesByHV := make(map[string][]ctlplfl.Device)
-	for _, device := range devices {
-		devicesByHV[device.HypervisorID] = append(devicesByHV[device.HypervisorID], device)
-	}
-
-	// Display devices grouped by hypervisor
-	for hvID, hvDevices := range devicesByHV {
-		// Find hypervisor name
-		hvName := hvID
-		for _, hv := range m.config.Hypervisors {
-			if hv.ID == hvID {
-				hvName = hv.Name
-				break
-			}
-		}
-
-		s.WriteString(fmt.Sprintf("Hypervisor: %s (%s)\n", hvName, hvID))
-		s.WriteString(strings.Repeat("─", 50) + "\n")
-
-		for _, device := range hvDevices {
-			status := "Initialized"
-			if device.State != ctlplfl.INITIALIZED {
-				status = "Not Initialized"
-			}
-
-			sizeGB := device.Size / (1024 * 1024 * 1024)
-			s.WriteString(fmt.Sprintf("• Name: %s\n", device.Name))
-			s.WriteString(fmt.Sprintf("  ID: %s\n", device.ID))
-			s.WriteString(fmt.Sprintf("  Serial: %s\n", device.SerialNumber))
-			s.WriteString(fmt.Sprintf("  Path: %s\n", device.DevicePath))
-			s.WriteString(fmt.Sprintf("  Size: %d GB\n", sizeGB))
-			s.WriteString(fmt.Sprintf("  Status: %s\n", status))
-			s.WriteString(fmt.Sprintf("  Failure Domain: %s\n", device.FailureDomain))
-			s.WriteString("\n")
-		}
-		s.WriteString("\n")
-	}
-
-	s.WriteString(helpStyle.Render("esc: back to Device Management"))
 
 	return s.String()
 }
