@@ -110,8 +110,9 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) {
 
 // Get the Failure Domain Based on the Nisd Count
 func (hr *Hierarchy) GetFDLevel(ft int) (int, error) {
-	for i := cpLib.FD_PDU; i <= cpLib.FD_DEVICE; i++ {
+	for i := 0; i <= cpLib.DEVICE_IDX; i++ {
 		if ft <= hr.FD[i].Tree.Len() {
+			log.Debug("selecting fd: ", i)
 			return i, nil
 		}
 	}
@@ -236,15 +237,12 @@ func GetIdxForNisdAlloc(hash uint64, size int) (int, error) {
 }
 
 func GetEntityByID(ft cpLib.Filter) (*Entities, error) {
-	if ft.ID == "" {
-		return nil, fmt.Errorf("empty entityID")
-	}
 	if ft.Type == -1 {
 		return nil, fmt.Errorf("invalid fd level")
 	}
-	ent, ok := HR.FD[ft.Type].Tree.Get(&Entities{ID: ft.ID})
+	ent, ok := HR.FD[cpLib.GetFDIdx(ft.Type)].Tree.Get(&Entities{ID: ft.ID})
 	if !ok || ent == nil {
-		return nil, fmt.Errorf("entityID %s not found in fd %d", ft.ID, ft.Type)
+		return nil, fmt.Errorf("entityID %s not found in fd %d", ft.ID, cpLib.GetFDIdx(ft.Type))
 	}
 
 	return ent, nil

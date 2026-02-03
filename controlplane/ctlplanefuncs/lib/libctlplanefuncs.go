@@ -46,7 +46,7 @@ const (
 	MAX_REPLY_SIZE = 4 * 1024 * 1024
 	NAME           = "name"
 
-	NISD_SECRET    = "Nisd-secret"
+	NISD_SECRET = "Nisd-secret"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -54,14 +54,39 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
-	FD_ANY    = -1
-	FD_PDU    = 0
-	FD_RACK   = 1
-	FD_HV     = 2
-	FD_DEVICE = 3
-	FD_MAX    = 4
+	PDU_IDX    = 0
+	RACK_IDX   = 1
+	HV_IDX     = 2
+	DEVICE_IDX = 3
+	FD_MAX     = 4
+
 	HASH_SIZE = 8
 )
+
+type FD int
+
+const (
+	FD_ANY FD = iota
+	FD_PDU
+	FD_RACK
+	FD_HV
+	FD_DEVICE
+)
+
+func GetFDIdx(t FD) int {
+	switch t {
+	case FD_PDU:
+		return PDU_IDX
+	case FD_RACK:
+		return RACK_IDX
+	case FD_HV:
+		return HV_IDX
+	case FD_DEVICE:
+		return DEVICE_IDX
+	default:
+		return -1
+	}
+}
 
 // Define Snapshot XML structure
 type SnapName struct {
@@ -197,7 +222,7 @@ type Vdev struct {
 
 type Filter struct {
 	ID   string
-	Type int
+	Type FD
 }
 
 type VdevReq struct {
@@ -300,6 +325,7 @@ func RegisterGOBStructs() {
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
+	gob.Register(FD(0))
 }
 
 func (req *GetReq) ValidateRequest() error {
@@ -352,7 +378,7 @@ func (n *Nisd) Validate() error {
 	if len(n.FailureDomain) != FD_MAX {
 		return errors.New("invalid NISD failure domain info")
 	}
-	for i := 0; i < FD_DEVICE; i++ {
+	for i := 0; i < DEVICE_IDX; i++ {
 		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
 			return fmt.Errorf("invalid FailureDomain[%d] uuid", i)
 		}
@@ -370,7 +396,7 @@ func (n *Nisd) Validate() error {
 }
 
 func NextFailureDomain(fd int) (int, error) {
-	if fd < FD_DEVICE {
+	if fd < DEVICE_IDX {
 		fd++
 		return fd, nil
 	}

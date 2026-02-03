@@ -6,13 +6,13 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"unsafe"
 	"time"
+	"unsafe"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
-	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	"github.com/tidwall/btree"
@@ -558,8 +558,8 @@ func AllocNISDs(
 	txn *funclib.FuncIntrm,
 ) error {
 
-	if req.Filter.Type != -1 {
-		return allocateNisdsAtFailureDomain(req, req.Filter.Type, allocMap, txn)
+	if req.Filter.Type != ctlplfl.FD_ANY {
+		return allocateNisdsAtFailureDomain(req, ctlplfl.GetFDIdx(req.Filter.Type), allocMap, txn)
 	}
 
 	startFD, err := HR.GetFDLevel(int(req.Vdev.NumReplica))
@@ -994,10 +994,10 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
-	
+
 	authtc := &auth.Token{
 		Secret: []byte(ctlplfl.NISD_SECRET),
-		TTL: time.Minute,
+		TTL:    time.Minute,
 	}
 
 	claims := map[string]any{
@@ -1010,9 +1010,9 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
-	
+
 	vdevInfo := ctlplfl.VdevCfg{
-		ID: req.ID,
+		ID:        req.ID,
 		AuthToken: authtoken,
 	}
 

@@ -581,7 +581,8 @@ func TestParallelVdevCreation(t *testing.T) {
 					NumReplica: 1,
 				},
 			}
-			_, err := c.CreateVdev(vdev)
+			resp, err := c.CreateVdev(vdev)
+			log.Info("succesfully created vdev: ", resp)
 			assert.NoError(t, err)
 			time.Sleep(30 * time.Millisecond)
 		}
