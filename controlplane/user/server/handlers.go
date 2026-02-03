@@ -10,6 +10,7 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	pumiceFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
@@ -577,7 +578,7 @@ func Login(args ...interface{}) (interface{}, error) {
 
 	tokenTTL := defaultTokenTTL
 	tc := &auth.Token{
-		Secret: []byte(storedKey),
+		Secret: []byte(ctlplfl.CP_SECRET),
 		TTL:    tokenTTL,
 	}
 

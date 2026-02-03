@@ -64,7 +64,7 @@ ReadVdevInfo:
     - admin
   ABAC:
     - argument: vdev
-      prefix: "vdev/"
+      prefix: "v/"
 ReadAllVdevInfo:
   RBAC:
     - admin
