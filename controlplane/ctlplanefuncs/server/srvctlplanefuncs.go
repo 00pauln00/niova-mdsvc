@@ -11,6 +11,7 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
+	authz "github.com/00pauln00/niova-mdsvc/controlplane/authorizer"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
@@ -20,6 +21,18 @@ import (
 )
 
 var colmfamily string
+
+var (
+	authorizer *authz.Authorizer
+)
+
+// InitAuthorizer initializes the global authorizer instance with the config file
+func InitAuthorizer(configPath string) error {
+	authorizer = &authz.Authorizer{
+		Config: make(authz.Config),
+	}
+	return authorizer.LoadConfig(configPath)
+}
 
 const (
 	DEVICE_ID        = "d"
@@ -418,12 +431,50 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		err := fmt.Errorf("invalid argument: expecting type vdev")
 		return nil, err
 	}
+	// Validate user token
+	if vdev.UserToken == "" {
+		log.Error("user token is required for vdev creation")
+		return nil, fmt.Errorf("user token is required")
+	}
+
+	// Verify token with service secret
+	tc := &auth.Token{
+		Secret: []byte(ctlplfl.CP_SECRET),
+	}
+	claims, err := tc.VerifyToken(vdev.UserToken)
+	if err != nil {
+		log.Errorf("token verification failed: %v", err)
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
+	// Extract user information from claims
+	userID, ok := claims["userID"].(string)
+	if !ok || userID == "" {
+		log.Error("userID not found in token")
+		return nil, fmt.Errorf("invalid token: missing userID")
+	}
+
+	userRole, ok := claims["role"].(string)
+	if !ok || userRole == "" {
+		log.Error("role not found in token")
+		return nil, fmt.Errorf("invalid token: missing role")
+	}
+
+	// Check authorization
+	if authorizer != nil {
+		if !authorizer.Authorize("WPCreateVdev", userID, []string{userRole}, map[string]string{}, nil, "") {
+			log.Errorf("user %s with role %s not authorized for WPCreateVdev", userID, userRole)
+			return nil, fmt.Errorf("authorization failed")
+		}
+	}
+
+	err = vdev.Init()
 	err := req.Vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
 		return nil, err
 	}
-	log.Infof("initializing vdev: %+v", req.Vdev)
+	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, userID)
 	key := getConfKey(vdevKey, req.Vdev.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
@@ -442,6 +493,15 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(value),
 		})
 	}
+
+	// Add ownership key to mark user as owner of this vdev
+	ownershipKey := fmt.Sprintf("/u/%s/v/%s", userID, vdev.Cfg.ID)
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key:   []byte(ownershipKey),
+		Value: []byte("1"),
+	})
+	log.Infof("added ownership key: %s for vdev: %s", ownershipKey, vdev.Cfg.ID)
+
 	r, err := pmCmn.Encoder(pmCmn.GOB, req)
 	if err != nil {
 		log.Error("Failed to marshal vdev response: ", err)
@@ -990,8 +1050,49 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("failed to validate request:", err)
 		return nil, err
 	}
+
+	// Validate user token
+	if req.UserToken == "" {
+		log.Error("user token is required for ReadVdevInfo")
+		return nil, fmt.Errorf("user token is required")
+	}
+
+	// Verify token with service secret
+	tc := &auth.Token{
+		Secret: []byte(ctlplfl.CP_SECRET),
+	}
+	claims, err := tc.VerifyToken(req.UserToken)
+	if err != nil {
+		log.Errorf("token verification failed: %v", err)
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
+	// Extract user information from claims
+	userID, ok := claims["userID"].(string)
+	if !ok || userID == "" {
+		log.Error("userID not found in token")
+		return nil, fmt.Errorf("invalid token: missing userID")
+	}
+
+	userRole, ok := claims["role"].(string)
+	if !ok || userRole == "" {
+		log.Error("role not found in token")
+		return nil, fmt.Errorf("invalid token: missing role")
+	}
+
+	// Check authorization with ownership verification
+	if authorizer != nil {
+		attributes := map[string]string{"vdev": req.ID}
+		if !authorizer.Authorize("ReadVdevInfo", userID, []string{userRole}, attributes, cbArgs.Store, colmfamily) {
+			log.Errorf("user %s with role %s not authorized to read vdev %s", userID, userRole, req.ID)
+			return nil, fmt.Errorf("authorization failed")
+		}
+	}
+
+	log.Infof("user %s authorized to read vdev %s", userID, req.ID)
 	vKey := getConfKey(vdevKey, req.ID)
-	rqResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	var rqResult *storageiface.RangeReadResult
+	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vKey,
 		BufSize:  cbArgs.ReplySize,
@@ -1007,7 +1108,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		TTL:    time.Minute,
 	}
 
-	claims := map[string]any{
+	claims = map[string]any{
 		"vdevID": req.ID,
 	}
 

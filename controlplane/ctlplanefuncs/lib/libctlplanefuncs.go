@@ -48,6 +48,7 @@ const (
 	NAME           = "name"
 
 	NISD_SECRET = "Nisd-secret"
+	CP_SECRET   = "ControlPlane-secret"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -219,6 +220,7 @@ type VdevCfg struct {
 type Vdev struct {
 	Cfg          VdevCfg
 	NisdToChkMap []NisdChunk
+	UserToken    string
 }
 
 type Filter struct {
@@ -232,8 +234,9 @@ type VdevReq struct {
 }
 
 type GetReq struct {
-	ID     string
-	GetAll bool
+	ID        string
+	GetAll    bool
+	UserToken string
 }
 
 func (vdev *VdevCfg) Init() error {
