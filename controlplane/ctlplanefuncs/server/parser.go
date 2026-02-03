@@ -208,16 +208,16 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case DEVICE_ID:
-			nisd.FailureDomain[ctlplfl.FD_DEVICE] = string(value)
+			nisd.FailureDomain[ctlplfl.DEVICE_IDX] = string(value)
 		case PEER_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
 		case hvKey:
-			nisd.FailureDomain[ctlplfl.FD_HV] = string(value)
+			nisd.FailureDomain[ctlplfl.HV_IDX] = string(value)
 		case pduKey:
-			nisd.FailureDomain[ctlplfl.FD_PDU] = string(value)
+			nisd.FailureDomain[ctlplfl.PDU_IDX] = string(value)
 		case rackKey:
-			nisd.FailureDomain[ctlplfl.FD_RACK] = string(value)
+			nisd.FailureDomain[ctlplfl.RACK_IDX] = string(value)
 		case TOTAL_SPACE:
 			ts, _ := strconv.Atoi(string(value))
 			nisd.TotalSize = int64(ts)
