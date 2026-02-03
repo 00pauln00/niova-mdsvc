@@ -637,7 +637,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	fd, err := HR.GetFDLevel(int(vdev.Cfg.NumReplica))
 	if err != nil {
 		log.Error("failed to get fd:", err)
-		resp.Error = fmt.Sprintf("failed to get fd:", err)
+		resp.Error = fmt.Sprintf("failed to get fd: %v", err)
 		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 
