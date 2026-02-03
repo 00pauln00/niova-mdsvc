@@ -7,10 +7,12 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+	"time"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	"github.com/tidwall/btree"
@@ -186,8 +188,14 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
 	for _, chg := range chgs {
-		log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
-		rc := cbargs.PmdbWriteKV(colmfamily, string(chg.Key), string(chg.Value))
+		var rc int
+		if len(chg.Value) == 0 {
+			log.Info("Deleting key: ", string(chg.Key))
+			rc = cbargs.PmdbDeleteKV(colmfamily, string(chg.Key))
+		} else {
+			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+			rc = cbargs.PmdbWriteKV(colmfamily, string(chg.Key), string(chg.Value))
+		}
 		if rc < 0 {
 			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
 			return fmt.Errorf("failed to apply changes for key: %s", string(chg.Key))
@@ -561,6 +569,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
 	log.Infof("allocating vdev for ID: %s", vdev.Cfg.ID)
+	resp.ID = vdev.Cfg.ID
 	nisdMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	HR.Dump()
 	// allocate nisd chunks to vdev
@@ -938,8 +947,26 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
+	
+	authtc := &auth.Token{
+		Secret: []byte(ctlplfl.NISD_SECRET),
+		TTL: time.Minute,
+	}
+
+	claims := map[string]any{
+		"vdevID": req.ID,
+	}
+
+	authtoken, err := authtc.CreateToken(claims)
+	if err != nil {
+		log.Error("Token Creation failed with: ", err)
+		return nil, err
+	}
+	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
+	
 	vdevInfo := ctlplfl.VdevCfg{
 		ID: req.ID,
+		AuthToken: authtoken,
 	}
 
 	// TODO: move this to parsing file

@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	"github.com/google/uuid"
 )
 
@@ -45,6 +46,8 @@ const (
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	MAX_REPLY_SIZE = 4 * 1024 * 1024
 	NAME           = "name"
+
+	NISD_SECRET = "Nisd-secret"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -184,6 +187,7 @@ type VdevCfg struct {
 	NumReplica   uint8
 	NumDataBlk   uint8
 	NumParityBlk uint8
+	AuthToken    string
 }
 
 type Vdev struct {
@@ -284,6 +288,12 @@ func RegisterGOBStructs() {
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
+	gob.Register(userlib.GetReq{})
+	gob.Register(userlib.UserReq{})
+	gob.Register(userlib.User{})
+	gob.Register(userlib.UserResp{})
+	gob.Register(userlib.LoginReq{})
+	gob.Register(userlib.LoginResp{})
 }
 
 func (req *GetReq) ValidateRequest() error {
