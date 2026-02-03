@@ -48,4 +48,4 @@ if [[ "$FRESH" =~ ^[Yy]$ ]]; then
     cp -r lib libexec start_pumice.sh "${BASE_DIR}/"
 fi
 
-pdsh -w "${PDSH_HOSTS}" "${BASE_DIR}/start_pumice.sh"
+pdsh -w "${PDSH_HOSTS}" "${BASE_DIR}/start_pumice.sh" "$CFG_FILE"

@@ -103,6 +103,14 @@ pdsh -w 192.168.96.8[4-8] 'sudo killall CTLPlane_proxy'
 
 ---
 
+## 🛑 Stopping cp-monitor
+
+```bash
+pdsh -w 192.168.96.8[4-8] 'sudo killall cp-monitor' 
+```
+
+---
+
 ## 🗄️ Logs and Configuration Location
 
 All generated artifacts are stored under:
