@@ -108,7 +108,7 @@ func main() {
 			os.Exit(-1)
 		}
 		conf.NisdConfig[i].ID = nisdInfo.ID
-		conf.NisdConfig[i].ClientPort = nisdInfo.ClientPort
+		conf.NisdConfig[i].ClientPort = nisdInfo.NetInfo[ZERO_INDEX].Port
 		conf.NisdConfig[i].PeerPort = nisdInfo.PeerPort
 		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.FD_DEVICE]
 		conf.NisdConfig[i].Args = naS
