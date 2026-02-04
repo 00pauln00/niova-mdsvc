@@ -188,8 +188,14 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
 	for _, chg := range chgs {
-		log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
-		rc := cbargs.PmdbWriteKV(colmfamily, string(chg.Key), string(chg.Value))
+		var rc int
+		if len(chg.Value) == 0 {
+			log.Info("Deleting key: ", string(chg.Key))
+			rc = cbargs.PmdbDeleteKV(colmfamily, string(chg.Key))
+		} else {
+			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+			rc = cbargs.PmdbWriteKV(colmfamily, string(chg.Key), string(chg.Value))
+		}
 		if rc < 0 {
 			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
 			return fmt.Errorf("failed to apply changes for key: %s", string(chg.Key))
