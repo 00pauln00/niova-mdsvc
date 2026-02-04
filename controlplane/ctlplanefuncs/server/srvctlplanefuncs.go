@@ -382,6 +382,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	dev := args[0].(ctlplfl.Device)
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	err := dev.Validate()
 	if err != nil {
 		log.Error("failed to validate device: ", err)
@@ -392,6 +393,16 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		Success: true,
 	}
 
+	key := getConfKey(deviceCfgKey, dev.ID)
+	ok, err := cbArgs.PmdbKeyExists(colmfamily, key)
+	if err != nil {
+		log.Errorf("failed to check if key exists: %v", err)
+		return nil, fmt.Errorf("failed to check if key exists: %v", err)
+	}
+	if ok {
+		log.Errorf("key already present in the db: %v", err)
+		return nil, fmt.Errorf("key already present in the db: %v", err)
+	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
 	if err != nil {
 		log.Error("Failed to marshal nisd response: ", err)
@@ -749,6 +760,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	pt := args[0].(ctlplfl.DevicePartition)
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	err := pt.Validate()
 	if err != nil {
 		log.Error("failed to validate partition: ", err)
@@ -757,6 +769,17 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	resp := &ctlplfl.ResponseXML{
 		Name:    pt.PartitionID,
 		Success: true,
+	}
+
+	key := getConfKey(deviceCfgKey, pt.PartitionID)
+	ok, err := cbArgs.PmdbKeyExists(colmfamily, key)
+	if err != nil {
+		log.Errorf("failed to check if key exists: %v", err)
+		return nil, fmt.Errorf("failed to check if key exists: %v", err)
+	}
+	if ok {
+		log.Errorf("key already present in the db: %v", err)
+		return nil, fmt.Errorf("key already present in the db: %v", err)
 	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
 	if err != nil {
@@ -795,6 +818,8 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
 	pdu := args[0].(ctlplfl.PDU)
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
+
 	resp := &ctlplfl.ResponseXML{
 		Name:    pdu.ID,
 		Success: true,
@@ -804,6 +829,17 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Error("failed to validate PDU: ", err)
 		return nil, err
 	}
+	key := getConfKey(pduKey, pdu.ID)
+	ok, err := cbArgs.PmdbKeyExists(colmfamily, key)
+	if err != nil {
+		log.Errorf("failed to check if key exists: %v", err)
+		return nil, fmt.Errorf("failed to check if key exists: %v", err)
+	}
+	if ok {
+		log.Errorf("key already present in the db: %v", err)
+		return nil, fmt.Errorf("key already present in the db: %v", err)
+	}
+
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to  encode pdu response: %v", err)
@@ -843,6 +879,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 func WPRackCfg(args ...interface{}) (interface{}, error) {
 
 	rack := args[0].(ctlplfl.Rack)
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	resp := &ctlplfl.ResponseXML{
 		Name:    rack.ID,
 		Success: true,
@@ -851,6 +888,16 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		log.Error("failed to validate Rack: ", err)
 		return nil, err
+	}
+	key := getConfKey(rackKey, rack.ID)
+	ok, err := cbArgs.PmdbKeyExists(colmfamily, key)
+	if err != nil {
+		log.Errorf("failed to check if key exists: %v", err)
+		return nil, fmt.Errorf("failed to check if key exists: %v", err)
+	}
+	if ok {
+		log.Errorf("key already present in the db: %v", err)
+		return nil, fmt.Errorf("key already present in the db: %v", err)
 	}
 	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
@@ -895,6 +942,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	// Decode the input buffer into structure format
 	hv := args[0].(ctlplfl.Hypervisor)
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	err := hv.Validate()
 	if err != nil {
 		log.Error("failed to validate hv: ", err)
@@ -903,6 +951,16 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	resp := &ctlplfl.ResponseXML{
 		Name:    hv.ID,
 		Success: true,
+	}
+	key := getConfKey(hvKey, hv.ID)
+	ok, err := cbArgs.PmdbKeyExists(colmfamily, key)
+	if err != nil {
+		log.Errorf("failed to check if key exists: %v", err)
+		return nil, fmt.Errorf("failed to check if key exists: %v", err)
+	}
+	if ok {
+		log.Errorf("key already present in the db: %v", err)
+		return nil, fmt.Errorf("key already present in the db: %v", err)
 	}
 	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
 	if err != nil {
