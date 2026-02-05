@@ -9,6 +9,8 @@ import (
 	"time"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	userClient "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -737,4 +739,203 @@ func TestGetNisd(t *testing.T) {
 	}
 	log.Info("total number of nisd's : ", len(res))
 	assert.NoError(t, err)
+}
+
+// newUserClient creates a new user client for authentication operations
+func newUserClient(t *testing.T) (*userClient.Client, func()) {
+	t.Helper()
+
+	clusterID := os.Getenv("RAFT_ID")
+	if clusterID == "" {
+		log.Fatal("RAFT_ID env variable not set")
+	}
+
+	configPath := os.Getenv("GOSSIP_NODES_PATH")
+	if configPath == "" {
+		log.Fatal("GOSSIP_NODES_PATH env variable not set")
+	}
+
+	cfg := userClient.Config{
+		AppUUID:          uuid.New().String(),
+		RaftUUID:         clusterID,
+		GossipConfigPath: configPath,
+	}
+
+	c, tearDown := userClient.New(cfg)
+	if c == nil {
+		t.Fatal("failed to initialize user client")
+	}
+	return c, tearDown
+}
+
+// TestVdevAuthorizationWithUsers test admin user creation, along with
+// two users trying to access vdev's
+func TestVdevAuthorizationWithUsers(t *testing.T) {
+	// Initialize control plane client for vdev operations
+	ctlClient := newClient(t)
+
+	// Initialize user client for authentication operations
+	authClient, tearDown := newUserClient(t)
+	defer tearDown()
+
+	// Step 0: Create a NISD to allocate space for Vdevs
+	nisd := cpLib.Nisd{
+		PeerPort: 8001,
+		ID:       "nisd-auth-test-001",
+		FailureDomain: []string{
+			"pdu-auth-01",
+			"rack-auth-01",
+			"hv-auth-01",
+			"dev-auth-006",
+		},
+		TotalSize:     15_000_000_000_000,
+		AvailableSize: 15_000_000_000_000,
+	}
+	_, err := ctlClient.PutNisd(&nisd)
+	assert.NoError(t, err, "failed to create NISD for auth test")
+
+	// Step 1: Create admin user with custom secret key
+	adminSecretKey := "admin-secret-key-" + uuid.New().String()[:8]
+	adminReq := &userlib.UserReq{
+		Username:     userlib.AdminUsername,
+		NewSecretKey: adminSecretKey,
+	}
+
+	adminResp, err := authClient.CreateAdminUser(adminReq)
+	assert.NoError(t, err, "failed to create admin user")
+	assert.NotNil(t, adminResp)
+	assert.True(t, adminResp.Success, "admin user creation should succeed")
+	assert.Equal(t, userlib.AdminUserRole, adminResp.UserRole)
+	t.Logf("Created admin user with ID: %s", adminResp.UserID)
+
+	// Step 2: Login with admin user
+	adminLoginResp, err := authClient.Login(userlib.AdminUsername, adminResp.SecretKey)
+	assert.NoError(t, err, "admin login should succeed")
+	assert.True(t, adminLoginResp.Success)
+	assert.NotEmpty(t, adminLoginResp.AccessToken, "admin access token should not be empty")
+	t.Logf("Admin logged in, access token obtained")
+
+	// Step 3: Create normal user1
+	user1Username := "vdev_owner_" + uuid.New().String()[:8]
+	user1Req := &userlib.UserReq{
+		Username: user1Username,
+	}
+
+	user1Resp, err := authClient.CreateUser(user1Req)
+	assert.NoError(t, err, "failed to create user1")
+	assert.NotNil(t, user1Resp)
+	assert.True(t, user1Resp.Success)
+	assert.NotEmpty(t, user1Resp.SecretKey)
+	assert.NotEmpty(t, user1Resp.UserID)
+	assert.Equal(t, userlib.DefaultUserRole, user1Resp.UserRole)
+	t.Logf("Created user1: %s with ID: %s", user1Username, user1Resp.UserID)
+
+	// Step 4: Login with user1 to get access token
+	user1LoginResp, err := authClient.Login(user1Username, user1Resp.SecretKey)
+	assert.NoError(t, err, "user1 login should succeed")
+	assert.True(t, user1LoginResp.Success)
+	assert.NotEmpty(t, user1LoginResp.AccessToken, "user1 access token should not be empty")
+	user1AccessToken := user1LoginResp.AccessToken
+	t.Logf("User1 logged in, access token obtained")
+
+	// Step 5: User1 creates a vdev with their access token
+	vdev1 := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       500 * 1024 * 1024 * 1024, // 500 GB
+			NumReplica: 1,
+		},
+		UserToken: user1AccessToken,
+	}
+
+	vdevResp, err := ctlClient.CreateVdev(vdev1)
+	assert.NoError(t, err, "user1 should be able to create vdev")
+	assert.NotNil(t, vdevResp)
+	assert.True(t, vdevResp.Success, "vdev creation should succeed")
+	assert.NotEmpty(t, vdevResp.ID, "vdev ID should not be empty")
+	vdevID := vdevResp.ID
+	t.Logf("User1 created vdev with ID: %s", vdevID)
+
+	// Step 6: Verify user1 can access their own vdev
+	getReqUser1 := &cpLib.GetReq{
+		ID:        vdevID,
+		UserToken: user1AccessToken,
+	}
+
+	vdevCfg, err := ctlClient.GetVdevCfg(getReqUser1)
+	assert.NoError(t, err, "user1 should be able to read their own vdev")
+	assert.Equal(t, vdevID, vdevCfg.ID, "fetched vdev ID should match")
+	t.Logf("User1 successfully accessed their vdev: %s", vdevCfg.ID)
+
+	// Step 7: Create normal user2
+	user2Username := "unauthorized_user_" + uuid.New().String()[:8]
+	user2Req := &userlib.UserReq{
+		Username: user2Username,
+	}
+
+	user2Resp, err := authClient.CreateUser(user2Req)
+	assert.NoError(t, err, "failed to create user2")
+	assert.NotNil(t, user2Resp)
+	assert.True(t, user2Resp.Success)
+	assert.NotEmpty(t, user2Resp.SecretKey)
+	assert.NotEmpty(t, user2Resp.UserID)
+	t.Logf("Created user2: %s with ID: %s", user2Username, user2Resp.UserID)
+
+	// Step 8: Login with user2 to get access token
+	user2LoginResp, err := authClient.Login(user2Username, user2Resp.SecretKey)
+	assert.NoError(t, err, "user2 login should succeed")
+	assert.True(t, user2LoginResp.Success)
+	assert.NotEmpty(t, user2LoginResp.AccessToken, "user2 access token should not be empty")
+	user2AccessToken := user2LoginResp.AccessToken
+	t.Logf("User2 logged in, access token obtained")
+
+	// Step 9: Verify user2 CANNOT access user1's vdev (authorization should fail)
+	getReqUser2 := &cpLib.GetReq{
+		ID:        vdevID, // Trying to access user1's vdev
+		UserToken: user2AccessToken,
+	}
+
+	_, err = ctlClient.GetVdevCfg(getReqUser2)
+	// User2 should NOT be able to access user1's vdev
+	assert.Error(t, err, "user2 should NOT be able to access user1's vdev - authorization should fail")
+	t.Logf("User2 correctly denied access to user1's vdev (authorization check passed)")
+
+	// Step 10: Create a vdev for user2 and verify they can access their own
+	vdev2 := &cpLib.Vdev{
+		Cfg: cpLib.VdevCfg{
+			Size:       300 * 1024 * 1024 * 1024, // 300 GB
+			NumReplica: 1,
+		},
+		UserToken: user2AccessToken,
+	}
+
+	vdev2Resp, err := ctlClient.CreateVdev(vdev2)
+	assert.NoError(t, err, "user2 should be able to create their own vdev")
+	assert.NotNil(t, vdev2Resp)
+	assert.True(t, vdev2Resp.Success, "user2 vdev creation should succeed")
+	assert.NotEmpty(t, vdev2Resp.ID)
+	vdev2ID := vdev2Resp.ID
+	t.Logf("User2 created their own vdev with ID: %s", vdev2ID)
+
+	// Verify user2 can access their own vdev
+	getReqUser2Own := &cpLib.GetReq{
+		ID:        vdev2ID,
+		UserToken: user2AccessToken,
+	}
+
+	vdev2Cfg, err := ctlClient.GetVdevCfg(getReqUser2Own)
+	assert.NoError(t, err, "user2 should be able to read their own vdev")
+	assert.Equal(t, vdev2ID, vdev2Cfg.ID, "fetched vdev2 ID should match")
+	t.Logf("User2 successfully accessed their own vdev: %s", vdev2Cfg.ID)
+
+	// Step 11: Verify user1 CANNOT access user2's vdev
+	getReqUser1ForVdev2 := &cpLib.GetReq{
+		ID:        vdev2ID, // Trying to access user2's vdev
+		UserToken: user1AccessToken,
+	}
+
+	_, err = ctlClient.GetVdevCfg(getReqUser1ForVdev2)
+	assert.Error(t, err, "user1 should NOT be able to access user2's vdev - authorization should fail")
+	t.Logf("User1 correctly denied access to user2's vdev (authorization check passed)")
+
+	t.Log("Vdev Authorization Test Completed Successfully")
 }
