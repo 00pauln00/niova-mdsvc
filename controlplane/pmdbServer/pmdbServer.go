@@ -23,8 +23,10 @@ import (
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+	userserver "github.com/00pauln00/niova-mdsvc/controlplane/user/server"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
 	leaseServerLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/server"
@@ -117,6 +119,9 @@ func main() {
 	serverHandler := pmdbServerHandler{}
 	cpLib.RegisterGOBStructs()
 
+	// Initialize auth encryption (required for secret key encryption/decryption)
+	userlib.MustInitialize()
+
 	nso, err := serverHandler.parseArgs()
 	if err != nil {
 		defaultLogger.Println("failed to parse arguments", err)
@@ -185,6 +190,11 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, srvctlplanefuncs.ReadVdevInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_ALL_VDEV, srvctlplanefuncs.ReadAllVdevInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, srvctlplanefuncs.ReadChunkNisd)
+
+	cpAPI.RegisterWritePrepFunc(userlib.PutUserAPI, userserver.PutUser)
+	cpAPI.RegisterReadFunc(userlib.GetUserAPI, userserver.GetUser)
+	cpAPI.RegisterApplyFunc(userlib.AdminUserAPI, userserver.CreateAdminUser)
+	cpAPI.RegisterReadFunc(userlib.LoginAPI, userserver.Login)
 
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
