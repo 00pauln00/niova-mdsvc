@@ -30,10 +30,6 @@ func (r *Rack) Validate() error {
 
 func (d *Device) Validate() error {
 
-	if _, err := uuid.Parse(d.ID); err != nil {
-		return errors.New("invalid UUID in Device.ID")
-	}
-
 	if _, err := uuid.Parse(d.HypervisorID); err != nil {
 		return errors.New("invalid UUID in Device.HypervisorID")
 	}
@@ -48,16 +44,9 @@ func (d *Device) Validate() error {
 }
 
 func (p *DevicePartition) Validate() error {
-	if _, err := uuid.Parse(p.PartitionID); err != nil {
-		return errors.New("invalid UUID in DevicePartition.PartitionID")
-	}
 
 	if _, err := uuid.Parse(p.NISDUUID); err != nil {
 		return errors.New("invalid UUID in DevicePartition.NISDUUID")
-	}
-
-	if _, err := uuid.Parse(p.DevID); err != nil {
-		return errors.New("invalid UUID in DevicePartition.DevID")
 	}
 
 	return nil
