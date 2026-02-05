@@ -31,6 +31,7 @@ import (
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
 	leaseServerLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/server"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	lookout "github.com/00pauln00/niova-pumicedb/go/pkg/utils/ctlmonitor"
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
@@ -80,7 +81,9 @@ func PopulateHierarchy() error {
 	key, prefix := srvctlplanefuncs.NisdCfgKey, srvctlplanefuncs.NisdCfgKey
 	rangeReadContOut := make([]map[string][]byte, 0)
 	time.Sleep(2 * time.Second)
-	var cbargs PumiceDBServer.PmdbCbArgs
+	cbargs := PumiceDBServer.PmdbCbArgs{
+		Store: &pumicestore.PumiceStore{},
+	}
 	for {
 		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
 		readResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
