@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -150,6 +151,7 @@ func TestAPIPartition_ValidUUID(t *testing.T) {
 		PartitionID: "dev-1-part1",
 		DevID:       "dev-1",
 		Size:        1024,
+		NISDUUID:    uuid.NewString(),
 	}
 
 	_, err := c.PutPartition(&p)
@@ -185,6 +187,7 @@ func TestAPIDevice_ValidUUID(t *testing.T) {
 	d := cpLib.Device{
 		ID:           "60447cd0-ab3e-11f0-aa15-1f40dd976538",
 		SerialNumber: "SN123",
+		HypervisorID: uuid.NewString(),
 	}
 
 	_, err := c.PutDevice(&d)
@@ -206,7 +209,7 @@ func TestAPIDevice_InvalidUUID(t *testing.T) {
 func TestAPIDevice_DuplicateUUID(t *testing.T) {
 	c := newClient(t)
 
-	d := cpLib.Device{ID: "dup-device"}
+	d := cpLib.Device{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"}
 	_, _ = c.PutDevice(&d)
 
 	resp, _ := c.PutDevice(&d)
@@ -244,9 +247,9 @@ func TestAPINisd_ValidUUID(t *testing.T) {
 	_, err := c.PutNisd(&n)
 	assert.NoError(t, err)
 
-	res, err := c.GetNisds()
+	result, err := c.GetNisds()
 	assert.NoError(t, err)
-	assert.Equal(t, n.ID, res[0].ID)
+	assert.Equal(t, n.ID, result[0].ID)
 }
 
 func TestAPINisd_InvalidUUID(t *testing.T) {
@@ -261,10 +264,34 @@ func TestAPINisd_InvalidUUID(t *testing.T) {
 func TestAPINisd_DuplicateUUID(t *testing.T) {
 	c := newClient(t)
 
-	n := cpLib.Nisd{ID: "dup-nisd"}
-	_, _ = c.PutNisd(&n)
-
+	n := cpLib.Nisd{
+		PeerPort: 8001,
+		ID:       uuid.NewString(),
+		FailureDomain: []string{
+			"87694b06-ea0e-11f0-8fc4-e3e2449638d1",
+			"87694b06-ea0e-11f0-8fc4-e3e2449638d2",
+			"87694b06-ea0e-11f0-8fc4-e3e2449638d3",
+			"nvme-e3f4123",
+		},
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+		SocketPath:    "/path/sockets1",
+		NetInfo: cpLib.NetInfoList{
+			cpLib.NetworkInfo{
+				IPAddr: "192.168.0.0.1",
+				Port:   5444,
+			},
+			cpLib.NetworkInfo{
+				IPAddr: "192.168.0.0.2",
+				Port:   6444,
+			},
+		},
+		NetInfoCnt: 2,
+	}
 	resp, err := c.PutNisd(&n)
-	assert.Error(t, err)
-	assert.Nil(t, resp)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	resp, _ = c.PutNisd(&n)
+	assert.False(t, resp.Success)
 }
