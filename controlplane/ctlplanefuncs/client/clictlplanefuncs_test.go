@@ -781,12 +781,12 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	// Step 0: Create a NISD to allocate space for Vdevs
 	nisd := cpLib.Nisd{
 		PeerPort: 8001,
-		ID:       "nisd-auth-test-001",
+		ID:       uuid.NewString(),
 		FailureDomain: []string{
-			"pdu-auth-01",
-			"rack-auth-01",
-			"hv-auth-01",
-			"dev-auth-006",
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
 		},
 		TotalSize:     15_000_000_000_000,
 		AvailableSize: 15_000_000_000_000,
