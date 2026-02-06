@@ -6,19 +6,34 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"unsafe"
 	"time"
+	"unsafe"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
+	authz "github.com/00pauln00/niova-mdsvc/controlplane/authorizer"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
-	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 	"github.com/tidwall/btree"
 )
 
 var colmfamily string
+
+var (
+	authorizer *authz.Authorizer
+)
+
+// InitAuthorizer initializes the global authorizer instance with the config file
+func InitAuthorizer(configPath string) error {
+	authorizer = &authz.Authorizer{
+		Config: make(authz.Config),
+	}
+	return authorizer.LoadConfig(configPath)
+}
 
 const (
 	DEVICE_ID        = "d"
@@ -94,7 +109,7 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	//FIX: Arbitrary read size
 	key := fmt.Sprintf("snap/%s", Snap.SnapName)
 	log.Info("Key to be read : ", key)
-	readResult, err := cbargs.PmdbReadKV(colmfamily, key)
+	readResult, err := cbargs.Store.Read(key, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -109,14 +124,14 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	Snap := args[1].(ctlplfl.SnapXML)
 
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
-	rrargs := PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	rrargs := storageiface.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     key,
 	}
-	readResult, err := cbArgs.PmdbRangeRead(rrargs)
+	readResult, err := cbArgs.Store.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -186,18 +201,18 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
-func applyKV(chgs []funclib.CommitChg, cbargs *PumiceDBServer.PmdbCbArgs) error {
+func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 	for _, chg := range chgs {
-		var rc int
+		var err error
 		if len(chg.Value) == 0 {
 			log.Info("Deleting key: ", string(chg.Key))
-			rc = cbargs.PmdbDeleteKV(colmfamily, string(chg.Key))
+			err = ds.Delete(string(chg.Key), colmfamily)
 		} else {
 			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
-			rc = cbargs.PmdbWriteKV(colmfamily, string(chg.Key), string(chg.Value))
+			err = ds.Write(string(chg.Key), string(chg.Value), colmfamily)
 		}
-		if rc < 0 {
-			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
+		if err != nil {
+			log.Error("Failed to apply changes for key: ", string(chg.Key), " err: ", err)
 			return fmt.Errorf("failed to apply changes for key: %s", string(chg.Key))
 		}
 	}
@@ -215,7 +230,7 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	err = applyKV(intrm.Changes, cbargs)
+	err = applyKV(intrm.Changes, cbargs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		return nil, err
@@ -243,7 +258,7 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
-	err = applyKV(intrm.Changes, cbargs)
+	err = applyKV(intrm.Changes, cbargs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		return nil, err
@@ -261,14 +276,14 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	log.Trace("fetching nisd details for key : ", NisdCfgKey)
-	rrargs := PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	rrargs := storageiface.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     NisdCfgKey,
 	}
-	readResult, err := cbArgs.PmdbRangeRead(rrargs)
+	readResult, err := cbArgs.Store.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -287,14 +302,14 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	}
 	key := getConfKey(NisdCfgKey, req.ID)
 	log.Trace("fetching nisd details for key : ", key)
-	rrargs := PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	rrargs := storageiface.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     key,
 	}
-	readResult, err := cbArgs.PmdbRangeRead(rrargs)
+	readResult, err := cbArgs.Store.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
@@ -304,8 +319,8 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -347,8 +362,8 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 	key := getConfKey(deviceCfgKey, req.ID)
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily:  colmfamily,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -417,12 +432,49 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		err := fmt.Errorf("invalid argument: expecting type vdev")
 		return nil, err
 	}
-	err := vdev.Init()
+	// Validate user token
+	if vdev.UserToken == "" {
+		log.Error("user token is required for vdev creation")
+		return nil, fmt.Errorf("user token is required")
+	}
+
+	// Verify token with service secret
+	tc := &auth.Token{
+		Secret: []byte(ctlplfl.CP_SECRET),
+	}
+	claims, err := tc.VerifyToken(vdev.UserToken)
+	if err != nil {
+		log.Errorf("token verification failed: %v", err)
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
+	// Extract user information from claims
+	userID, ok := claims["userID"].(string)
+	if !ok || userID == "" {
+		log.Error("userID not found in token")
+		return nil, fmt.Errorf("invalid token: missing userID")
+	}
+
+	userRole, ok := claims["role"].(string)
+	if !ok || userRole == "" {
+		log.Error("role not found in token")
+		return nil, fmt.Errorf("invalid token: missing role")
+	}
+
+	// Check authorization
+	if authorizer != nil {
+		if !authorizer.Authorize("WPCreateVdev", userID, []string{userRole}, map[string]string{}, nil, "") {
+			log.Errorf("user %s with role %s not authorized for WPCreateVdev", userID, userRole)
+			return nil, fmt.Errorf("authorization failed")
+		}
+	}
+
+	err = vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
 		return nil, err
 	}
-	log.Infof("initializing vdev: %+v", vdev)
+	log.Infof("initializing vdev: %+v for user: %s", vdev, userID)
 	key := getConfKey(vdevKey, vdev.Cfg.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
@@ -441,6 +493,15 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(value),
 		})
 	}
+
+	// Add ownership key to mark user as owner of this vdev
+	ownershipKey := fmt.Sprintf("/u/%s/v/%s", userID, vdev.Cfg.ID)
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key:   []byte(ownershipKey),
+		Value: []byte("1"),
+	})
+	log.Infof("added ownership key: %s for vdev: %s", ownershipKey, vdev.Cfg.ID)
+
 	r, err := pmCmn.Encoder(pmCmn.GOB, vdev)
 	if err != nil {
 		log.Error("Failed to marshal vdev response: ", err)
@@ -576,7 +637,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	fd, err := HR.GetFDLevel(int(vdev.Cfg.NumReplica))
 	if err != nil {
 		log.Error("failed to get fd:", err)
-		resp.Error = fmt.Sprintf("failed to get fd:", err)
+		resp.Error = fmt.Sprintf("failed to get fd: %v", err)
 		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 
@@ -603,7 +664,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 			})
 			return true
 		})
-		err = applyKV(funcIntrm.Changes, cbArgs)
+		err = applyKV(funcIntrm.Changes, cbArgs.Store)
 		if err != nil {
 			log.Error("applyKV(): ", err)
 			return nil, err
@@ -653,11 +714,11 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(ptKey, req.ID)
 	}
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -693,11 +754,11 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -737,11 +798,11 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -787,11 +848,11 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		key = getConfKey(hvKey, req.ID)
 	}
 
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -812,11 +873,11 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		key = getConfKey(vdevKey, req.ID)
 	}
 
-	nisdResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       NisdCfgKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    NisdCfgKey,
+	nisdResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      NisdCfgKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   NisdCfgKey,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -825,11 +886,11 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	// ParseEntitiesMap now returns map[string]Entity
 	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, NisdParser{})
 
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       key,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    key,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      key,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   key,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -936,24 +997,65 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("failed to validate request:", err)
 		return nil, err
 	}
+
+	// Validate user token
+	if req.UserToken == "" {
+		log.Error("user token is required for ReadVdevInfo")
+		return nil, fmt.Errorf("user token is required")
+	}
+
+	// Verify token with service secret
+	tc := &auth.Token{
+		Secret: []byte(ctlplfl.CP_SECRET),
+	}
+	claims, err := tc.VerifyToken(req.UserToken)
+	if err != nil {
+		log.Errorf("token verification failed: %v", err)
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
+	// Extract user information from claims
+	userID, ok := claims["userID"].(string)
+	if !ok || userID == "" {
+		log.Error("userID not found in token")
+		return nil, fmt.Errorf("invalid token: missing userID")
+	}
+
+	userRole, ok := claims["role"].(string)
+	if !ok || userRole == "" {
+		log.Error("role not found in token")
+		return nil, fmt.Errorf("invalid token: missing role")
+	}
+
+	// Check authorization with ownership verification
+	if authorizer != nil {
+		attributes := map[string]string{"vdev": req.ID}
+		if !authorizer.Authorize("ReadVdevInfo", userID, []string{userRole}, attributes, cbArgs.Store, colmfamily) {
+			log.Errorf("user %s with role %s not authorized to read vdev %s", userID, userRole, req.ID)
+			return nil, fmt.Errorf("authorization failed")
+		}
+	}
+
+	log.Infof("user %s authorized to read vdev %s", userID, req.ID)
 	vKey := getConfKey(vdevKey, req.ID)
-	rqResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       vKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    vKey,
+	var rqResult *storageiface.RangeReadResult
+	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   vKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
-	
+
 	authtc := &auth.Token{
 		Secret: []byte(ctlplfl.NISD_SECRET),
-		TTL: time.Minute,
+		TTL:    time.Minute,
 	}
 
-	claims := map[string]any{
+	claims = map[string]any{
 		"vdevID": req.ID,
 	}
 
@@ -963,9 +1065,9 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
-	
+
 	vdevInfo := ctlplfl.VdevCfg{
-		ID: req.ID,
+		ID:        req.ID,
 		AuthToken: authtoken,
 	}
 
@@ -999,11 +1101,11 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	rqResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       vdevKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    vdevKey,
+	rqResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vdevKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   vdevKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
@@ -1031,11 +1133,11 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 
 	log.Info("searching for key:", vcKey)
 
-	rqResult, err := cbargs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       vcKey,
-		BufSize:   cbargs.ReplySize,
-		Prefix:    vcKey,
+	rqResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vcKey,
+		BufSize:  cbargs.ReplySize,
+		Prefix:   vcKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
@@ -1077,11 +1179,11 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 
 func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	readResult, err := cbArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-		ColFamily: colmfamily,
-		Key:       argsKey,
-		BufSize:   cbArgs.ReplySize,
-		Prefix:    argsKey,
+	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      argsKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   argsKey,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)

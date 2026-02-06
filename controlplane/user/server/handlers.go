@@ -10,10 +10,12 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	pumiceFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	"github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 )
 
 var columnFamily string = "PMDBTS_CF"
@@ -43,8 +45,8 @@ func checkUserExistsByID(userID string, callbackArgs *pumiceserver.PmdbCbArgs) (
 	}
 
 	prefixKey := fmt.Sprintf("%s/%s", userKeyPrefix, userID)
-	readResult, err := callbackArgs.PmdbRangeRead(pumiceserver.RangeReadArgs{
-		ColFamily:  columnFamily,
+	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   columnFamily,
 		Key:        prefixKey,
 		Prefix:     prefixKey,
 		BufSize:    callbackArgs.ReplySize,
@@ -73,8 +75,8 @@ func getUserIDByUsername(username string, callbackArgs *pumiceserver.PmdbCbArgs)
 	}
 
 	indexKey := fmt.Sprintf("%s/%s/%s", userIndexPrefix, usernameIdxPrefix, username)
-	readResult, err := callbackArgs.PmdbRangeRead(pumiceserver.RangeReadArgs{
-		ColFamily:  columnFamily,
+	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   columnFamily,
 		Key:        indexKey,
 		Prefix:     indexKey,
 		BufSize:    callbackArgs.ReplySize,
@@ -349,8 +351,8 @@ func GetUser(args ...interface{}) (interface{}, error) {
 		prefixKey = fmt.Sprintf("%s/%s", userKeyPrefix, userID)
 	}
 
-	readResult, err := callbackArgs.PmdbRangeRead(pumiceserver.RangeReadArgs{
-		ColFamily:  columnFamily,
+	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   columnFamily,
 		Key:        prefixKey,
 		Prefix:     prefixKey,
 		BufSize:    callbackArgs.ReplySize,
@@ -413,17 +415,17 @@ func GetUser(args ...interface{}) (interface{}, error) {
 // Otherwise, the key-value is written using PmdbWriteKV.
 func applyCommitChanges(changes []pumiceFunc.CommitChg, cbArgs *pumiceserver.PmdbCbArgs) error {
 	for _, chg := range changes {
-		var rc int
+		var err error
 		if len(chg.Value) == 0 {
 			log.Debugf("Deleting key: %s", string(chg.Key))
-			rc = cbArgs.PmdbDeleteKV(columnFamily, string(chg.Key))
+			err = cbArgs.Store.Delete(string(chg.Key), columnFamily)
 		} else {
 			log.Debugf("Applying change: %s", string(chg.Key))
-			rc = cbArgs.PmdbWriteKV(columnFamily, string(chg.Key), string(chg.Value))
+			err = cbArgs.Store.Write(string(chg.Key), string(chg.Value), columnFamily)
 		}
-		if rc < 0 {
+		if err != nil {
 			log.Errorf("Failed to apply change for key: %s", string(chg.Key))
-			return fmt.Errorf("failed to apply change for key: %s", string(chg.Key))
+			return err
 		}
 	}
 	return nil
@@ -576,7 +578,7 @@ func Login(args ...interface{}) (interface{}, error) {
 
 	tokenTTL := defaultTokenTTL
 	tc := &auth.Token{
-		Secret: []byte(storedKey),
+		Secret: []byte(ctlplfl.CP_SECRET),
 		TTL:    tokenTTL,
 	}
 
