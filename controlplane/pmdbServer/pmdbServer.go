@@ -171,13 +171,13 @@ func main() {
 	srvctlplanefuncs.SetClmFamily(colmfamily)
 	cpAPI := PumiceDBFunc.NewFuncServer()
 
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceInfo)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, srvctlplanefuncs.WPRackCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
+	// cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.ApplyDevice)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_PDU, srvctlplanefuncs.ApplyPDU)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_RACK, srvctlplanefuncs.ApplyRack)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.ApplyHypervisor)
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.WPCreatePartition)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.ApplyPartition)
 
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, srvctlplanefuncs.ReadAllNisdConfigs)
 	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.ReadNisdConfig)
@@ -203,6 +203,7 @@ func main() {
 	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
 	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
+	cpAPI.RegisterWritePrepFunc("*", srvctlplanefuncs.WritePrepFunc)
 	cpAPI.RegisterApplyFunc(cpLib.PUT_NISD, srvctlplanefuncs.ApplyNisd)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{

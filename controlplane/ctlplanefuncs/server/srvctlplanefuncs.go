@@ -272,39 +272,6 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	return intrm.Response, nil
 }
 
-func ApplyNisd(args ...interface{}) (interface{}, error) {
-	cbargs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
-	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
-		return nil, err
-	}
-	nisd, ok := args[0].(ctlplfl.Nisd)
-	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type Nisd")
-		return nil, err
-	}
-	var intrm funclib.FuncIntrm
-	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
-	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
-	if err != nil {
-		log.Error("Failed to decode the apply changes: ", err)
-		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
-	}
-
-	err = applyKV(intrm.Changes, cbargs.Store)
-	if err != nil {
-		log.Error("applyKV(): ", err)
-		return nil, err
-	}
-
-	err = HR.AddNisd(&nisd)
-	if err != nil {
-		log.Error("AddNisd()", err)
-	}
-
-	return intrm.Response, nil
-}
-
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
@@ -367,30 +334,6 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 	return nisdList, nil
 }
 
-func WPNisdCfg(args ...interface{}) (interface{}, error) {
-	nisd := args[0].(ctlplfl.Nisd)
-	err := nisd.Validate()
-	if err != nil {
-		log.Error("failed to validate nisd: ", err)
-		return nil, err
-	}
-	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
-
-	nisdResponse := ctlplfl.ResponseXML{
-		Name:    nisd.ID,
-		Success: true,
-	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode nisd response: %v", err)
-	}
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
-}
-
 func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
@@ -410,31 +353,9 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, deviceList)
 }
 
-func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-	dev := args[0].(ctlplfl.Device)
-	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	commitChgs := make([]funclib.CommitChg, 0)
+func WritePrepFunc(args ...interface{}) (interface{}, error) {
+	return nil, nil
 
-	resp := &ctlplfl.ResponseXML{
-		Name: dev.Name,
-		ID:   dev.ID,
-	}
-
-	if err := dev.Validate(); err != nil {
-		log.Error("failed to validate device: ", err)
-		resp.Error = err.Error()
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-
-	if err := validateKey(cbArgs, colmfamily, getConfKey(deviceCfgKey, dev.ID), resp); err != nil {
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-	commitChgs = PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{}, deviceCfgKey)
-	for _, pt := range dev.Partitions {
-		ptCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, dev.ID, ptKey))
-		commitChgs = append(commitChgs, ptCommits...)
-	}
-	return encodeFuncIntrm(resp, commitChgs)
 }
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
@@ -821,29 +742,6 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, pt)
 }
 
-func WPPDUCfg(args ...interface{}) (interface{}, error) {
-	pdu := args[0].(ctlplfl.PDU)
-	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	commitChgs := make([]funclib.CommitChg, 0)
-	resp := &ctlplfl.ResponseXML{
-		ID:   pdu.ID,
-		Name: pdu.Name,
-	}
-
-	if err := pdu.Validate(); err != nil {
-		log.Error("failed to validate PDU: ", err)
-		resp.Error = err.Error()
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-
-	if err := validateKey(cbArgs, colmfamily, getConfKey(pduKey, pdu.ID), resp); err != nil {
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-
-	commitChgs = PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{}, pduKey)
-	return encodeFuncIntrm(resp, commitChgs)
-}
-
 func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
@@ -865,30 +763,6 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 
 	return pmCmn.Encoder(pmCmn.GOB, pduList)
 
-}
-
-func WPRackCfg(args ...interface{}) (interface{}, error) {
-
-	rack := args[0].(ctlplfl.Rack)
-	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	commitChgs := make([]funclib.CommitChg, 0)
-	resp := &ctlplfl.ResponseXML{
-		ID:   rack.ID,
-		Name: rack.Name,
-	}
-
-	if err := rack.Validate(); err != nil {
-		log.Error("failed to validate Rack: ", err)
-		resp.Error = err.Error()
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-
-	if err := validateKey(cbArgs, colmfamily, getConfKey(rackKey, rack.ID), resp); err != nil {
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-	commitChgs = PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
-
-	return encodeFuncIntrm(resp, commitChgs)
 }
 
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
@@ -916,32 +790,6 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to encode rack info: %v", err)
 	}
 	return response, nil
-}
-
-func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	// Decode the input buffer into structure format
-	hv := args[0].(ctlplfl.Hypervisor)
-	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	commitChgs := make([]funclib.CommitChg, 0)
-
-	resp := &ctlplfl.ResponseXML{
-		ID:   hv.ID,
-		Name: hv.Name,
-	}
-
-	if err := hv.Validate(); err != nil {
-		log.Error("failed to validate hv: ", err)
-		resp.Error = err.Error()
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-
-	err := validateKey(cbArgs, colmfamily, getConfKey(hvKey, hv.ID), resp)
-	if err != nil {
-		return encodeFuncIntrm(resp, commitChgs)
-	}
-	commitChgs = PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{}, hvKey)
-
-	return encodeFuncIntrm(resp, commitChgs)
 }
 
 func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
