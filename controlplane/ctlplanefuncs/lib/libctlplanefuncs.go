@@ -334,7 +334,6 @@ func RegisterGOBStructs() {
 	gob.Register(userlib.UserReq{})
 	gob.Register(userlib.User{})
 	gob.Register(userlib.UserResp{})
-	gob.Register(userlib.LoginReq{})
 	gob.Register(userlib.LoginResp{})
 }
 

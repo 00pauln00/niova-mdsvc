@@ -10,6 +10,7 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -525,21 +526,31 @@ func returnApplyError(errMsg string) (interface{}, error) {
 // Login authenticates a user and returns a JWT token
 func Login(args ...interface{}) (interface{}, error) {
 	callbackArgs := args[0].(*pumiceserver.PmdbCbArgs)
-	req := args[1].(userlib.LoginReq)
+	req := args[1].(cpLib.GetReq)
 
-	// validate the request
-	if err := req.Validate(); err != nil {
-		return returnLoginError(fmt.Sprintf("validation failed: %v", err))
+	var username, secretKey string
+	// Expected ID as username:secretKey
+	sreq := strings.Split(req.ID, ":")
+	if len(sreq) != 2 {
+		return returnLoginError("username:secretKey missing")
+	} else {
+		username, secretKey = sreq[0], sreq[1]
+		if strings.TrimSpace(username) == "" {
+			return returnLoginError("username cannot be empty")
+		}
+		if strings.TrimSpace(secretKey) == "" {
+			return returnLoginError("secretKey cannot be empty")
+		}
 	}
 
 	// Look up user by username
-	userID, err := getUserIDByUsername(req.Username, callbackArgs)
+	userID, err := getUserIDByUsername(username, callbackArgs)
 	if err != nil {
-		log.Errorf("failed to lookup user by username '%s': %v", req.Username, err)
+		log.Errorf("failed to lookup user by username '%s': %v", username, err)
 		return returnLoginError("invalid credentials")
 	}
 	if userID == "" {
-		log.Errorf("username not found: %s", req.Username)
+		log.Errorf("username not found: %s", username)
 		return returnLoginError("invalid credentials")
 	}
 
@@ -558,7 +569,7 @@ func Login(args ...interface{}) (interface{}, error) {
 	if user.Status != userlib.StatusActive {
 		log.Errorf("login attempt for inactive account - username: %s, userID: %s, status: %s",
 			user.Username, user.UserID, user.Status.String())
-		return returnLoginError(fmt.Sprintf("account is %s", user.Status.String()))
+		return returnLoginError("account not available")
 	}
 
 	// Decrypt stored secret key
@@ -570,7 +581,7 @@ func Login(args ...interface{}) (interface{}, error) {
 	}
 
 	// Compare provided secret key with stored key using constant time comparison
-	if subtle.ConstantTimeCompare([]byte(storedKey), []byte(req.SecretKey)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(storedKey), []byte(secretKey)) != 1 {
 		log.Errorf("invalid secret key provided for user '%s' (ID: %s)",
 			user.Username, user.UserID)
 		return returnLoginError("invalid credentials")
