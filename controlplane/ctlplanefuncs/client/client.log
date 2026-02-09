@@ -1,2 +1,0 @@
-INFO[2026-02-09T11:21:05+00:00][1351980:7]clictlplanefuncs.go:42 client.InitCliCFuncs :: Staring Client API using gossip path: /home/sachin/test/configs/gossipNodes
-INFO[2026-02-09T11:21:05+00:00][1351980:7]clictlplanefuncs.go:49 client.InitCliCFuncs :: Successfully initialized controlplane client: b7aa4137-d61b-48d3-824b-7950f519441d
