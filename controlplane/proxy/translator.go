@@ -41,7 +41,7 @@ func GetReqStruct(name string) any {
 	case cpLib.CREATE_SNAP, cpLib.READ_SNAP_NAME, cpLib.READ_SNAP_VDEV:
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
-		return &cpLib.Vdev{}
+		return &cpLib.VdevReq{}
 	case userlib.PutUserAPI, userlib.AdminUserAPI:
 		return &userlib.UserReq{}
 	case userlib.GetUserAPI:

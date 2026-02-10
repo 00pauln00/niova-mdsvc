@@ -6,13 +6,13 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"unsafe"
 	"time"
+	"unsafe"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
-	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	"github.com/tidwall/btree"
@@ -412,27 +412,27 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commi
 func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	vdev, ok := args[0].(ctlplfl.Vdev)
+	req, ok := args[0].(ctlplfl.VdevReq)
 	if !ok {
 		err := fmt.Errorf("invalid argument: expecting type vdev")
 		return nil, err
 	}
-	err := vdev.Init()
+	err := req.Vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
 		return nil, err
 	}
-	log.Infof("initializing vdev: %+v", vdev)
-	key := getConfKey(vdevKey, vdev.Cfg.ID)
+	log.Infof("initializing vdev: %+v", req.Vdev)
+	key := getConfKey(vdevKey, req.Vdev.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
 		case SIZE:
-			value = strconv.Itoa(int(vdev.Cfg.Size))
+			value = strconv.Itoa(int(req.Vdev.Size))
 		case NUM_CHUNKS:
-			value = strconv.Itoa(int(vdev.Cfg.NumChunks))
+			value = strconv.Itoa(int(req.Vdev.NumChunks))
 		case NUM_REPLICAS:
-			value = strconv.Itoa(int(vdev.Cfg.NumReplica))
+			value = strconv.Itoa(int(req.Vdev.NumReplica))
 		default:
 			continue
 		}
@@ -441,7 +441,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(value),
 		})
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, vdev)
+	r, err := pmCmn.Encoder(pmCmn.GOB, req)
 	if err != nil {
 		log.Error("Failed to marshal vdev response: ", err)
 		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
@@ -454,94 +454,101 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
-func allocateNisdPerChunk(vdev *ctlplfl.VdevCfg, fd int, chunk string, commitChgs *[]funclib.CommitChg,
+func allocateNisdPerChunk(req *ctlplfl.VdevReq, fd int, chunk string,
+	commitChgs *[]funclib.CommitChg,
 	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) error {
 
-	if int(fd) >= ctlplfl.FD_MAX {
-		err := fmt.Errorf("invalid failure domain: %d", fd)
-		log.Error(err)
-		return err
+	if fd < 0 || fd >= ctlplfl.FD_MAX {
+		return fmt.Errorf("invalid failure domain: %d", fd)
 	}
 
-	treeLen := HR.FD[fd].Tree.Len()
+	pickedNISD := make(map[string]struct{})
+	pickedEntity := make(map[int]struct{})
+
+	tree := HR.FD[fd].Tree
+	treeLen := tree.Len()
 	if treeLen == 0 {
 		return fmt.Errorf("no entities available in failure domain %d", fd)
 	}
 
-	hash := ctlplfl.NisdAllocHash([]byte(vdev.ID + chunk))
+	// Filtered allocation path
+	if req.Filter.ID != "" {
+		en, err := GetEntityByID(req.Filter)
+		if err != nil {
+			return err
+		}
 
-	log.Debugf("hash generated %d for chunk: %s, fd: %d", hash, chunk, fd)
+		for r := 0; r < int(req.Vdev.NumReplica); r++ {
+			nisd, err := HR.PickNISD(en, pickedNISD, nisdMap)
+			if err != nil {
+				log.Error("PickNISD():failed to pick NISD: ", err)
+				return err
+			}
+			genAllocationKV(req.Vdev.ID, chunk, nisd, r, commitChgs)
+		}
+		return nil
+	}
 
-	// select entity by index
-	entityIDX, err := GetIdxForNisdAlloc(hash, treeLen)
+	// Deterministic entity start index
+	hash := ctlplfl.NisdAllocHash([]byte(req.Vdev.ID + chunk))
+	startIdx, err := GetIdxForNisdAlloc(hash, treeLen)
 	if err != nil {
-		log.Error("failed to get entity: ", err)
 		return err
 	}
 
-	log.Debugf("selecting nisd from chunk %s, fd:%d, entity: %d/%d", chunk, fd, entityIDX, treeLen)
+	entityIdx := startIdx
 
-	// track NISDs already selected for this allocation
-	pickedNISD := make(map[string]struct{})
-
-	// track entities already selected for allocation
-	pickedEntity := make(map[int]struct{})
-
-	// chunk's replica's are stored in different NISD's from different entities
-	for i := 0; i < int(vdev.NumReplica); i++ {
+	for r := 0; r < int(req.Vdev.NumReplica); r++ {
 		var (
-			nisd      *ctlplfl.NisdVdevAlloc
-			pickedIdx = -1
-			lastErr   error
-			attempts  = 0
-			startIdx  = entityIDX
+			nisd    *ctlplfl.NisdVdevAlloc
+			picked        = -1
+			lastErr error = fmt.Errorf("no entity attempted")
+			tried         = 0
 		)
 
-		for attempts < treeLen {
-			curIdx := entityIDX
+		for tried < treeLen {
+			curIdx := entityIdx
+			entityIdx = (entityIdx + 1) % treeLen
 
-			// advance for next iteration deterministically
-			entityIDX = (entityIDX + 1) % treeLen
-			attempts++
-
-			// Skip a entity if already found in map, to prevent selecting multiple NISDs from the same entity.
+			// do not count skipped entities as attempts
 			if _, used := pickedEntity[curIdx]; used {
-				log.Infof("skipping entity IDX: %d, already picked", curIdx)
 				continue
 			}
 
-			nisd, lastErr = HR.PickNISD(fd, curIdx, pickedNISD, nisdMap)
-			if lastErr == nil {
-				pickedIdx = curIdx
-				break
+			tried++
+
+			ent, ok := tree.GetAt(curIdx)
+			if !ok {
+				lastErr = fmt.Errorf("failed to fetch entity idx=%d fd=%d", curIdx, fd)
+				continue
 			}
 
-			log.Warnf(
-				"pick failed for chunk=%s replica=%d entityIDX=%d attempt=%d/%d err=%v",
-				chunk, i, curIdx, attempts, treeLen, lastErr,
-			)
+			nisd, lastErr = HR.PickNISD(ent, pickedNISD, nisdMap)
+			if lastErr == nil {
+				picked = curIdx
+				break
+			}
 		}
 
-		if pickedIdx == -1 {
+		if picked == -1 {
 			return fmt.Errorf(
 				"failed to allocate replica %d for chunk=%s fd=%d after %d entities (startIdx=%d): lastErr=%v",
-				i, chunk, fd, treeLen, startIdx, lastErr,
+				r, chunk, fd, treeLen, startIdx, lastErr,
 			)
 		}
 
-		log.Debugf("picked nisd: %s, for chunk %s/R.%d", nisd.Ptr.ID, chunk, i)
-		genAllocationKV(vdev.ID, chunk, nisd, i, commitChgs)
-
-		pickedEntity[pickedIdx] = struct{}{}
+		genAllocationKV(req.Vdev.ID, chunk, nisd, r, commitChgs)
+		pickedEntity[picked] = struct{}{}
 	}
+
 	return nil
 }
 
-func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, fd int, nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) ([]funclib.CommitChg, error) {
+func allocateNisdPerVdev(req *ctlplfl.VdevReq, fd int, nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) ([]funclib.CommitChg, error) {
 	commitCh := make([]funclib.CommitChg, 0)
-	for i := 0; i < int(vdev.NumChunks); i++ {
+	for i := 0; i < int(req.Vdev.NumChunks); i++ {
 		log.Debugf("allocating nisd for chunk: %d, from fd: %d ", i, fd)
-		err := allocateNisdPerChunk(vdev, fd, strconv.Itoa(i), &commitCh, nisdMap)
+		err := allocateNisdPerChunk(req, fd, strconv.Itoa(i), &commitCh, nisdMap)
 		if err != nil {
 			err = fmt.Errorf("failed to allocate nisd from fd: %d, %v", fd, err)
 			log.Error(err)
@@ -551,9 +558,88 @@ func allocateNisdPerVdev(vdev *ctlplfl.VdevCfg, fd int, nisdMap *btree.Map[strin
 	return commitCh, nil
 }
 
+func AllocNISDs(
+	req *ctlplfl.VdevReq,
+	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
+	txn *funclib.FuncIntrm,
+) error {
+
+	if req.Filter.Type != ctlplfl.FD_ANY {
+		return allocateNisdsAtFailureDomain(req, ctlplfl.GetFDIdx(req.Filter.Type), allocMap, txn)
+	}
+
+	startFD, err := HR.GetFDLevel(int(req.Vdev.NumReplica))
+	if err != nil {
+		return fmt.Errorf("failed to resolve failure domain: %w", err)
+	}
+
+	for fd := startFD; fd < ctlplfl.FD_MAX; fd++ {
+		if err := allocateNisdsAtFailureDomain(req, fd, allocMap, txn); err != nil {
+			log.Error("allocation failed, retrying next failure domain: ", err)
+			allocMap.Clear()
+			continue
+		}
+		return nil
+	}
+
+	return fmt.Errorf("unable to allocate NISDs for vdev %s", req.Vdev.ID)
+}
+
+func allocateNisdsAtFailureDomain(
+	req *ctlplfl.VdevReq,
+	fd int,
+	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
+	txn *funclib.FuncIntrm,
+) error {
+
+	log.Debugf("selected fd %d for vdev ID: %s", fd, req.Vdev.ID)
+
+	changes, err := allocateNisdPerVdev(req, fd, allocMap)
+	if err != nil {
+		return err
+	}
+
+	txn.Changes = append(txn.Changes, changes...)
+	return nil
+}
+
+func commitAllocChgs(
+	txn *funclib.FuncIntrm,
+	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
+	cbArgs *PumiceDBServer.PmdbCbArgs,
+) error {
+
+	allocMap.Ascend("", func(_ string, alloc *ctlplfl.NisdVdevAlloc) bool {
+		txn.Changes = append(txn.Changes, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, alloc.Ptr.ID), AVAIL_SPACE)),
+			Value: []byte(strconv.Itoa(int(alloc.AvailableSize))),
+		})
+		return true
+	})
+
+	return applyKV(txn.Changes, cbArgs)
+}
+
+func applyNISDAlloc(
+	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
+) {
+	allocMap.Ascend("", func(_ string, alloc *ctlplfl.NisdVdevAlloc) bool {
+		alloc.Ptr.AvailableSize = alloc.AvailableSize
+		if alloc.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
+			log.Debugf(
+				"removing nisd %s, available space %f GB below chunk size",
+				alloc.Ptr.ID,
+				BytesToGB(alloc.AvailableSize),
+			)
+			HR.DeleteNisd(alloc.Ptr)
+		}
+		return true
+	})
+}
+
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
 func APCreateVdev(args ...interface{}) (interface{}, error) {
-	var vdev ctlplfl.Vdev
+	var req ctlplfl.VdevReq
 	var funcIntrm funclib.FuncIntrm
 	resp := ctlplfl.ResponseXML{
 		Name:    "vdev",
@@ -567,62 +653,29 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	}
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
-	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &vdev)
-	log.Infof("allocating vdev for ID: %s", vdev.Cfg.ID)
-	resp.ID = vdev.Cfg.ID
-	nisdMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
+	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &req)
+	log.Infof("allocating vdev for ID: %s", req.Vdev.ID)
+	resp.ID = req.Vdev.ID
+	allocMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
+	defer allocMap.Clear()
 	HR.Dump()
 	// allocate nisd chunks to vdev
-	fd, err := HR.GetFDLevel(int(vdev.Cfg.NumReplica))
-	if err != nil {
-		log.Error("failed to get fd:", err)
-		resp.Error = fmt.Sprintf("failed to get fd:", err)
+	if err := AllocNISDs(&req, allocMap, &funcIntrm); err != nil {
+		resp.Error = err.Error()
 		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 
-	for i := fd; i < ctlplfl.FD_MAX; i++ {
-		log.Debugf("selected fd %d, for vdev ID: %s & ft: %d.", i, vdev.Cfg.ID, vdev.Cfg.NumReplica)
-		commitCh, err := allocateNisdPerVdev(&vdev.Cfg, i, nisdMap)
-		if err != nil {
-			log.Error("allocateNisdPerVdev():failed to allocate nisd -> inc fd in next itr: ", err)
-			resp.Error = fmt.Sprintf("failed to allocate nisd: %v", err)
-			nisdMap.Clear()
-			continue
-		}
-		resp.Success = true
-		funcIntrm.Changes = append(funcIntrm.Changes, commitCh...)
-		break
+	resp.Success = true
 
+	if err := commitAllocChgs(&funcIntrm, allocMap, cbArgs); err != nil {
+		return nil, err
 	}
 
-	if resp.Success {
-		nisdMap.Ascend("", func(k string, v *ctlplfl.NisdVdevAlloc) bool {
-			funcIntrm.Changes = append(funcIntrm.Changes, funclib.CommitChg{
-				Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, v.Ptr.ID), AVAIL_SPACE)),
-				Value: []byte(strconv.Itoa(int(v.AvailableSize))),
-			})
-			return true
-		})
-		err = applyKV(funcIntrm.Changes, cbArgs)
-		if err != nil {
-			log.Error("applyKV(): ", err)
-			return nil, err
-		}
-		nisdMap.Ascend("", func(k string, v *ctlplfl.NisdVdevAlloc) bool {
-			log.Debugf("updating nisd %s available space %d from map -> tree", v.Ptr.ID, v.AvailableSize)
-			v.Ptr.AvailableSize = v.AvailableSize
-			if v.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
-				log.Debugf("deleting nisd %s from tree, as space %f GB is less than 8GB", v.Ptr.ID, BytesToGB(v.AvailableSize))
-				HR.DeleteNisd(v.Ptr)
-			}
-			return true
-		})
-		log.Infof("vdev %s, request successfully processed", vdev.Cfg.ID)
-	} else {
-		log.Infof("vdev %s, creation failed", vdev.Cfg.ID)
-	}
+	applyNISDAlloc(allocMap)
+
+	log.Infof("vdev %s, request successfully processed", req.Vdev.ID)
 	HR.Dump()
-	nisdMap.Clear()
+
 	return pmCmn.Encoder(pmCmn.GOB, resp)
 }
 
@@ -947,10 +1000,10 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
-	
+
 	authtc := &auth.Token{
 		Secret: []byte(ctlplfl.NISD_SECRET),
-		TTL: time.Minute,
+		TTL:    time.Minute,
 	}
 
 	claims := map[string]any{
@@ -963,9 +1016,9 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
-	
+
 	vdevInfo := ctlplfl.VdevCfg{
-		ID: req.ID,
+		ID:        req.ID,
 		AuthToken: authtoken,
 	}
 

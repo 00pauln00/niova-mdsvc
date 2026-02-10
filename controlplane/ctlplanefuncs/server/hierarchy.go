@@ -110,8 +110,9 @@ func (hr *Hierarchy) DeleteNisd(n *cpLib.Nisd) {
 
 // Get the Failure Domain Based on the Nisd Count
 func (hr *Hierarchy) GetFDLevel(ft int) (int, error) {
-	for i := cpLib.FD_PDU; i <= cpLib.FD_DEVICE; i++ {
+	for i := 0; i <= cpLib.DEVICE_IDX; i++ {
 		if ft <= hr.FD[i].Tree.Len() {
+			log.Debug("selecting fd: ", i)
 			return i, nil
 		}
 	}
@@ -148,24 +149,8 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 }
 
 // Pick a  NISD using the hash from a specific failure domain.
-func (hr *Hierarchy) PickNISD(fd int, entityIDX int, picked map[string]struct{},
+func (hr *Hierarchy) PickNISD(ent *Entities, picked map[string]struct{},
 	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
-
-	if int(fd) >= cpLib.FD_MAX {
-		err := fmt.Errorf("invalid failure domain: %d", fd)
-		log.Error("PickNISD():", err)
-		return nil, err
-	}
-
-	fdRef := hr.FD[fd]
-
-	// Get the entity (PDU/Rack/HV/Device) object from the tree
-	ent, ok := fdRef.Tree.GetAt(entityIDX)
-	if !ok {
-		err := fmt.Errorf("failed to fetch entity tree from idx: %d, fd: %d", entityIDX, fd)
-		log.Error("GetAt(): ", err)
-		return nil, err
-	}
 
 	// select NISD inside entity
 	nisdCnt := ent.Nisds.Len()
@@ -249,4 +234,16 @@ func GetIdxForNisdAlloc(hash uint64, size int) (int, error) {
 		return 0, fmt.Errorf("invalid size: %d", size)
 	}
 	return int(hash % uint64(size)), nil
+}
+
+func GetEntityByID(ft cpLib.Filter) (*Entities, error) {
+	if ft.Type == -1 {
+		return nil, fmt.Errorf("invalid fd level")
+	}
+	ent, ok := HR.FD[cpLib.GetFDIdx(ft.Type)].Tree.Get(&Entities{ID: ft.ID})
+	if !ok || ent == nil {
+		return nil, fmt.Errorf("entityID %s not found in fd %d", ft.ID, cpLib.GetFDIdx(ft.Type))
+	}
+
+	return ent, nil
 }

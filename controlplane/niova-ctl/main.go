@@ -220,11 +220,11 @@ type model struct {
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
 	vdevSizeInput          textinput.Model
 	vdevCountInput         textinput.Model
-	vdevFormActiveField    inputField     // Track which field is currently active
-	createdVdevs           []ctlplfl.Vdev // Store created Vdevs for summary
-	vdevCreationProgress   int            // Track creation progress
-	vdevCreationTotal      int            // Total Vdevs to create
-	vdevCreationErrors     []string       // Store any creation errors
+	vdevFormActiveField    inputField        // Track which field is currently active
+	createdVdevs           []ctlplfl.VdevCfg // Store created Vdevs for summary
+	vdevCreationProgress   int               // Track creation progress
+	vdevCreationTotal      int               // Total Vdevs to create
+	vdevCreationErrors     []string          // Store any creation errors
 
 	// Control Plane
 	cpClient            *ctlplcl.CliCFuncs
@@ -7583,7 +7583,7 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			// Initialize creation tracking
 			m.vdevCreationTotal = count
 			m.vdevCreationProgress = 0
-			m.createdVdevs = make([]ctlplfl.Vdev, 0, count)
+			m.createdVdevs = make([]ctlplfl.VdevCfg, 0, count)
 			m.vdevCreationErrors = make([]string, 0)
 
 			// Start creation process
@@ -8008,7 +8008,7 @@ func (m model) viewVdevCreationProgress() string {
 	// Show progress for each Vdev
 	for i := 0; i < m.vdevCreationTotal; i++ {
 		if i < len(m.createdVdevs) {
-			s.WriteString(fmt.Sprintf("✓ Vdev %d/%d: ID %s created successfully\n", i+1, m.vdevCreationTotal, m.createdVdevs[i].Cfg.ID))
+			s.WriteString(fmt.Sprintf("✓ Vdev %d/%d: ID %s created successfully\n", i+1, m.vdevCreationTotal, m.createdVdevs[i].ID))
 		} else if i < m.vdevCreationProgress {
 			// This means there was an error for this Vdev
 			if i < len(m.vdevCreationErrors) {
@@ -8076,8 +8076,8 @@ func (m model) viewVdevCreationSummary() string {
 	if successCount > 0 {
 		s.WriteString("✓ Successfully created:\n")
 		for i, vdev := range m.createdVdevs {
-			s.WriteString(fmt.Sprintf("%d. Vdev ID: %s\n", i+1, vdev.Cfg.ID))
-			s.WriteString(fmt.Sprintf("   Size: %s (%d bytes)\n", formatSize(vdev.Cfg.Size), vdev.Cfg.Size))
+			s.WriteString(fmt.Sprintf("%d. Vdev ID: %s\n", i+1, vdev.ID))
+			s.WriteString(fmt.Sprintf("   Size: %s (%d bytes)\n", formatSize(vdev.Size), vdev.Size))
 			s.WriteString(fmt.Sprintf("   Status: Active\n\n"))
 		}
 	}
@@ -8109,7 +8109,7 @@ func (m model) viewVdevCreationSummary() string {
 type VdevCreationMsg struct {
 	Index   int
 	Success bool
-	Vdev    *ctlplfl.Vdev
+	Vdev    *ctlplfl.VdevCfg
 	Error   error
 }
 
@@ -8123,15 +8123,15 @@ func (m model) createVdevsCommand(size int64, count int) tea.Cmd {
 
 // createSingleVdev creates a single Vdev and returns a VdevCreationMsg
 func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
-	vdev := &ctlplfl.Vdev{
-		Cfg: ctlplfl.VdevCfg{
+	vdev := &ctlplfl.VdevReq{
+		Vdev: &ctlplfl.VdevCfg{
 			Size:       size,
 			NumReplica: 1,
 		},
 	}
 
 	if m.cpClient != nil && m.cpConnected {
-		log.Info("Creating Vdev with size: ", vdev.Cfg.Size)
+		log.Info("Creating Vdev with size: ", vdev.Vdev.Size)
 		resp, err := m.cpClient.CreateVdev(vdev)
 		if err != nil {
 			log.Error("CreateVdev failed: ", err)
@@ -8142,11 +8142,11 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 			}
 		}
 		log.Info("Vdev created successfully: ", resp.ID)
-		vdev.Cfg.ID = resp.ID
+		vdev.Vdev.ID = resp.ID
 		return VdevCreationMsg{
 			Index:   index,
 			Success: true,
-			Vdev:    vdev,
+			Vdev:    vdev.Vdev,
 		}
 	}
 
