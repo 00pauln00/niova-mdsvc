@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	cpLib "niova/controlplane/lib"
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -159,7 +160,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 		assert.True(t, resp.Success)
 		time.Sleep(10 * time.Millisecond)
 	}
-	
+
 }
 func TestCreateVdevWithFilters(t *testing.T) {
 	c := newClient(t)
@@ -341,10 +342,10 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 
 			log.Infof("CreateVdev response: resp=%+v err=%v", resp, err)
 
-			assert.Error(t, err)
-			if resp != nil {
-				assert.Empty(t, resp.ID)
-			}
+			assert.False(t, resp.Success)
+
+			assert.NotEmpty(t, resp.ID)
+			assert.NotEmpty(t, resp.Error)
 
 			log.Infof("[TEST END] %s", tc.name)
 		})
