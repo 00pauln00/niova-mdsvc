@@ -590,22 +590,25 @@ func TestMultiCreateVdev(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Step 1: Create first Vdev
-	vdev1 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size: 700 * 1024 * 1024 * 1024,
-		}}
-	resp, err := c.CreateVdev(vdev1)
+	req1 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
+			Size:       500 * 1024 * 1024 * 1024,
+			NumReplica: 1,
+		},
+	}
+	resp, err := c.CreateVdev(req1)
 	assert.NoError(t, err, "failed to create vdev1")
 	assert.NotEmpty(t, resp, "vdev1 ID should not be empty")
 	log.Info("Created vdev1: ", resp.ID)
 
 	// Step 2: Create second Vdev
-	vdev2 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size: 400 * 1024 * 1024 * 1024,
+	req2 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
+			Size:       500 * 1024 * 1024 * 1024,
+			NumReplica: 1,
 		},
 	}
-	resp, err = c.CreateVdev(vdev2)
+	resp, err = c.CreateVdev(req2)
 	assert.NoError(t, err, "failed to create vdev2")
 	assert.NotEmpty(t, resp, "vdev2 ID should not be empty")
 	log.Info("Created vdev2: ", resp)
@@ -620,7 +623,7 @@ func TestMultiCreateVdev(t *testing.T) {
 
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetReq{
-		ID:     vdev1.Cfg.ID,
+		ID:     req1.Vdev.ID,
 		GetAll: false,
 	}
 	specificResp, err := c.GetVdevCfg(getSpecificReq)
@@ -628,8 +631,8 @@ func TestMultiCreateVdev(t *testing.T) {
 	assert.NotNil(t, specificResp, "specific vdev response should not be nil")
 	log.Info("Specific vdev response: ", specificResp)
 
-	assert.Equal(t, vdev1.Cfg.ID, specificResp.ID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Cfg.Size, specificResp.Size, "fetched vdev size mismatch")
+	assert.Equal(t, req1.Vdev.ID, specificResp.ID, "fetched vdev ID mismatch")
+	assert.Equal(t, req1.Vdev.Size, specificResp.Size, "fetched vdev size mismatch")
 
 	result, err := c.GetVdevsWithChunkInfo(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
@@ -768,10 +771,12 @@ func TestVdevNisdChunk(t *testing.T) {
 	assert.True(t, resp.Success)
 
 	// create vdev
-	vdev := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size: 500 * 1024 * 1024 * 1024,
-		}}
+	vdev := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
+			Size:       500 * 1024 * 1024 * 1024,
+			NumReplica: 1,
+		},
+	}
 	resp, err = c.CreateVdev(vdev)
 	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
@@ -959,13 +964,14 @@ func TestHierarchy(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 150; i++ {
-			vdev := &cpLib.Vdev{
-				Cfg: cpLib.VdevCfg{
-					Size:       107374182400,
+			vdev := &cpLib.VdevReq{
+				Vdev: &cpLib.VdevCfg{
+					Size:       100 * 1024 * 1024 * 1024,
 					NumReplica: 1,
 				},
 			}
-			_, err := c.CreateVdev(vdev)
+			resp, err := c.CreateVdev(vdev)
+			log.Info("succesfully created vdev: ", resp)
 			assert.NoError(t, err)
 			time.Sleep(30 * time.Millisecond)
 		}
@@ -1197,6 +1203,15 @@ func TestCreateSmallHierarchy(t *testing.T) {
 		Cfg: cpLib.VdevCfg{
 			Size:       requestedVdevSize,
 			NumReplica: 3,
+func TestCreateVdev(t *testing.T) {
+	c := newClient(t)
+	vdev := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
+			Size:       500 * 1024 * 1024 * 1024,
+			NumReplica: 2,
+		},
+		Filter: cpLib.Filter{
+			Type: cpLib.FD_HV,
 		},
 	}
 

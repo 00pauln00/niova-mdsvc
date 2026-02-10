@@ -55,13 +55,39 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
-	FD_PDU    = 0
-	FD_RACK   = 1
-	FD_HV     = 2
-	FD_DEVICE = 3
-	FD_MAX    = 4
+	PDU_IDX    = 0
+	RACK_IDX   = 1
+	HV_IDX     = 2
+	DEVICE_IDX = 3
+	FD_MAX     = 4
+
 	HASH_SIZE = 8
 )
+
+type FD int
+
+const (
+	FD_ANY FD = iota
+	FD_PDU
+	FD_RACK
+	FD_HV
+	FD_DEVICE
+)
+
+func GetFDIdx(t FD) int {
+	switch t {
+	case FD_PDU:
+		return PDU_IDX
+	case FD_RACK:
+		return RACK_IDX
+	case FD_HV:
+		return HV_IDX
+	case FD_DEVICE:
+		return DEVICE_IDX
+	default:
+		return -1
+	}
+}
 
 // Define Snapshot XML structure
 type SnapName struct {
@@ -195,22 +221,32 @@ type Vdev struct {
 	NisdToChkMap []NisdChunk
 }
 
+type Filter struct {
+	ID   string
+	Type FD
+}
+
+type VdevReq struct {
+	Vdev   *VdevCfg
+	Filter Filter
+}
+
 type GetReq struct {
 	ID     string
 	GetAll bool
 }
 
-func (vdev *Vdev) Init() error {
+func (vdev *VdevCfg) Init() error {
 
 	id, err := uuid.NewV7()
 	if err != nil {
 		log.Error("failed to generate uuid:", err)
 		return err
 	}
-	vdev.Cfg.ID = id.String()
-	vdev.Cfg.NumChunks = uint32(Count8GBChunks(vdev.Cfg.Size))
-	vdev.Cfg.NumDataBlk = 0
-	vdev.Cfg.NumParityBlk = 0
+	vdev.ID = id.String()
+	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
+	vdev.NumDataBlk = 0
+	vdev.NumParityBlk = 0
 	return nil
 }
 
@@ -288,6 +324,9 @@ func RegisterGOBStructs() {
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
+	gob.Register(Filter{})
+	gob.Register(VdevReq{})
+	gob.Register(FD(0))
 	gob.Register(userlib.GetReq{})
 	gob.Register(userlib.UserReq{})
 	gob.Register(userlib.User{})
@@ -346,7 +385,7 @@ func (n *Nisd) Validate() error {
 	if len(n.FailureDomain) != FD_MAX {
 		return errors.New("invalid NISD failure domain info")
 	}
-	for i := 0; i < FD_DEVICE; i++ {
+	for i := 0; i < DEVICE_IDX; i++ {
 		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
 			return fmt.Errorf("invalid FailureDomain[%d] uuid", i)
 		}
@@ -364,7 +403,7 @@ func (n *Nisd) Validate() error {
 }
 
 func NextFailureDomain(fd int) (int, error) {
-	if fd < FD_DEVICE {
+	if fd < DEVICE_IDX {
 		fd++
 		return fd, nil
 	}
