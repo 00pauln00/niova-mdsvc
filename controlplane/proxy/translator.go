@@ -6,6 +6,7 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 )
 
@@ -41,10 +42,15 @@ func GetReqStruct(name string) any {
 		return &cpLib.SnapXML{}
 	case cpLib.CREATE_VDEV:
 		return &cpLib.VdevReq{}
+	case userlib.PutUserAPI, userlib.AdminUserAPI:
+		return &userlib.UserReq{}
+	case userlib.GetUserAPI:
+		return &userlib.GetReq{}
+	case userlib.LoginAPI:
+		return &userlib.LoginReq{}
 	default:
 		return &cpLib.GetReq{}
 	}
-	return nil
 }
 
 func GetRespStruct(name string) any {
@@ -79,6 +85,12 @@ func GetRespStruct(name string) any {
 		return &cpLib.NisdArgs{}
 	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS, cpLib.CREATE_VDEV:
 		return &cpLib.ResponseXML{}
+	case userlib.PutUserAPI, userlib.AdminUserAPI:
+		return &userlib.UserResp{}
+	case userlib.GetUserAPI:
+		return &[]userlib.UserResp{}
+	case userlib.LoginAPI:
+		return &userlib.LoginResp{}
 	}
 	return nil
 }

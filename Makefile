@@ -8,7 +8,7 @@ export CGO_CFLAGS
 export LD_LIBRARY_PATH
 export PATH
 
-install_all: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl install
+install_all: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl ccManager monitor install
 
 install_only: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl install
 
@@ -35,12 +35,20 @@ testapp:
 niova-ctl:
 	cd controlplane/niova-ctl && go build -o ../../libexec/niova-ctl
 
+monitor: 
+	cd controlplane/monitor && go build -o ../../libexec/cp-monitor
+
+ccManager: 
+	cd controlplane/containerConfigManager && go build -o ../../libexec/cc-manager
+
 install:
 	cp libexec/CTLPlane_pmdbServer ${DIR}/libexec/niova/CTLPlane_pmdbServer
 	cp libexec/CTLPlane_proxy ${DIR}/libexec/niova/CTLPlane_proxy
 	cp libexec/ncpc ${DIR}/libexec/niova/ncpc
 	cp libexec/cfgApp ${DIR}/libexec/niova/cfgApp
 	cp libexec/testApp ${DIR}/libexec/niova/testApp
+	cp libexec/cp-monitor ${DIR}/libexec/niova/cp-monitor
+	cp libexec/cc-manager ${DIR}/libexec/niova/cc-manager
 	cp libexec/niova-ctl ${DIR}/libexec/niova/niova-ctl
 	cp scripts/docker/Dockerfile ${DIR}
 	cp scripts/docker/controlplane.sh ${DIR}

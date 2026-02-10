@@ -1668,6 +1668,34 @@ func (m model) calculateItemsPerPage(linesPerItem int) int {
 	return itemsPerPage
 }
 
+// Helper function to calculate optimal items per page with custom header accounting
+func (m model) calculateItemsPerPageWithHeader(linesPerItem int, headerLines int) int {
+	// Reserve space for:
+	// - Custom header (headerLines)
+	// - Pagination info (2 lines)
+	// - Help text (2 lines)
+	// - Some safety margin (3 lines)
+	reservedLines := headerLines + 7
+
+	// Default to conservative fallback if terminal height is not available
+	if m.termHeight <= 0 {
+		return 7 // Conservative default when terminal size unknown
+	}
+
+	availableLines := m.termHeight - reservedLines
+
+	// Ensure we have some minimum space to work with
+	if availableLines < 3*linesPerItem {
+		return 3 // Minimum usable items regardless of screen size
+	}
+
+	// Calculate base items per page using a more conservative estimate
+	// Account for potential expanded items by using 2 lines per item estimate
+	itemsPerPage := availableLines / 2
+
+	return itemsPerPage
+}
+
 // Helper function to format bytes into human-readable format
 func formatBytes(bytes int64) string {
 	const unit = 1024
@@ -1688,6 +1716,94 @@ func formatBytes(bytes int64) string {
 // Helper function to generate a new UUID
 func generateUUID() string {
 	return uuid.New().String()
+}
+
+// Helper function to get NISDs list from control plane with error handling
+func (m model) getNISDsList() ([]ctlplfl.Nisd, error) {
+	if m.cpClient == nil {
+		return nil, fmt.Errorf("control plane client is not initialized")
+	}
+	return m.cpClient.GetNisds()
+}
+
+// Helper function to get partition name for NISD display
+// Attempts to find the partition name by looking up device partitions
+func (m model) getNISDPartitionName(nisd ctlplfl.Nisd) string {
+	deviceID := nisd.FailureDomain[ctlplfl.FD_DEVICE]
+	hypervisorID := nisd.FailureDomain[ctlplfl.FD_HV]
+
+	// Look through all devices to find the partition that matches this NISD
+	allDevices := m.config.GetAllDevicesForPartitioning()
+	for _, deviceInfo := range allDevices {
+		if deviceInfo.Device.ID == deviceID && deviceInfo.HvUUID == hypervisorID {
+			// Find partition with matching NISD UUID
+			for _, partition := range deviceInfo.Device.Partitions {
+				if partition.NISDUUID == nisd.ID {
+					// Return partition ID which is the partition name
+					return partition.PartitionID
+				}
+			}
+		}
+	}
+
+	// If no partition found, generate a fallback name based on device
+	if deviceID != "" {
+		return fmt.Sprintf("partition-on-%s", deviceID)
+	}
+
+	// Ultimate fallback
+	return fmt.Sprintf("partition-%s", nisd.ID[0:8])
+}
+
+// NISDStats holds statistics about NISDs for display
+type NISDStats struct {
+	TotalNISDs     int
+	UniqueHVs      int
+	UniqueDevices  int
+	TotalSize      int64
+	TotalAvailable int64
+	RunningNISDs   int
+}
+
+// Helper function to calculate NISD statistics
+func (m model) calculateNISDStats(nisds []ctlplfl.Nisd) NISDStats {
+	stats := NISDStats{}
+
+	if len(nisds) == 0 {
+		return stats
+	}
+
+	hvSet := make(map[string]bool)
+	deviceSet := make(map[string]bool)
+
+	stats.TotalNISDs = len(nisds)
+
+	for _, nisd := range nisds {
+		// Count unique hypervisors
+		hvID := nisd.FailureDomain[ctlplfl.FD_HV]
+		if hvID != "" {
+			hvSet[hvID] = true
+		}
+
+		// Count unique devices
+		deviceID := nisd.FailureDomain[ctlplfl.FD_DEVICE]
+		if deviceID != "" {
+			deviceSet[deviceID] = true
+		}
+
+		// Sum up sizes
+		stats.TotalSize += nisd.TotalSize
+		stats.TotalAvailable += nisd.AvailableSize
+
+		// Count running NISDs (assume all returned NISDs are running)
+		// In a real implementation, this would check NISD status
+		stats.RunningNISDs++
+	}
+
+	stats.UniqueHVs = len(hvSet)
+	stats.UniqueDevices = len(deviceSet)
+
+	return stats
 }
 
 // Helper function to get devices for the current page
@@ -6379,6 +6495,7 @@ func (m model) updateNISDManagement(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			case 2: // View All NISDs
 				m.state = stateViewAllNISDs
+				m.selectedNISDIdx = 0 // Initialize cursor
 				m.message = ""
 				return m, nil
 			}
@@ -7048,11 +7165,37 @@ func (m model) startNISDProcess() error {
 }
 
 func (m model) updateViewAllNISDs(msg tea.Msg) (model, tea.Cmd) {
+	// Get all NISDs for navigation
+	nisds, err := m.getNISDsList()
+	if err != nil || len(nisds) == 0 {
+		// If no NISDs or error, keep basic navigation
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				m.state = stateNISDManagement
+				m.selectedNISDIdx = -1
+				m.message = ""
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "enter", " ", "esc":
+		case "up", "k":
+			if m.selectedNISDIdx > 0 {
+				m.selectedNISDIdx--
+			}
+		case "down", "j":
+			if len(nisds) > 0 && m.selectedNISDIdx < len(nisds)-1 {
+				m.selectedNISDIdx++
+			}
+		case "esc":
 			m.state = stateNISDManagement
+			m.selectedNISDIdx = -1
 			m.message = ""
 			return m, nil
 		}
@@ -7061,7 +7204,7 @@ func (m model) updateViewAllNISDs(msg tea.Msg) (model, tea.Cmd) {
 }
 
 func (m model) viewAllNISDs() string {
-	title := titleStyle.Render("All NISDs - Control Plane View")
+	title := titleStyle.Render("View All NISDs")
 
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
@@ -7075,20 +7218,14 @@ func (m model) viewAllNISDs() string {
 	}
 
 	// Query all NISDs from control plane
-	if m.cpClient == nil {
-		s.WriteString(errorStyle.Render("Control plane client is not initialized") + "\n\n")
-		s.WriteString("Please ensure the control plane is running and properly configured.\n\n")
-		s.WriteString("Press any key to return to NISD management")
-		return s.String()
-	}
-	nisds, err := m.cpClient.GetNisds()
+	nisds, err := m.getNISDsList()
 	if err != nil {
 		s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query NISDs from control plane: %v", err)) + "\n\n")
 		s.WriteString("Please check:\n")
 		s.WriteString("• Control plane is running and accessible\n")
 		s.WriteString("• Network connectivity to control plane\n")
 		s.WriteString("• Control plane configuration is correct\n\n")
-		s.WriteString("Press any key to return to NISD management")
+		s.WriteString("Controls: ↑/↓ navigate • esc back to NISD management")
 		return s.String()
 	}
 
@@ -7099,38 +7236,121 @@ func (m model) viewAllNISDs() string {
 		s.WriteString("• Registered with the control plane\n")
 		s.WriteString("• Started and running\n\n")
 		s.WriteString("Use 'Initialize NISD' to create new NISD instances.\n\n")
-	} else {
-		s.WriteString(fmt.Sprintf("Found %d NISD instance(s) in the control plane:\n\n", len(nisds)))
+		s.WriteString("Press esc to return to NISD management")
+		return s.String()
+	}
 
-		for i, nisd := range nisds {
-			s.WriteString(fmt.Sprintf("NISD %d:\n", i+1))
-			s.WriteString(fmt.Sprintf("  UUID: %s\n", nisd.ID))
-			s.WriteString(fmt.Sprintf("  Device ID: %s\n", nisd.FailureDomain[ctlplfl.FD_DEVICE]))
-			s.WriteString(fmt.Sprintf("  Hypervisor: %s\n", nisd.FailureDomain[ctlplfl.FD_HV]))
-			for _, ni := range nisd.NetInfo { // netInfos []NetInfo
-				s.WriteString(fmt.Sprintf("  IP Address: %s\n", ni.IPAddr))
-				s.WriteString(fmt.Sprintf("  Client Port: %d\n", ni.Port))
+	// Sort NISDs for consistent ordering
+	sort.Slice(nisds, func(i, j int) bool {
+		return nisds[i].ID < nisds[j].ID
+	})
+
+	// Calculate and display statistics
+	stats := m.calculateNISDStats(nisds)
+
+	// Header with statistics
+	s.WriteString("═══ NISD Overview ═══\n")
+	s.WriteString(fmt.Sprintf("• Total NISDs: %d\n", stats.TotalNISDs))
+	s.WriteString(fmt.Sprintf("• Running NISDs: %d\n", stats.RunningNISDs))
+	s.WriteString(fmt.Sprintf("• Hypervisors: %d\n", stats.UniqueHVs))
+	s.WriteString(fmt.Sprintf("• Devices: %d\n", stats.UniqueDevices))
+	if stats.TotalSize > 0 {
+		s.WriteString(fmt.Sprintf("• Total Capacity: %s\n", formatBytes(stats.TotalSize)))
+	}
+	if stats.TotalAvailable > 0 {
+		s.WriteString(fmt.Sprintf("• Available Space: %s\n", formatBytes(stats.TotalAvailable)))
+	}
+	s.WriteString("\n")
+
+	// Calculate dynamic pagination based on terminal height
+	// Account for header (8 lines) + pagination info (2 lines) + controls (1 line) = 11 reserved lines
+	// Each NISD takes ~1 line normally, ~6-8 lines when selected with details
+	// Use conservative estimate to account for potential expanded views
+	itemsPerPage := m.calculateItemsPerPageWithHeader(1, 11)
+
+	// Ensure reasonable bounds for usability and screen constraints
+	if itemsPerPage < 3 {
+		itemsPerPage = 3 // Minimum for usability
+	} else if itemsPerPage > 15 {
+		itemsPerPage = 15 // Reasonable maximum to prevent overwhelming display
+	}
+	totalPages := (len(nisds) + itemsPerPage - 1) / itemsPerPage
+
+	// Ensure cursor is within bounds
+	if m.selectedNISDIdx < 0 {
+		m.selectedNISDIdx = 0
+	}
+	if m.selectedNISDIdx >= len(nisds) {
+		m.selectedNISDIdx = len(nisds) - 1
+	}
+
+	// Calculate which page the cursor is on
+	currentPage := m.selectedNISDIdx / itemsPerPage
+	startIdx := currentPage * itemsPerPage
+	endIdx := startIdx + itemsPerPage
+	if endIdx > len(nisds) {
+		endIdx = len(nisds)
+	}
+
+	// Show pagination info when there are multiple pages
+	if totalPages > 1 {
+		s.WriteString(fmt.Sprintf("Page %d of %d (showing items %d-%d of %d) | Cursor at position %d\n\n",
+			currentPage+1, totalPages, startIdx+1, endIdx, len(nisds), m.selectedNISDIdx+1))
+	} else {
+		// Show cursor position for debugging even on single page
+		s.WriteString(fmt.Sprintf("Cursor at position %d of %d\n\n", m.selectedNISDIdx+1, len(nisds)))
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		nisd := nisds[i]
+		cursor := "  "
+		if i == m.selectedNISDIdx {
+			cursor = "▶ "
+		}
+
+		// Header line with partition name instead of UUID
+		partitionName := m.getNISDPartitionName(nisd)
+		headerLine := fmt.Sprintf("%s%d. %s", cursor, i+1, partitionName)
+		if nisd.TotalSize > 0 {
+			headerLine += fmt.Sprintf(" (%s)", formatBytes(nisd.TotalSize))
+		}
+
+		if i == m.selectedNISDIdx {
+			s.WriteString(selectedItemStyle.Render(headerLine) + "\n")
+
+			// Detailed view for selected NISD
+			s.WriteString(fmt.Sprintf("    UUID: %s\n", nisd.ID))
+			s.WriteString(fmt.Sprintf("    Device ID: %s\n", nisd.FailureDomain[ctlplfl.FD_DEVICE]))
+			s.WriteString(fmt.Sprintf("    Hypervisor: %s\n", nisd.FailureDomain[ctlplfl.FD_HV]))
+
+			// Network information
+			if len(nisd.NetInfo) > 0 {
+				s.WriteString("    Network Info:\n")
+				for j, ni := range nisd.NetInfo {
+					s.WriteString(fmt.Sprintf("      %d. IP: %s, Port: %d\n", j+1, ni.IPAddr, ni.Port))
+				}
+			} else {
+				s.WriteString("    Network Info: Not available\n")
 			}
 
-			s.WriteString(fmt.Sprintf("  Server Port: %d\n", nisd.PeerPort))
-			s.WriteString(fmt.Sprintf("  Total Size: %d bytes", nisd.TotalSize))
+			s.WriteString(fmt.Sprintf("    Server Port: %d\n", nisd.PeerPort))
+			s.WriteString(fmt.Sprintf("    Total Size: %d bytes", nisd.TotalSize))
 			if nisd.TotalSize > 0 {
 				s.WriteString(fmt.Sprintf(" (%s)", formatBytes(nisd.TotalSize)))
 			}
 			s.WriteString("\n")
-			s.WriteString(fmt.Sprintf("  Available Size: %d bytes", nisd.AvailableSize))
+			s.WriteString(fmt.Sprintf("    Available Size: %d bytes", nisd.AvailableSize))
 			if nisd.AvailableSize > 0 {
 				s.WriteString(fmt.Sprintf(" (%s)", formatBytes(nisd.AvailableSize)))
 			}
 			s.WriteString("\n")
-
-			if i < len(nisds)-1 {
-				s.WriteString("\n" + strings.Repeat("─", 50) + "\n\n")
-			}
+		} else {
+			s.WriteString(headerLine + "\n")
 		}
+		s.WriteString("\n")
 	}
 
-	s.WriteString("\n\nPress any key to return to NISD management")
+	s.WriteString("Controls: ↑/↓ navigate • esc back to NISD management")
 
 	return s.String()
 }

@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	"github.com/google/uuid"
 )
 
@@ -326,6 +327,12 @@ func RegisterGOBStructs() {
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
 	gob.Register(FD(0))
+	gob.Register(userlib.GetReq{})
+	gob.Register(userlib.UserReq{})
+	gob.Register(userlib.User{})
+	gob.Register(userlib.UserResp{})
+	gob.Register(userlib.LoginReq{})
+	gob.Register(userlib.LoginResp{})
 }
 
 func (req *GetReq) ValidateRequest() error {
