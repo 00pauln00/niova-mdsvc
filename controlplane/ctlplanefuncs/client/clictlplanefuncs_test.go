@@ -839,8 +839,8 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	t.Logf("User1 logged in, access token obtained")
 
 	// Step 5: User1 creates a vdev with their access token
-	vdev1 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev1 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       500 * 1024 * 1024 * 1024, // 500 GB
 			NumReplica: 1,
 		},
@@ -900,8 +900,8 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	t.Logf("User2 correctly denied access to user1's vdev (authorization check passed)")
 
 	// Step 10: Create a vdev for user2 and verify they can access their own
-	vdev2 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev2 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       300 * 1024 * 1024 * 1024, // 300 GB
 			NumReplica: 1,
 		},

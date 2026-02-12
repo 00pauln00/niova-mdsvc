@@ -432,7 +432,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	// Validate user token
-	if vdev.UserToken == "" {
+	if req.UserToken == "" {
 		log.Error("user token is required for vdev creation")
 		return nil, fmt.Errorf("user token is required")
 	}
@@ -441,7 +441,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	tc := &auth.Token{
 		Secret: []byte(ctlplfl.CP_SECRET),
 	}
-	claims, err := tc.VerifyToken(vdev.UserToken)
+	claims, err := tc.VerifyToken(req.UserToken)
 	if err != nil {
 		log.Errorf("token verification failed: %v", err)
 		return nil, fmt.Errorf("authentication failed: %v", err)
@@ -468,8 +468,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	err = vdev.Init()
-	err := req.Vdev.Init()
+	err = req.Vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
 		return nil, err
@@ -495,12 +494,12 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	// Add ownership key to mark user as owner of this vdev
-	ownershipKey := fmt.Sprintf("/u/%s/v/%s", userID, vdev.Cfg.ID)
+	ownershipKey := fmt.Sprintf("/u/%s/v/%s", userID, req.Vdev.ID)
 	commitChgs = append(commitChgs, funclib.CommitChg{
 		Key:   []byte(ownershipKey),
 		Value: []byte("1"),
 	})
-	log.Infof("added ownership key: %s for vdev: %s", ownershipKey, vdev.Cfg.ID)
+	log.Infof("added ownership key: %s for vdev: %s", ownershipKey, req.Vdev.ID)
 
 	r, err := pmCmn.Encoder(pmCmn.GOB, req)
 	if err != nil {
@@ -678,7 +677,7 @@ func commitAllocChgs(
 		return true
 	})
 
-	return applyKV(txn.Changes, cbArgs)
+	return applyKV(txn.Changes, cbArgs.Store)
 }
 
 func applyNISDAlloc(

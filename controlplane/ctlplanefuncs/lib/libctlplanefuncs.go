@@ -229,8 +229,9 @@ type Filter struct {
 }
 
 type VdevReq struct {
-	Vdev   *VdevCfg
-	Filter Filter
+	Vdev      *VdevCfg
+	Filter    Filter
+	UserToken string
 }
 
 type GetReq struct {
