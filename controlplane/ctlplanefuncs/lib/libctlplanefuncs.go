@@ -25,6 +25,7 @@ const (
 	GET_NISD            = "GetNisd"
 	GET_NISD_LIST       = "GetAllNisd"
 	CREATE_VDEV         = "CreateVdev"
+	DELETE_VDEV         = "DeleteVdev"
 	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
 	GET_VDEV            = "GetVdevs"
 	CREATE_SNAP         = "CreateSnap"
@@ -249,6 +250,10 @@ type VdevReq struct {
 	UserToken string
 }
 
+type DeleteVdevReq struct {
+	ID string
+}
+
 type GetReq struct {
 	ID        string
 	GetAll    bool
@@ -345,6 +350,7 @@ func RegisterGOBStructs() {
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
+	gob.Register(DeleteVdevReq{})
 	gob.Register(FD(0))
 	gob.Register(userlib.GetReq{})
 	gob.Register(userlib.UserReq{})
