@@ -3,7 +3,6 @@ package clictlplanefuncs
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
@@ -105,24 +104,13 @@ func (ccf *CliCFuncs) get(data, resp interface{}, urla string) error {
 		return err
 	}
 
-	var rsb []byte
-	const maxRetries = 3
-	for i := 0; i < maxRetries; i++ {
-		rsb, err = ccf.request(rqb, url, false)
-		if err != nil {
-			log.Error("request failed: ", err)
-			return err
-		}
-		if rsb != nil {
-			break
-		}
-		if i < maxRetries-1 {
-			log.Warnf("nil response from control plane for %s, retrying (%d/%d)...", urla, i+1, maxRetries)
-			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
-		}
+	rsb, err := ccf.request(rqb, url, false)
+	if err != nil {
+		log.Error("request failed: ", err)
+		return err
 	}
 	if rsb == nil {
-		return fmt.Errorf("failed to fetch response from control plane after %d retries", maxRetries)
+		return fmt.Errorf("failed to fetch response from control plane: %v", err)
 	}
 	err = pmCmn.Decoder(ccf.encType, rsb, resp)
 	if err != nil {
