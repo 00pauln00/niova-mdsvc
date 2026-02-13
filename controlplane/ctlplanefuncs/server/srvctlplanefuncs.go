@@ -1298,13 +1298,14 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
-		pmCmn.Encoder(pmCmn.GOB, resp)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
 	deleteChgs := make([]funclib.CommitChg, 0)
 
-	nisdRefundMap := make(map[string]int64)
+	nisdRefundMap := make(map[string]*ctlplfl.Nisd)
 
 	// Process Vdev keys
 	for k, v := range readResult.ResultMap {
@@ -1314,7 +1315,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(v),
 		})
 		// Delete
-		deleteChgs = append(commitChgs, funclib.CommitChg{
+		deleteChgs = append(deleteChgs, funclib.CommitChg{
 			Key:   []byte(k),
 			Value: nil,
 		})
@@ -1322,10 +1323,35 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		// Check if it's a chunk allocation key
 		// Key format: v/<ID>/c/<chunk>/R.<Replica> -> <NISD_ID>
 		if strings.Contains(k, "/c/") && strings.Contains(k, "/R.") {
-			nisdID := v
-			nisdRefundMap[string(nisdID)] += ctlplfl.CHUNK_SIZE
+			nisdID := string(v)
+
+			if _, ok := nisdRefundMap[nisdID]; !ok {
+				key := getConfKey(NisdCfgKey, nisdID)
+				rrargs := PumiceDBServer.RangeReadArgs{
+					ColFamily:  colmfamily,
+					Key:        key,
+					BufSize:    cbArgs.ReplySize,
+					Consistent: false,
+					Prefix:     key,
+				}
+				nisdRR, err := cbArgs.PmdbRangeRead(rrargs)
+				if err != nil {
+					log.Error("Range read failure ", err)
+					resp.Error = err.Error()
+					return pmCmn.Encoder(pmCmn.GOB, resp)
+				}
+				nisdList := ParseEntities[ctlplfl.Nisd](nisdRR.ResultMap, NisdParser{})
+				if len(nisdList) > 0 {
+					nisdRefundMap[nisdID] = &nisdList[0]
+				}
+			}
+
+			if nisd, ok := nisdRefundMap[nisdID]; ok {
+				nisd.AvailableSize += ctlplfl.CHUNK_SIZE
+			}
+
 			revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
-			deleteChgs = append(commitChgs, funclib.CommitChg{
+			deleteChgs = append(deleteChgs, funclib.CommitChg{
 				Key:   []byte(revKey),
 				Value: nil,
 			})
@@ -1333,35 +1359,36 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	// Process NISD refunds and reverse mapping deletion
-	for nisdID, refund := range nisdRefundMap {
+	for nisdID, nisd := range nisdRefundMap {
 		// Reverse mapping key: n/<nisdID>/<vdevID>
 		asKey := fmt.Sprintf("%s/%s/%s", getConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(asKey),
-			Value: []byte(strconv.FormatInt(refund, 10)),
+			Value: []byte(strconv.FormatInt(nisd.AvailableSize, 10)),
 		})
-
 	}
 
 	err = applyKV(commitChgs, cbArgs)
 	if err != nil {
 		log.Error("applyKV(): ", err)
-		return nil, err
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 
 	err = deleteKV(deleteChgs, cbArgs)
 	if err != nil {
-		log.Error("deleteKV(): ", err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 
-	for nisdID, refund := range nisdRefundMap {
-
-		nisd, err := HR.GetNisdByID(string(nisdID))
+	for nisdID, nisd := range nisdRefundMap {
+		hrNisd, err := HR.GetNisdByID(nisd.FailureDomain[ctlplfl.PDU_IDX], nisdID)
 		if err != nil {
-			return nil, err
+			resp.Error = err.Error()
+			return pmCmn.Encoder(pmCmn.GOB, resp)
 		}
-		nisd.AvailableSize += refund
+		hrNisd.AvailableSize = nisd.AvailableSize
 	}
-
+	resp.Success = true
 	return pmCmn.Encoder(pmCmn.GOB, resp)
 }
