@@ -26,6 +26,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,6 +72,7 @@ type proxyHandler struct {
 
 	//Http
 	httpPort      uint16
+	httpPortStatic int  // if > 0, use this port only (no random pick from range)
 	limit         string
 	requireStat   string
 	httpServerObj httpServer.HTTPServerHandler
@@ -79,11 +81,27 @@ type proxyHandler struct {
 	ServicePortRangeS uint16
 	ServicePortRangeE uint16
 	portRange         []uint16
+
+	// mdsvc-api: hardcoded routes for nclient funcs (get_vdev_info, get_chunk_nisd, GetNisd)
+	mdsvcApiURL string
 }
 
 var MaxPort = 60000
 var MinPort = 1000
 var RecvdPort int
+
+// Built-in func name that returns a static string (for testing proxy /func)
+const FuncNameProxyPing = "proxy_ping"
+
+// Nclient func names routed to mdsvc-api (must match nclient / mdsvc-api)
+var mdsvcRoutedFuncs = map[string]bool{
+	cpLib.GET_VDEV_INFO:  true, // get_vdev_info
+	cpLib.GET_CHUNK_NISD: true, // get_chunk_nisd
+	cpLib.GET_NISD:       true, // GetNisd
+}
+
+// Hardcoded mdsvc-api URL (port 8081)
+const mdsvcApiURLDefault = "http://localhost:8081"
 
 func usage() {
 	flag.PrintDefaults()
@@ -113,11 +131,13 @@ func (handler *proxyHandler) getCmdParams() {
 	flag.StringVar(&handler.logLevel, "ll", "", "Set log level for the execution")
 	flag.StringVar(&handler.requireStat, "s", "0", "HTTP server stat : provides status of requests, If needed provide 1")
 	flag.StringVar(&handler.serfPeersFilePath, "pa", "NULL", "Path to pmdb server serf configuration file")
+	flag.IntVar(&handler.httpPortStatic, "hp", 0, "Static HTTP port for proxy (0 = pick from gossip port range)")
 	flag.StringVar(&handler.coverageOutDir, "cov", "", "Path to write code coverage data")
 	flag.Parse()
 	handler.raftUUID, _ = uuid.FromString(tempRaftUUID)
 	//FIXME: For testing purpose
 	handler.clientUUID, _ = uuid.FromString(tempClientUUID)
+	handler.mdsvcApiURL = mdsvcApiURLDefault
 }
 
 func makeRange(min, max uint16) []uint16 {
@@ -188,6 +208,10 @@ func (handler *proxyHandler) getConfigData() error {
 	handler.ServicePortRangeE = uint16(temp)
 
 	handler.portRange = makeRange(handler.ServicePortRangeS, handler.ServicePortRangeE)
+	// Override with static HTTP port if set
+	if handler.httpPortStatic > 0 {
+		handler.portRange = []uint16{uint16(handler.httpPortStatic)}
+	}
 	return nil
 }
 
@@ -507,6 +531,29 @@ func encode(data interface{}) []byte {
 	return buffer.Bytes()
 }
 
+// callMdsvcApiGet forwards GET /func?name=<name> with body to mdsvc-api and returns the response body (XML).
+func (handler *proxyHandler) callMdsvcApiGet(name string, body []byte, response *[]byte) error {
+	base := strings.TrimSuffix(handler.mdsvcApiURL, "/")
+	u := base + "/func?name=" + url.QueryEscape(name)
+	fmt.Println("[proxy] forwarding /func to mdsvc-api: name=", name, " url=", u)
+	req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/xml")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mdsvc-api returned %d", resp.StatusCode)
+	}
+	*response, err = ioutil.ReadAll(resp.Body)
+	return err
+}
+
 /*
 Structure : proxyHandler
 Method    : ReadHandlerCB
@@ -516,7 +563,27 @@ Return(s) : error
 Description : Call back for PMDB read func requests to HTTP server.
 */
 func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
+	fmt.Println("[proxy] /func hit: name=", name)
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
+
+	// Built-in func: return static string (no PMDB call)
+	if name == FuncNameProxyPing {
+		*response = []byte(`{"message":"Proxy is being hit"}`)
+		return nil
+	}
+
+	// Hardcoded routes for nclient: forward to mdsvc-api and return response as-is (XML)
+	if mdsvcRoutedFuncs[name] && handler.mdsvcApiURL != "" {
+		fmt.Println("[proxy] routing to mdsvc-api: name=", name)
+		err := handler.callMdsvcApiGet(name, body, response)
+		if err != nil {
+			log.Error("mdsvc-api GET failed for ", name, ": ", err)
+			return err
+		}
+		fmt.Println("[proxy] mdsvc-api response received: name=", name)
+		return nil
+	}
+
 	encType := GetEncodingType(reader)
 	var res any = nil
 	var err error
@@ -557,6 +624,7 @@ Return(s) : error
 Description : Call back for PMDB write func requests to HTTP server.
 */
 func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64, body []byte, response *[]byte, reader *http.Request) error {
+	fmt.Println("[proxy] /func PUT hit: name=", name)
 	log.Info("FuncHandlerCB called with name: ", name)
 	encType := GetEncodingType(reader)
 	res, err := DecodeRequest(encType, name, body)
