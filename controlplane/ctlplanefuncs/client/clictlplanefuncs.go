@@ -402,3 +402,12 @@ func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, erro
 
 	return cn, nil
 }
+
+func (ccf *CliCFuncs) DeleteVdev(req *ctlplfl.DeleteVdevReq) (*ctlplfl.ResponseXML, error) {
+	resp := &ctlplfl.ResponseXML{}
+	err := ccf.put(req, resp, ctlplfl.DELETE_VDEV)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
