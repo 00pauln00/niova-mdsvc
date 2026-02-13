@@ -8,6 +8,7 @@ import (
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
@@ -229,9 +230,8 @@ func (c *Client) UpdateAdminSecretKey(userID, newSecretKey string) (*userlib.Use
 
 // Login authenticates the user with username and secret key, returns JWT token.
 func (c *Client) Login(username, secretKey string) (*userlib.LoginResp, error) {
-	req := &userlib.LoginReq{
-		Username:  username,
-		SecretKey: secretKey,
+	req := &cpLib.GetReq{
+		ID: fmt.Sprintf("%s:%s", username, secretKey),
 	}
 
 	resp := &userlib.LoginResp{}

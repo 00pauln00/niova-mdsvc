@@ -106,12 +106,6 @@ func (u *User) Init(req *UserReq) error {
 	return nil
 }
 
-// LoginReq represents the request struct for Login API
-type LoginReq struct {
-	Username  string `xml:"Username" json:"username"`
-	SecretKey string `xml:"SecretKey" json:"secretKey"`
-}
-
 // LoginResp represents the response struct for Login API
 type LoginResp struct {
 	AccessToken string `xml:"AccessToken" json:"accessToken"`
@@ -123,16 +117,4 @@ type LoginResp struct {
 	ExpiresIn   int64  `xml:"ExpiresIn" json:"expiresIn"`
 	IsAdmin     bool   `xml:"IsAdmin" json:"isAdmin"`
 	Success     bool   `xml:"Success" json:"success"`
-}
-
-// Validate Login Request
-func (l *LoginReq) Validate() error {
-	if strings.TrimSpace(l.Username) == "" {
-		return fmt.Errorf("username cannot be empty")
-	}
-	if strings.TrimSpace(l.SecretKey) == "" {
-		return fmt.Errorf("secretKey cannot be empty")
-	}
-
-	return nil
 }

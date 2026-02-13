@@ -54,5 +54,6 @@ install:
 	cp scripts/docker/controlplane.sh ${DIR}
 	cp scripts/docker/raft-config.sh ${DIR}
 	cp scripts/docker/run-cpcontainer.sh ${DIR}	
+	cp controlplane/authorizer/ctlauth.yaml ${DIR}
 clean:
 	rm -rf libexec
