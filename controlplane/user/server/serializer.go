@@ -90,6 +90,7 @@ func SerializeUser(user *userlib.User) []pumiceFunc.CommitChg {
 func SerializeUsernameIndexDelete(oldUsername string) pumiceFunc.CommitChg {
 	return pumiceFunc.CommitChg{
 		Key:   []byte(fmt.Sprintf("%s/%s/%s", userIndexPrefix, usernameIdxPrefix, oldUsername)),
-		Value: []byte{}, // Empty value signals delete
+		Value: []byte{},
+		Op:    pumiceFunc.OpDelete,
 	}
 }

@@ -417,12 +417,16 @@ func GetUser(args ...interface{}) (interface{}, error) {
 func applyCommitChanges(changes []pumiceFunc.CommitChg, cbArgs *pumiceserver.PmdbCbArgs) error {
 	for _, chg := range changes {
 		var err error
-		if len(chg.Value) == 0 {
-			log.Debugf("Deleting key: %s", string(chg.Key))
-			err = cbArgs.Store.Delete(string(chg.Key), columnFamily)
-		} else {
+		switch chg.Op {
+		case pumiceFunc.OpApply:
 			log.Debugf("Applying change: %s", string(chg.Key))
 			err = cbArgs.Store.Write(string(chg.Key), string(chg.Value), columnFamily)
+		case pumiceFunc.OpDelete:
+			log.Debugf("Deleting key: %s", string(chg.Key))
+			err = cbArgs.Store.Delete(string(chg.Key), columnFamily)
+		default:
+			log.Error("Unknown operation type: ", chg.Op, " for key: ", string(chg.Key))
+			return fmt.Errorf("unknown operation type %d for key %s", chg.Op, string(chg.Key))
 		}
 		if err != nil {
 			log.Errorf("Failed to apply change for key: %s", string(chg.Key))

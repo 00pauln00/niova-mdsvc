@@ -203,12 +203,16 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 	for _, chg := range chgs {
 		var err error
-		if len(chg.Value) == 0 {
-			log.Info("Deleting key: ", string(chg.Key))
-			err = ds.Delete(string(chg.Key), colmfamily)
-		} else {
+		switch chg.Op {
+		case funclib.OpApply:
 			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
 			err = ds.Write(string(chg.Key), string(chg.Value), colmfamily)
+		case funclib.OpDelete:
+			log.Info("Deleting key: ", string(chg.Key))
+			err = ds.Delete(string(chg.Key), colmfamily)
+		default:
+			log.Error("Unknown operation type: ", chg.Op, " for key: ", string(chg.Key))
+			return fmt.Errorf("unknown operation type %d for key %s", chg.Op, string(chg.Key))
 		}
 		if err != nil {
 			log.Error("Failed to apply changes for key: ", string(chg.Key), " err: ", err)
