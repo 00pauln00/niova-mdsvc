@@ -247,3 +247,24 @@ func GetEntityByID(ft cpLib.Filter) (*Entities, error) {
 
 	return ent, nil
 }
+
+func (hr *Hierarchy) GetNisdByID(nisdID string) (*cpLib.Nisd, error) {
+	var found *cpLib.Nisd
+
+	hr.FD[0].Tree.Ascend(nil, func(e *Entities) bool {
+		e.Nisds.Ascend(nil, func(n *cpLib.Nisd) bool {
+			if n.ID == nisdID {
+				found = n
+				return false // stop Nisds traversal
+			}
+			return true
+		})
+		return found == nil // stop Entities traversal
+	})
+
+	if found == nil {
+		return nil, fmt.Errorf("nisd with ID %s not found in first failure domain", nisdID)
+	}
+
+	return found, nil
+}
