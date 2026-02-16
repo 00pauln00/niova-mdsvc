@@ -1274,6 +1274,10 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 
 }
 
+func WritePrepFunc(args ...interface{}) (interface{}, error) {
+	return nil, nil
+}
+
 // Deletes a Vdev, archives its data and refunds allocated space to NISDs
 func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
@@ -1283,6 +1287,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		Name: "vdev",
 		ID:   req.ID,
 	}
+	log.Info("deleting vdev: ", req.ID)
 	// Validate Vdev exists
 	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
 
@@ -1361,7 +1366,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	// Process NISD refunds and reverse mapping deletion
 	for nisdID, nisd := range nisdRefundMap {
 		// Reverse mapping key: n/<nisdID>/<vdevID>
-		asKey := fmt.Sprintf("%s/%s/%s", getConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
+		asKey := fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(asKey),
 			Value: []byte(strconv.FormatInt(nisd.AvailableSize, 10)),

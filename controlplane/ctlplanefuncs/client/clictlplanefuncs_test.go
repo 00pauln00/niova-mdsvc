@@ -863,11 +863,8 @@ func TestDeleteVdev(t *testing.T) {
 	c := newClient(t)
 	vdev := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
-			Size:       500 * 1024 * 1024 * 1024,
+			Size:       8 * 1024 * 1024 * 1024,
 			NumReplica: 2,
-		},
-		Filter: cpLib.Filter{
-			Type: cpLib.FD_HV,
 		},
 	}
 
@@ -876,6 +873,7 @@ func TestDeleteVdev(t *testing.T) {
 	log.Infof("vdev response status: %v", resp)
 	assert.NotEmpty(t, resp.ID)
 	resp, err = c.DeleteVdev(&cpLib.DeleteVdevReq{ID: resp.ID})
+	log.Info("delete vdev response: ", resp, err)
 	assert.NoError(t, err)
 }
 
