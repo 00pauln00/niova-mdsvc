@@ -100,6 +100,44 @@ func getVdevChunkKey(vdevID string) string {
 	return fmt.Sprintf("%s/%s/%s", vdevKey, vdevID, chunkKey)
 }
 
+func validateKey(cbArgs *PumiceDBServer.PmdbCbArgs, cf, key string, resp *ctlplfl.ResponseXML) error {
+
+	_, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   cf,
+		Key:        key,
+		Prefix:     key,
+		BufSize:    cbArgs.ReplySize,
+		SeqNum:     0,
+		Consistent: false,
+	})
+
+	if ctlplfl.IsKeyNotFoundError(err) {
+		// key doesn't exist
+		log.Infof("Key [%v] not found\n", key)
+		return nil
+	} else if err != nil {
+		// Actual error
+		return fmt.Errorf("range read failure: %w", err)
+	}
+
+	return fmt.Errorf("key [%v] already exists", key)
+}
+
+func encodeFuncIntrm(resp *ctlplfl.ResponseXML, commitChgs []funclib.CommitChg) ([]byte, error) {
+
+	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode response: %w", err)
+	}
+
+	funcIntrm := funclib.FuncIntrm{
+		Changes:  commitChgs,
+		Response: r,
+	}
+
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+}
+
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
 
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
@@ -242,39 +280,6 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	return intrm.Response, nil
 }
 
-func ApplyNisd(args ...interface{}) (interface{}, error) {
-	cbargs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
-	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
-		return nil, err
-	}
-	nisd, ok := args[0].(ctlplfl.Nisd)
-	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type Nisd")
-		return nil, err
-	}
-	var intrm funclib.FuncIntrm
-	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
-	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
-	if err != nil {
-		log.Error("Failed to decode the apply changes: ", err)
-		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
-	}
-
-	err = applyKV(intrm.Changes, cbargs.Store)
-	if err != nil {
-		log.Error("applyKV(): ", err)
-		return nil, err
-	}
-
-	err = HR.AddNisd(&nisd)
-	if err != nil {
-		log.Error("AddNisd()", err)
-	}
-
-	return intrm.Response, nil
-}
-
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
@@ -337,30 +342,6 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 	return nisdList, nil
 }
 
-func WPNisdCfg(args ...interface{}) (interface{}, error) {
-	nisd := args[0].(ctlplfl.Nisd)
-	err := nisd.Validate()
-	if err != nil {
-		log.Error("failed to validate nisd: ", err)
-		return nil, err
-	}
-	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
-
-	nisdResponse := ctlplfl.ResponseXML{
-		Name:    nisd.ID,
-		Success: true,
-	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode nisd response: %v", err)
-	}
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
-}
-
 func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
@@ -380,31 +361,9 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, deviceList)
 }
 
-func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-	dev := args[0].(ctlplfl.Device)
+func WritePrepFunc(args ...interface{}) (interface{}, error) {
+	return nil, nil
 
-	nisdResponse := ctlplfl.ResponseXML{
-		Name:    dev.ID,
-		Success: true,
-	}
-
-	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
-	if err != nil {
-		log.Error("Failed to marshal nisd response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-	}
-	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{}, deviceCfgKey)
-	for _, pt := range dev.Partitions {
-		ptCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, dev.ID, ptKey))
-		commitChgs = append(commitChgs, ptCommits...)
-	}
-
-	//Fill in FuncIntrm structure
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
@@ -745,22 +704,29 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	pt := args[0].(ctlplfl.DevicePartition)
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
+	commitChgs := make([]funclib.CommitChg, 0)
 	resp := &ctlplfl.ResponseXML{
-		Name:    pt.PartitionID,
-		Success: true,
+		Name: pt.DevID,
+		ID:   pt.PartitionID,
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
+
+	if err := pt.Validate(); err != nil {
+		log.Error("failed to validate partition: ", err)
+		resp.Error = err.Error()
+		return encodeFuncIntrm(resp, commitChgs)
+	}
+
+	err := validateKey(cbArgs, colmfamily, getConfKey(deviceCfgKey, pt.PartitionID), resp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode pt response: %v", err)
+		return encodeFuncIntrm(resp, commitChgs)
+
 	}
-	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, ptKey)
+	commitChgs = PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, ptKey)
 	devPTCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, pt.DevID, ptKey))
 	commitChgs = append(commitChgs, devPTCommits...)
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+
+	return encodeFuncIntrm(resp, commitChgs)
 }
 
 func ReadPartition(args ...interface{}) (interface{}, error) {
@@ -784,25 +750,6 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	return pmCmn.Encoder(pmCmn.GOB, pt)
 }
 
-func WPPDUCfg(args ...interface{}) (interface{}, error) {
-	pdu := args[0].(ctlplfl.PDU)
-	resp := &ctlplfl.ResponseXML{
-		Name:    pdu.ID,
-		Success: true,
-	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to  encode pdu response: %v", err)
-	}
-	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{}, pduKey)
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
-}
-
 func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
@@ -824,26 +771,6 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 
 	return pmCmn.Encoder(pmCmn.GOB, pduList)
 
-}
-
-func WPRackCfg(args ...interface{}) (interface{}, error) {
-
-	rack := args[0].(ctlplfl.Rack)
-	resp := &ctlplfl.ResponseXML{
-		Name:    rack.ID,
-		Success: true,
-	}
-	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		return nil, err
-	}
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
@@ -871,28 +798,6 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("failed to encode rack info: %v", err)
 	}
 	return response, nil
-}
-
-func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	// Decode the input buffer into structure format
-	hv := args[0].(ctlplfl.Hypervisor)
-	resp := &ctlplfl.ResponseXML{
-		Name:    hv.ID,
-		Success: true,
-	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		log.Error("Failed to marshal vdev response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-	}
-	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{}, hvKey)
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
-
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
-
 }
 
 func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
@@ -1219,18 +1124,9 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 		Name:    "nisd-args",
 		Success: true,
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		log.Error("Failed to marshal nisd args response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd args response: %v", err)
-	}
 	commitChgs := PopulateEntities[*ctlplfl.NisdArgs](&nArgs, nisdArgsPopulator{}, argsKey)
-	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
-	}
 
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+	return encodeFuncIntrm(resp, commitChgs)
 }
 
 func RdNisdArgs(args ...interface{}) (interface{}, error) {

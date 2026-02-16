@@ -145,7 +145,11 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 		case PORT_RANGE:
 			hv.PortRange = string(value)
 		case SSH_PORT:
-			hv.SSHPort = string(value)
+			SSHport, err := strconv.ParseUint(string(value), 10, 16)
+			if err != nil {
+				log.Error("invalid SSH port: %q", value)
+			}
+			hv.SSHPort = uint16(SSHport)
 		case NAME:
 			hv.Name = string(value)
 		case ENABLE_RDMA:

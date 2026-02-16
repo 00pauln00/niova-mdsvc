@@ -24,6 +24,10 @@ type rackPopulator struct{}
 func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	rack := entity.(*cpLib.Rack)
 	key := getConfKey(entityKey, rack.ID)
+	*commitChgs = append(*commitChgs,
+		funclib.CommitChg{
+			Key: []byte(key),
+		})
 	for _, field := range []string{NAME, LOCATION, SPEC, pduKey} {
 		var value string
 		switch field {
@@ -51,6 +55,10 @@ type partitionPopulator struct{}
 func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	pt := entity.(*cpLib.DevicePartition)
 	key := getConfKey(entityKey, pt.PartitionID)
+	*commitChgs = append(*commitChgs,
+		funclib.CommitChg{
+			Key: []byte(key),
+		})
 	for _, field := range []string{PARTITION_PATH, nisdKey, DEVICE_ID, SIZE} {
 		var value string
 		switch field {
@@ -77,7 +85,10 @@ type nisdPopulator struct{}
 func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	nisd := entity.(*cpLib.Nisd)
 	key := getConfKey(entityKey, nisd.ID)
-
+	*commitChgs = append(*commitChgs,
+		funclib.CommitChg{
+			Key: []byte(key),
+		})
 	// Schema: n_cfg/{nisdID}/{field} : {value}
 	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, pduKey, rackKey, NETWORK_INFO_CNT} {
 		var value string
@@ -180,6 +191,10 @@ type hvPopulator struct{}
 func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	hv := entity.(*cpLib.Hypervisor)
 	key := getConfKey(entityKey, hv.ID)
+	*commitChgs = append(*commitChgs,
+		funclib.CommitChg{
+			Key: []byte(key),
+		})
 	for _, field := range []string{rackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT, ENABLE_RDMA} {
 		var value string
 		switch field {
@@ -188,7 +203,7 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 		case PORT_RANGE:
 			value = hv.PortRange
 		case SSH_PORT:
-			value = hv.SSHPort
+			value = strconv.FormatUint(uint64(hv.SSHPort), 10)
 		case rackKey:
 			value = hv.RackID
 		case ENABLE_RDMA:

@@ -3,7 +3,6 @@ package libctlplanefuncs
 import (
 	"encoding/gob"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -65,6 +64,14 @@ const (
 	HASH_SIZE = 8
 )
 
+// Error message returned by PMDB when key is not found
+const errKeyNotFoundMsg = "Failed to lookup for key"
+
+// isKeyNotFoundError checks if the error indicates that the key was not found in PMDB
+func IsKeyNotFoundError(err error) bool {
+	return err != nil && err.Error() == errKeyNotFoundMsg
+}
+
 type FD int
 
 const (
@@ -118,28 +125,6 @@ type ResponseXML struct {
 	Success bool
 }
 
-type Device struct {
-	ID           string `xml:"ID" json:"ID"`
-	Name         string `xml:"Name" json:"Name"` // For display purposes
-	DevicePath   string `xml:"device_path,omitempty" json:"DevicePath"`
-	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
-	State        uint16 `xml:"State" json:"State"`
-	Size         int64  `xml:"Size" json:"Size"`
-	//Parent info
-	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
-	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
-	//Child info
-	Partitions []DevicePartition `json:"partitions,omitempty"`
-}
-
-type DevicePartition struct {
-	PartitionID   string `json:"partition_id"`
-	PartitionPath string `json:"partition_path"`
-	NISDUUID      string `json:"nisd_uuid"`
-	DevID         string `json:"Dev_Id"`
-	Size          int64  `json:"size,omitempty"`
-}
-
 type NisdArgs struct {
 	Defrag               bool   // -g Defrag
 	MBCCnt               int    // -m
@@ -148,52 +133,6 @@ type NisdArgs struct {
 	S3                   string // -s
 	DSync                string // -D
 	AllowDefragMCIBCache bool   // -x
-}
-
-type NetworkInfo struct {
-	IPAddr string
-	Port   uint16
-}
-
-type Nisd struct {
-	XMLName       xml.Name    `xml:"NisdInfo"`
-	PeerPort      uint16      `xml:"PeerPort" json:"PeerPort"`
-	ID            string      `xml:"ID" json:"ID"`
-	FailureDomain []string    `xml:"FailureDomain"`
-	TotalSize     int64       `xml:"TotalSize"`
-	AvailableSize int64       `xml:"AvailableSize"`
-	SocketPath    string      `xml:"SocketPath"`
-	NetInfo       NetInfoList `xml:"NetInfo"`
-	NetInfoCnt    int         `xml:"NetInfoCnt"`
-}
-
-type PDU struct {
-	ID            string `xml:"ID" json:"ID" yaml:"uuid"`
-	Name          string `xml:"Name" json:"Name" yaml:"name"`
-	Location      string `xml:"Location" json:"Location" yaml:"location"`
-	PowerCapacity string `xml:"PowerCap" json:"PowerCapacity" yaml:"powercap"`
-	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
-	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
-}
-
-type Rack struct {
-	ID            string // Unique rack identifier
-	Name          string
-	PDUID         string // Foreign key to PDU
-	Location      string
-	Specification string
-	Hypervisors   []Hypervisor
-}
-
-type Hypervisor struct {
-	ID          string // Unique hypervisor identifier
-	RackID      string
-	Name        string
-	IPAddrs     []string
-	PortRange   string
-	SSHPort     string // SSH port for connection
-	Dev         []Device
-	RDMAEnabled bool
 }
 
 type NisdChunk struct {
@@ -207,14 +146,14 @@ type NisdVdevAlloc struct {
 }
 
 type VdevCfg struct {
-	XMLName      xml.Name `xml:"Vdev"`
+	XMLName      xml.Name
 	ID           string
-	Size         int64
+	Size         int64 `validate:"required"`
 	NumChunks    uint32
-	NumReplica   uint8
+	NumReplica   uint8 `validate:"required"`
 	NumDataBlk   uint8
 	NumParityBlk uint8
-	AuthToken    string
+	AuthToken    string `validate:"required"`
 }
 
 type Vdev struct {
@@ -225,7 +164,7 @@ type Vdev struct {
 
 type Filter struct {
 	ID   string
-	Type FD
+	Type FD `validate:"required"`
 }
 
 type VdevReq struct {
@@ -238,6 +177,42 @@ type GetReq struct {
 	ID        string
 	GetAll    bool
 	UserToken string
+}
+
+type NetInfoList []NetworkInfo
+
+func (n NetInfoList) MarshalText() ([]byte, error) {
+	parts := make([]string, 0, len(n))
+	for _, ni := range n {
+		parts = append(parts, ni.IPAddr+":"+strconv.FormatUint(uint64(ni.Port), 10))
+	}
+	return []byte(strings.Join(parts, ", ")), nil
+}
+
+func (n *NetInfoList) UnmarshalText(text []byte) error {
+	raw := strings.TrimSpace(string(text))
+	if raw == "" {
+		return nil
+	}
+
+	entries := strings.Split(raw, ",")
+	for _, e := range entries {
+		host, portStr, err := net.SplitHostPort(strings.TrimSpace(e))
+		if err != nil {
+			return err
+		}
+
+		p, err := strconv.ParseUint(portStr, 10, 16)
+		if err != nil {
+			return err
+		}
+
+		*n = append(*n, NetworkInfo{
+			IPAddr: host,
+			Port:   uint16(p),
+		})
+	}
+	return nil
 }
 
 func (vdev *VdevCfg) Init() error {
@@ -338,14 +313,6 @@ func RegisterGOBStructs() {
 	gob.Register(userlib.LoginResp{})
 }
 
-func (req *GetReq) ValidateRequest() error {
-	if req.ID == "" {
-		return fmt.Errorf("Invalid Request: Recieved empty ID")
-	}
-	return nil
-
-}
-
 func (a *NisdArgs) BuildCmdArgs() string {
 	var parts []string
 
@@ -380,73 +347,12 @@ func NisdAllocHash(data []byte) uint64 {
 	return h.Sum64()
 }
 
-func (n *Nisd) Validate() error {
-	if _, err := uuid.Parse(n.ID); err != nil {
-		return errors.New("invalid ID uuid")
-	}
-
-	if len(n.FailureDomain) != FD_MAX {
-		return errors.New("invalid NISD failure domain info")
-	}
-	for i := 0; i < DEVICE_IDX; i++ {
-		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
-			return fmt.Errorf("invalid FailureDomain[%d] uuid", i)
-		}
-	}
-
-	if n.AvailableSize > n.TotalSize {
-		return errors.New("available Size exceeds total size")
-	}
-
-	if len(n.NetInfo) != n.NetInfoCnt {
-		return fmt.Errorf("network interface cnt %d doesn't match with the total interface details provided %d", n.NetInfoCnt, len(n.NetInfo))
-	}
-
-	return nil
-}
-
 func NextFailureDomain(fd int) (int, error) {
 	if fd < DEVICE_IDX {
 		fd++
 		return fd, nil
 	}
 	return fd, fmt.Errorf("max failure domain reached: %d", fd)
-}
-
-type NetInfoList []NetworkInfo
-
-func (n NetInfoList) MarshalText() ([]byte, error) {
-	parts := make([]string, 0, len(n))
-	for _, ni := range n {
-		parts = append(parts, ni.IPAddr+":"+strconv.FormatUint(uint64(ni.Port), 10))
-	}
-	return []byte(strings.Join(parts, ", ")), nil
-}
-
-func (n *NetInfoList) UnmarshalText(text []byte) error {
-	raw := strings.TrimSpace(string(text))
-	if raw == "" {
-		return nil
-	}
-
-	entries := strings.Split(raw, ",")
-	for _, e := range entries {
-		host, portStr, err := net.SplitHostPort(strings.TrimSpace(e))
-		if err != nil {
-			return err
-		}
-
-		p, err := strconv.ParseUint(portStr, 10, 16)
-		if err != nil {
-			return err
-		}
-
-		*n = append(*n, NetworkInfo{
-			IPAddr: host,
-			Port:   uint16(p),
-		})
-	}
-	return nil
 }
 
 func (hv *Hypervisor) GetPrimaryIP() (string, error) {

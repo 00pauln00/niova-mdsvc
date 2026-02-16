@@ -1020,12 +1020,17 @@ func (m model) submitHypervisorForm() (model, tea.Cmd) {
 	}
 
 	selectedRackInfo := allRacks[m.selectedRackIdx]
+	port, err := strconv.ParseUint(string(sshPort), 10, 16)
+	if err != nil || port == 0 {
+		m.message = "Invalid SSH port"
+		return m, nil
+	}
 	hypervisor := Hypervisor{
 		ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
 		Name:      name,
 		RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
 		IPAddrs:   allIPs,                   // Multiple IP addresses
-		SSHPort:   sshPort,
+		SSHPort:   uint16(port),
 		PortRange: portRange,
 	}
 
@@ -2054,8 +2059,8 @@ func (m model) loadHypervisorIntoForm(hv ctlplfl.Hypervisor) model {
 	}
 
 	//FIXME hardcoded value of sshport
-	if hv.SSHPort != "" {
-		m.inputs[3].SetValue(hv.SSHPort)
+	if hv.SSHPort != 0 {
+		m.inputs[3].SetValue(strconv.FormatUint(uint64(hv.SSHPort), 10))
 	} else {
 		m.inputs[3].SetValue("22")
 	}
@@ -2132,7 +2137,7 @@ func (m model) updateConfigView() model {
 					content.WriteString(fmt.Sprintf("        Hypervisor: %s (%s)\n", hv.ID, formatIPAddresses(hv)))
 					content.WriteString(fmt.Sprintf("          UUID: %s\n", hv.ID))
 					content.WriteString(fmt.Sprintf("          Failure Domain: %s/%s/%s\n", pdu.Name, rack.ID, hv.ID))
-					if hv.SSHPort != "" {
+					if hv.SSHPort != 0 {
 						content.WriteString(fmt.Sprintf("          SSH Port: %s\n", hv.SSHPort))
 					}
 					content.WriteString(fmt.Sprintf("          Port Range: %s\n", hv.PortRange))
@@ -2169,7 +2174,7 @@ func (m model) updateConfigView() model {
 			}
 			content.WriteString(fmt.Sprintf("Hypervisor: %s (%s)\n", hv.ID, formatIPAddresses(hv)))
 			content.WriteString(fmt.Sprintf("  UUID: %s\n", hv.ID))
-			if hv.SSHPort != "" {
+			if hv.SSHPort != 0 {
 				content.WriteString(fmt.Sprintf("  SSH Port: %s\n", hv.SSHPort))
 			}
 			if hv.RackID != "" {
