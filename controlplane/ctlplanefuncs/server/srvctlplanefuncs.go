@@ -101,18 +101,26 @@ func getVdevChunkKey(vdevID string) string {
 }
 
 func validateKey(cbArgs *PumiceDBServer.PmdbCbArgs, cf, key string, resp *ctlplfl.ResponseXML) error {
-	ok, err := cbArgs.PmdbKeyExists(cf, key)
-	if err != nil {
-		resp.Error = fmt.Sprintf("failed to check if key exists: %v", err)
-		return err
+
+	_, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+		Selector:   cf,
+		Key:        key,
+		Prefix:     key,
+		BufSize:    cbArgs.ReplySize,
+		SeqNum:     0,
+		Consistent: false,
+	})
+
+	if ctlplfl.IsKeyNotFoundError(err) {
+		// key doesn't exist
+		log.Infof("Key [%v] not found\n", key)
+		return nil
+	} else if err != nil {
+		// Actual error
+		return fmt.Errorf("range read failure: %w", err)
 	}
 
-	if ok {
-		resp.Error = "key already present in the db"
-		return fmt.Errorf(resp.Error)
-	}
-	resp.Success = true
-	return nil
+	return fmt.Errorf("key [%v] already exists", key)
 }
 
 func encodeFuncIntrm(resp *ctlplfl.ResponseXML, commitChgs []funclib.CommitChg) ([]byte, error) {

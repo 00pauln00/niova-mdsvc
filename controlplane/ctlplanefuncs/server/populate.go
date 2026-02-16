@@ -203,7 +203,7 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 		case PORT_RANGE:
 			value = hv.PortRange
 		case SSH_PORT:
-			value = hv.SSHPort
+			value = strconv.FormatUint(uint64(hv.SSHPort), 10)
 		case rackKey:
 			value = hv.RackID
 		case ENABLE_RDMA:

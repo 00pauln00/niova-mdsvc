@@ -24,7 +24,7 @@ func ApplyPDU(args ...interface{}) (interface{}, error) {
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
-
+	log.Info("validate pdu key")
 	if err := validateKey(cbargs, colmfamily, getConfKey(pduKey, pdu.ID), resp); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
@@ -33,7 +33,7 @@ func ApplyPDU(args ...interface{}) (interface{}, error) {
 
 	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{}, pduKey)
 
-	if err := applyKV(commitChgs, cbargs); err != nil {
+	if err := applyKV(commitChgs, cbargs.Store); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
@@ -66,7 +66,7 @@ func ApplyRack(args ...interface{}) (interface{}, error) {
 
 	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
 
-	if err := applyKV(commitChgs, cbargs); err != nil {
+	if err := applyKV(commitChgs, cbargs.Store); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
@@ -99,7 +99,7 @@ func ApplyHypervisor(args ...interface{}) (interface{}, error) {
 
 	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{}, hvKey)
 
-	if err := applyKV(commitChgs, cbargs); err != nil {
+	if err := applyKV(commitChgs, cbargs.Store); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
@@ -132,7 +132,7 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 
 	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
 
-	if err := applyKV(commitChgs, cbargs); err != nil {
+	if err := applyKV(commitChgs, cbargs.Store); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
@@ -180,7 +180,7 @@ func ApplyDevice(args ...interface{}) (interface{}, error) {
 		)
 	}
 
-	if err := applyKV(commitChgs, cbargs); err != nil {
+	if err := applyKV(commitChgs, cbargs.Store); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
@@ -222,7 +222,7 @@ func ApplyPartition(args ...interface{}) (interface{}, error) {
 		)...,
 	)
 
-	if err := applyKV(commitChgs, cbargs); err != nil {
+	if err := applyKV(commitChgs, cbargs.Store); err != nil {
 		resp.Error = err.Error()
 		resp.Success = false
 		return pmCmn.Encoder(pmCmn.GOB, resp)
