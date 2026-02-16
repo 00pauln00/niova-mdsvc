@@ -46,6 +46,8 @@ func GetReqStruct(name string) any {
 		return &userlib.UserReq{}
 	case userlib.GetUserAPI:
 		return &userlib.GetReq{}
+	case cpLib.DELETE_VDEV:
+		return &cpLib.DeleteVdevReq{}
 	default:
 		return &cpLib.GetReq{}
 	}
@@ -89,6 +91,8 @@ func GetRespStruct(name string) any {
 		return &[]userlib.UserResp{}
 	case userlib.LoginAPI:
 		return &userlib.LoginResp{}
+	case cpLib.DELETE_VDEV:
+		return &cpLib.ResponseXML{}
 	}
 	return nil
 }
