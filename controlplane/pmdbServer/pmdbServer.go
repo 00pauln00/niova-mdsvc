@@ -31,10 +31,12 @@ import (
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
 	leaseServerLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/server"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+	"github.com/00pauln00/niova-pumicedb/go/pkg/pumicestore"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	lookout "github.com/00pauln00/niova-pumicedb/go/pkg/utils/ctlmonitor"
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	uuid "github.com/satori/go.uuid"
@@ -79,14 +81,16 @@ func PopulateHierarchy() error {
 	key, prefix := srvctlplanefuncs.NisdCfgKey, srvctlplanefuncs.NisdCfgKey
 	rangeReadContOut := make([]map[string][]byte, 0)
 	time.Sleep(2 * time.Second)
-	var cbargs PumiceDBServer.PmdbCbArgs
+	cbargs := PumiceDBServer.PmdbCbArgs{
+		Store: &pumicestore.PumiceStore{},
+	}
 	for {
 		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
-		readResult, err := cbargs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-			ColFamily: colmfamily,
-			Key:       key,
-			Prefix:    prefix,
-			BufSize:   cpLib.MAX_REPLY_SIZE,
+		readResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
+			Selector: colmfamily,
+			Key:      key,
+			Prefix:   prefix,
+			BufSize:  cpLib.MAX_REPLY_SIZE,
 		})
 		if err != nil {
 			log.Warn("RangeReadKV(): ", err)
@@ -225,6 +229,11 @@ func main() {
 	err = PopulateHierarchy()
 	if err != nil {
 		log.Warn("failed to create hierarchy struct:", err)
+	}
+
+	err = srvctlplanefuncs.InitAuthorizer("/ctlauth.yaml")
+	if err != nil {
+		log.Fatal("failed to initialize authorizer:", err)
 	}
 
 	serverHandler.checkPMDBLiveness()
@@ -557,9 +566,13 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	byteToStr := string(applyNiovaKV.Value)
 
 	log.Trace("Write the KeyValue by calling PmdbWriteKV")
-	rc := applyArgs.PmdbWriteKV(colmfamily, applyNiovaKV.Key, byteToStr)
+	err := applyArgs.Store.Write(applyNiovaKV.Key, byteToStr, colmfamily)
+	if err != nil {
+		log.Error("Value not written to rocksdb")
+		return -1
+	}
 
-	return int64(rc)
+	return 0
 }
 
 func (nso *NiovaKVServer) FillReply(RetryWriteArgs *PumiceDBServer.PmdbCbArgs) int64 {
@@ -593,7 +606,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if reqStruct.Operation == requestResponseLib.KV_READ {
 
 		log.Trace("read - ", reqStruct.SeqNum)
-		readResult, err := readArgs.PmdbReadKV(colmfamily, reqStruct.Key)
+		readResult, err := readArgs.Store.Read(reqStruct.Key, colmfamily)
 		singleReadMap := make(map[string][]byte)
 		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
@@ -605,8 +618,8 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
-		readResult, err := readArgs.PmdbRangeRead(PumiceDBServer.RangeReadArgs{
-			ColFamily:  colmfamily,
+		readResult, err := readArgs.Store.RangeRead(storageiface.RangeReadArgs{
+			Selector:   colmfamily,
 			Key:        reqStruct.Key,
 			BufSize:    readArgs.ReplySize - int64(encodingOverhead),
 			Prefix:     reqStruct.Prefix,

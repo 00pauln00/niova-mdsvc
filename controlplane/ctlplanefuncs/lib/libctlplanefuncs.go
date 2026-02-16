@@ -48,6 +48,7 @@ const (
 	NAME           = "name"
 
 	NISD_SECRET = "Nisd-secret"
+	CP_SECRET   = "ControlPlane-secret"
 
 	UNINITIALIZED = 1
 	INITIALIZED   = 2
@@ -219,6 +220,7 @@ type VdevCfg struct {
 type Vdev struct {
 	Cfg          VdevCfg
 	NisdToChkMap []NisdChunk
+	UserToken    string
 }
 
 type Filter struct {
@@ -227,13 +229,15 @@ type Filter struct {
 }
 
 type VdevReq struct {
-	Vdev   *VdevCfg
-	Filter Filter
+	Vdev      *VdevCfg
+	Filter    Filter
+	UserToken string
 }
 
 type GetReq struct {
-	ID     string
-	GetAll bool
+	ID        string
+	GetAll    bool
+	UserToken string
 }
 
 func (vdev *VdevCfg) Init() error {
@@ -331,7 +335,6 @@ func RegisterGOBStructs() {
 	gob.Register(userlib.UserReq{})
 	gob.Register(userlib.User{})
 	gob.Register(userlib.UserResp{})
-	gob.Register(userlib.LoginReq{})
 	gob.Register(userlib.LoginResp{})
 }
 

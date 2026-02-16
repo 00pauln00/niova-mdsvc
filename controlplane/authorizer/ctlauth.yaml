@@ -1,0 +1,80 @@
+APCreateVdev:
+  RBAC:
+    - admin
+    - user
+WPCreateVdev:
+  RBAC:
+    - admin
+    - user
+WPNisdCfg:
+  RBAC:
+    - admin
+ApplyNisd:
+  RBAC:
+    - admin
+WPDeviceInfo:
+  RBAC:
+    - admin
+WPCreatePartition:
+  RBAC:
+    - admin
+WPPDUCfg:
+  RBAC:
+    - admin
+WPRackCfg:
+  RBAC:
+    - admin
+WPHyperVisorCfg:
+  RBAC:
+    - admin
+WPNisdArgs:
+  RBAC:
+    - admin
+ReadAllNisdConfigs:
+  RBAC:
+    - admin
+ReadNisdConfig:
+  RBAC:
+    - admin
+RdDeviceInfo:
+  RBAC:
+    - admin
+ReadPartition:
+  RBAC:
+    - admin
+ReadPDUCfg:
+  RBAC:
+    - admin
+ReadRackCfg:
+  RBAC:
+    - admin
+ReadHyperVisorCfg:
+  RBAC:
+    - admin
+ReadVdevsInfoWithChunkMapping:
+  RBAC:
+    - user
+    - admin
+  ABAC:
+    - argument: vdev
+      prefix: "vdev/"
+ReadVdevInfo:
+  RBAC:
+    - user
+    - admin
+  ABAC:
+    - argument: vdev
+      prefix: "v/"
+ReadAllVdevInfo:
+  RBAC:
+    - admin
+ReadChunkNisd:
+  RBAC:
+    - user
+    - admin
+  ABAC:
+    - argument: vdev
+      prefix: "vdev/"
+RdNisdArgs:
+  RBAC:
+    - admin
