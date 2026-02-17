@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCreateLargeHierarchy(t *testing.T) {
+func TestCreateLargeHierarchyForEntityFilters(t *testing.T) {
 	c := newClient(t)
 
 	pdus := []string{

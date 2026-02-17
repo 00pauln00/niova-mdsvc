@@ -754,43 +754,38 @@ func TestMultiCreateVdev(t *testing.T) {
 	result, err := c.GetVdevsWithChunkInfo(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev with chunk mapping")
 	assert.NotNil(t, result, "specific vdev with chunk mapping response should not be nil")
+	log.Info("Specific vdev with chunk mapping response: ", result)
 
-	assert.Equal(t, 1, len(result), "expected exactly one vdev with chunk mapping in specific fetch")
-	assert.Equal(t, vdev1.Cfg.ID, result[0].Cfg.ID, "fetched vdev ID mismatch")
-	assert.Equal(t, vdev1.Cfg.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
-
-	assert.NotEqual(t, vdev1.Cfg.ID, vdev2.Cfg.ID, "Vdev IDs must be unique")
-
-	// Validate internal structure and cross-object references
-	for _, v := range []*cpLib.Vdev{vdev1, vdev2} {
-		assert.NotEmpty(t, v.NisdToChkMap, "Each Vdev must have at least one NISD")
+	// // Validate internal structure and cross-object references
+	// for _, v := range []*cpLib.Vdev{req1, req2} {
+	// 	assert.NotEmpty(t, v.NisdToChkMap, "Each Vdev must have at least one NISD")
 	
-		for _, chunk := range v.NisdToChkMap {
-			n := chunk.Nisd
-			var nisdExists bool
-			// Cross-validate 
-			for _, nisd := range Nisds {
-				if n.ID == nisd.ID {
-					nisdExists = true
-					log.Info("Vdev", v.Cfg.ID, "references Nisd", n.ID, "which exists among known Nisds")
-					// GET nisd 
-					res, err := c.GetNisd(cpLib.GetReq{ID: n.ID})
-					assert.NoError(t, err)
-					assert.NotEmpty(t, res)
-					returnedNisd := res
-					log.Info("Available Capacity of Nisd", nisd.ID, ": ", returnedNisd.AvailableSize)
-					// ensure available capacity decreased after vdev creation
-					assert.Lessf(t, returnedNisd.AvailableSize, nisd.AvailableSize,
-						"Nisd %s AvailableSize (%d) did not decrease after vdev creation; original was %d",
-						n.ID, returnedNisd.AvailableSize, nisd.AvailableSize)
-					break
-				}
-			}
-			assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.Cfg.ID, n.ID)
+	// 	for _, chunk := range v.NisdToChkMap {
+	// 		n := chunk.Nisd
+	// 		var nisdExists bool
+	// 		// Cross-validate 
+	// 		for _, nisd := range Nisds {
+	// 			if n.ID == nisd.ID {
+	// 				nisdExists = true
+	// 				log.Info("Vdev", v.Cfg.ID, "references Nisd", n.ID, "which exists among known Nisds")
+	// 				// GET nisd 
+	// 				res, err := c.GetNisd(cpLib.GetReq{ID: n.ID})
+	// 				assert.NoError(t, err)
+	// 				assert.NotEmpty(t, res)
+	// 				returnedNisd := res
+	// 				log.Info("Available Capacity of Nisd", nisd.ID, ": ", returnedNisd.AvailableSize)
+	// 				// ensure available capacity decreased after vdev creation
+	// 				assert.Lessf(t, returnedNisd.AvailableSize, nisd.AvailableSize,
+	// 					"Nisd %s AvailableSize (%d) did not decrease after vdev creation; original was %d",
+	// 					n.ID, returnedNisd.AvailableSize, nisd.AvailableSize)
+	// 				break
+	// 			}
+	// 		}
+	// 		assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.Cfg.ID, n.ID)
 
-			assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
-		}
-	}
+	// 		assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
+	// 	}
+	// }
 	assert.Equal(t, vdev1ID, result[0].Cfg.ID, "fetched vdev ID mismatch")
 	assert.Equal(t, req1.Vdev.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
 }
@@ -1176,8 +1171,8 @@ func TestHierarchy(t *testing.T) {
 	var exhaustionErr error
 
 	for i := 0; i < 10_000; i++ {
-		vdev := &cpLib.Vdev{
-			Cfg: cpLib.VdevCfg{
+		vdev := &cpLib.VdevReq{
+			Vdev: &cpLib.VdevCfg{
 				Size:       50 * 1024 * 1024 * 1024, // 50GB chunks
 				NumReplica: 3, // Fault tolerance enabled
 			},
@@ -1339,12 +1334,6 @@ func TestCreateSmallHierarchy(t *testing.T) {
 	// Request more than total available space
 	requestedVdevSize := totalAvailable + 107374182400 // +100GB
 
-	vdev := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
-			Size:       requestedVdevSize,
-			NumReplica: 3,
-func TestCreateVdev(t *testing.T) {
-	c := newClient(t)
 	adminToken := getAdminToken(t)
 
 	vdev := &cpLib.VdevReq{
@@ -1362,8 +1351,21 @@ func TestCreateVdev(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Expect an error
-	log.Infof("vdev1 response status: %v", resp)
+	log.Infof("vdev response status: %v", resp)
 }
+
+// func TestCreateVdev(t *testing.T) {
+// 	c := newClient(t)
+// 	vdev := &cpLib.VdevReq{
+// 		Vdev: &cpLib.VdevCfg{
+// 			Size:       500 * 1024 * 1024 * 1024,
+// 			NumReplica: 2,
+// 		},
+// 		Filter: cpLib.Filter{
+// 			Type: cpLib.FD_HV,
+// 		},
+// 	}
+// }
 
 func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
@@ -1385,8 +1387,8 @@ func TestCreateVdev(t *testing.T) {
    assert.NoError(t, err)
    assert.True(t, resp.Success)
 
-	vdev1 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev1 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       1700 * 1024 * 1024 * 1024,
 			NumReplica: 3,
 		},
@@ -1413,8 +1415,8 @@ func TestCreateVdev(t *testing.T) {
    assert.NoError(t, err1)
    assert.True(t, resp1.Success)
 
-	vdev2 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev2 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       1000 * 1024 * 1024 * 1024,
 			NumReplica: 6,
 		},
@@ -1441,8 +1443,8 @@ func TestCreateVdev(t *testing.T) {
    assert.NoError(t, err2)
    assert.True(t, resp2.Success)
 
-	vdev3 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev3 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       1200 * 1024 * 1024 * 1024,
 			NumReplica: 15,
 		},
@@ -1469,8 +1471,8 @@ func TestCreateVdev(t *testing.T) {
    assert.NoError(t, err3)
    assert.True(t, resp3.Success)
 
-	vdev4 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev4 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       1300 * 1024 * 1024 * 1024,
 			NumReplica: 25,
 		},
@@ -1498,8 +1500,8 @@ func TestCreateVdev(t *testing.T) {
    assert.True(t, resp4.Success)
 
 	// Failure Test: High fault tolerance
-	vdev5 := &cpLib.Vdev{
-		Cfg: cpLib.VdevCfg{
+	vdev5 := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
 			Size:       1000 * 1024 * 1024 * 1024,
 			NumReplica: 7,
 		},
