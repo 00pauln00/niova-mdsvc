@@ -263,7 +263,6 @@ func TestPutAndGetMultipleRacks(t *testing.T) {
 	}
 
 	resp, err := c.GetRacks(&cpLib.GetReq{})
-	_, err := c.GetNisds()
 	assert.NoError(t, err)
 	assert.Equal(t, len(racks), len(resp), "Expected %d racks but got %d", len(racks), len(resp))
 
@@ -652,7 +651,6 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
 
 	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
-	_, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true})
 	assert.NoError(t, err)
 }
 
@@ -663,12 +661,6 @@ func TestMultiCreateVdev(t *testing.T) {
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
 		PeerPort: 8001,
-		ID:       "3355858e-ea0e-11f0-9768-e71fc352cd1d",
-		FailureDomain: []string{
-			"95f62aee-997e-11f0-9f1b-a70cff4b660b",
-			"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
-			"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-			"nvme-fb6358162001",
 		ID:       uuid.NewString(),
 		FailureDomain: []string{
 			uuid.NewString(),
@@ -756,36 +748,6 @@ func TestMultiCreateVdev(t *testing.T) {
 	assert.NotNil(t, result, "specific vdev with chunk mapping response should not be nil")
 	log.Info("Specific vdev with chunk mapping response: ", result)
 
-	// // Validate internal structure and cross-object references
-	// for _, v := range []*cpLib.Vdev{req1, req2} {
-	// 	assert.NotEmpty(t, v.NisdToChkMap, "Each Vdev must have at least one NISD")
-	
-	// 	for _, chunk := range v.NisdToChkMap {
-	// 		n := chunk.Nisd
-	// 		var nisdExists bool
-	// 		// Cross-validate 
-	// 		for _, nisd := range Nisds {
-	// 			if n.ID == nisd.ID {
-	// 				nisdExists = true
-	// 				log.Info("Vdev", v.Cfg.ID, "references Nisd", n.ID, "which exists among known Nisds")
-	// 				// GET nisd 
-	// 				res, err := c.GetNisd(cpLib.GetReq{ID: n.ID})
-	// 				assert.NoError(t, err)
-	// 				assert.NotEmpty(t, res)
-	// 				returnedNisd := res
-	// 				log.Info("Available Capacity of Nisd", nisd.ID, ": ", returnedNisd.AvailableSize)
-	// 				// ensure available capacity decreased after vdev creation
-	// 				assert.Lessf(t, returnedNisd.AvailableSize, nisd.AvailableSize,
-	// 					"Nisd %s AvailableSize (%d) did not decrease after vdev creation; original was %d",
-	// 					n.ID, returnedNisd.AvailableSize, nisd.AvailableSize)
-	// 				break
-	// 			}
-	// 		}
-	// 		assert.True(t, nisdExists, "Vdev %s references Nisd %s which does not exist among known Nisds", v.Cfg.ID, n.ID)
-
-	// 		assert.NotEmpty(t, chunk.Chunk, "Chunk list for NISD %s must not be empty", n.ID)
-	// 	}
-	// }
 	assert.Equal(t, vdev1ID, result[0].Cfg.ID, "fetched vdev ID mismatch")
 	assert.Equal(t, req1.Vdev.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
 }
@@ -1328,12 +1290,6 @@ func TestCreateSmallHierarchy(t *testing.T) {
 		assert.True(t, resp.Success)
 	}
 
-	// Total available space from mockNisd = 6 * 1TB
-	totalAvailable := int64(6 * 1073741824000)
-
-	// Request more than total available space
-	requestedVdevSize := totalAvailable + 107374182400 // +100GB
-
 	adminToken := getAdminToken(t)
 
 	vdev := &cpLib.VdevReq{
@@ -1353,19 +1309,6 @@ func TestCreateSmallHierarchy(t *testing.T) {
 	// Expect an error
 	log.Infof("vdev response status: %v", resp)
 }
-
-// func TestCreateVdev(t *testing.T) {
-// 	c := newClient(t)
-// 	vdev := &cpLib.VdevReq{
-// 		Vdev: &cpLib.VdevCfg{
-// 			Size:       500 * 1024 * 1024 * 1024,
-// 			NumReplica: 2,
-// 		},
-// 		Filter: cpLib.Filter{
-// 			Type: cpLib.FD_HV,
-// 		},
-// 	}
-// }
 
 func TestCreateVdev(t *testing.T) {
 	c := newClient(t)
@@ -1526,7 +1469,6 @@ func TestGetNisd(t *testing.T) {
 	}
 	log.Info("total number of nisd's : ", len(res))
 	assert.NoError(t, err)
-}
 }
 
 // newUserClient creates a new user client for authentication operations
