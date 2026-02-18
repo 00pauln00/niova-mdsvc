@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"flag"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userClient "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
@@ -18,6 +19,11 @@ import (
 )
 
 var VDEV_ID string
+var (
+    usersFlag     = flag.Int("auth.users", 3, "number of users for auth test")
+    nisdsFlag     = flag.Int("auth.nisds", 3, "number of nisds for auth test")
+    vdevsFlag     = flag.Int("auth.vdevs", 2, "number of vdevs per user for auth test")
+)
 
 // Package-level test configuration initialized once in TestMain.
 var (
@@ -1049,4 +1055,153 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	t.Logf("Vdev creation denied when no token provided (authentication check passed)")
 
 	t.Log("Vdev Authorization Test Completed Successfully")
+}
+
+func TestVdevAuthorizationWithMultipleUsersAndVdevs(t *testing.T) {
+    ctlClient := newClient(t)
+    authClient, tearDown := newUserClient(t)
+    defer tearDown()
+
+    // ----------------------------
+    // Step 1: Create Multiple NISDs
+    // ----------------------------
+    numNISDs := *nisdsFlag
+    for i := 0; i < numNISDs; i++ {
+		port := 8001 + (i*2)
+        nisd := cpLib.Nisd{
+            PeerPort: uint16(port),
+            ID:		uuid.NewString(),
+            FailureDomain: []string{
+                uuid.NewString(),
+                uuid.NewString(),
+                uuid.NewString(),
+                uuid.NewString(),
+            },
+            TotalSize:     100_000_000_000,
+            AvailableSize: 100_000_000_000,
+        }
+
+        _, err := ctlClient.PutNisd(&nisd)
+        assert.NoError(t, err, "failed to create NISD %d", i)
+    }
+
+    // ----------------------------
+    // Step 2: Create Admin
+    // ----------------------------
+    adminReq := &userlib.UserReq{
+        Username:     userlib.AdminUsername,
+        NewSecretKey: "admin-secret-" + uuid.New().String()[:6],
+    }
+
+    adminResp, err := authClient.CreateAdminUser(adminReq)
+    assert.NoError(t, err)
+    assert.True(t, adminResp.Success)
+
+    adminLogin, err := authClient.Login(userlib.AdminUsername, adminResp.SecretKey)
+    assert.NoError(t, err)
+    assert.True(t, adminLogin.Success)
+
+    // ----------------------------
+    // Step 3: Create Multiple Users
+    // ----------------------------
+    numUsers := *usersFlag
+    users := make([]struct {
+        Username string
+        Token    string
+        VdevIDs  []string
+    }, numUsers)
+
+    for i := 0; i < numUsers; i++ {
+        username := fmt.Sprintf("user_%d_%s", i, uuid.New().String()[:5])
+
+        userResp, err := authClient.CreateUser(&userlib.UserReq{
+            Username: username,
+        })
+        assert.NoError(t, err)
+        assert.True(t, userResp.Success)
+
+        loginResp, err := authClient.Login(username, userResp.SecretKey)
+        assert.NoError(t, err)
+        assert.True(t, loginResp.Success)
+
+        users[i].Username = username
+        users[i].Token = loginResp.AccessToken
+    }
+    // ----------------------------
+    // Step 4: Each User Creates Multiple Vdevs
+    // ----------------------------
+    vdevsPerUser := *vdevsFlag
+    for i := range users {
+        for j := 0; j < vdevsPerUser; j++ {
+			vdev := &cpLib.VdevReq{
+				Vdev: &cpLib.VdevCfg{
+					Size:       int64(8 * 1024 * 1024 * 1024), // 8GB
+					NumReplica: 1,
+				},
+				UserToken: users[i].Token,
+			}
+
+			resp, err := ctlClient.CreateVdev(vdev)
+			assert.NoError(t, err)
+			if err != nil {
+				t.Errorf("CreateVdev failed: %v", err)
+				return
+			}
+			if resp == nil {
+				t.Errorf("CreateVdev returned nil response")
+				return
+			}
+			if !resp.Success {
+				t.Errorf("CreateVdev response not successful")
+				return
+			}
+
+			users[i].VdevIDs = append(users[i].VdevIDs, resp.ID)
+		}
+	}
+
+    // ----------------------------
+    // Step 5: Validate Ownership Access
+    // ----------------------------
+	wg := sync.WaitGroup{}
+    for i := range users {
+        for _, vdevID := range users[i].VdevIDs {
+			wg.Add(1)
+			go func(i int, vdevID string) {
+				defer wg.Done()
+	            // Owner should access
+    	        _, err := ctlClient.GetVdevCfg(&cpLib.GetReq{
+        	        ID:        vdevID,
+            	    UserToken: users[i].Token,
+	            })
+    	        assert.NoError(t, err, "owner should access their vdev")
+			}(i, vdevID)
+        }
+    }
+	wg.Wait()
+    // ----------------------------
+    // Step 6: Cross User Authorization Checks
+    // ----------------------------
+	wg = sync.WaitGroup{}
+    for i := range users {
+        for j := range users {
+            if i == j {
+                continue
+            }
+
+            for _, foreignVdevID := range users[j].VdevIDs {
+				wg.Add(1)
+				go func(i, j int, foreignVdevID string) {
+					defer wg.Done()
+	                _, err := ctlClient.GetVdevCfg(&cpLib.GetReq{
+    	                ID:        foreignVdevID,
+        	            UserToken: users[i].Token,
+            	    })
+                	assert.Error(t, err, "user %d should NOT access user %d vdev", i, j)
+				}(i,j,foreignVdevID)
+            }
+        }
+    }
+	wg.Wait()
+    t.Log("Multiple Users + Multiple Vdevs + Multiple NISDs Authorization Test Passed")
 }
