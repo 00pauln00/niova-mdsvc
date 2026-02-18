@@ -144,7 +144,7 @@ jobs:
 
     - name: Copy ctlauth.yaml to build_dir.
       run: cd /home/runner/work/niova-mdsvc/niova-mdsvc/controlplane/authorizer &&
-           cp ctlauth.yaml /home/runner/work/niovad/niovad/build_dir
+           cp ctlauth.yaml /home/runner/work/niovad/niovad/build_dir/holon
 
     - name: run recipes for controlplane application
       run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
