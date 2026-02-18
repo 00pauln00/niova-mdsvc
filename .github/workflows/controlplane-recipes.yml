@@ -143,8 +143,8 @@ jobs:
         USER_ENCRYPTION_KEY: 81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII
 
     - name: Build controlplane client go test binary
-      run: cd /home/runner/work/niova-mdsvc/niova-mdsvc/controlplane/authorizer/ &&
-           cp ctlauth.yaml /home/runner/work/niovad/niovad/build_dir/
+      run: cd /home/runner/work/niova-mdsvc/niova-mdsvc/controlplane/authorizer &&
+           cp ctlauth.yaml /home/runner/work/niovad/niovad/build_dir
 
     - name: run recipes for controlplane application
       run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
