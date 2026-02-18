@@ -34,6 +34,11 @@ func InitAuthorizer(configPath string) error {
 	return authorizer.LoadConfig(configPath)
 }
 
+// GetAuthorizer returns the global authorizer instance
+func GetAuthorizer() *authz.Authorizer {
+	return authorizer
+}
+
 const (
 	DEVICE_ID        = "d"
 	NISD_ID          = "n"
@@ -87,6 +92,63 @@ const (
 
 	ENC_TYPE = pmCmn.GOB
 )
+
+// TokenClaims holds user identity extracted from a verified JWT.
+type TokenClaims struct {
+	UserID  string
+	Role    string
+	IsAdmin bool
+}
+
+// ValidateToken verifies the JWT token using CP_SECRET and extracts user claims.
+// Returns an error if the token is empty, invalid, or missing required fields.
+func ValidateToken(token string) (*TokenClaims, error) {
+	if token == "" {
+		return nil, fmt.Errorf("user token is required")
+	}
+	tc := &auth.Token{
+		Secret: []byte(ctlplfl.CP_SECRET),
+	}
+	claims, err := tc.VerifyToken(token)
+	if err != nil {
+		log.Errorf("token verification failed: %v", err)
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+	userID, ok := claims["userID"].(string)
+	if !ok || userID == "" {
+		log.Error("userID not found in token")
+		return nil, fmt.Errorf("invalid token: missing userID")
+	}
+	userRole, ok := claims["role"].(string)
+	if !ok || userRole == "" {
+		log.Error("role not found in token")
+		return nil, fmt.Errorf("invalid token: missing role")
+	}
+	isAdmin, _ := claims["isAdmin"].(bool)
+	tokenClaim := &TokenClaims{
+		UserID:  userID,
+		Role:    userRole,
+		IsAdmin: isAdmin,
+	}
+	return tokenClaim, nil
+}
+
+// validateAndAuthorizeRBAC verifies the token and checks RBAC-only permissions.
+// For operations that also require ABAC (ownership checks)
+func validateAndAuthorizeRBAC(token, operation string) (*TokenClaims, error) {
+	tc, err := ValidateToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if authorizer != nil {
+		if !authorizer.CheckRBAC(operation, []string{tc.Role}) {
+			log.Errorf("user %s with role %s not authorized for %s", tc.UserID, tc.Role, operation)
+			return nil, fmt.Errorf("authorization failed: insufficient permissions")
+		}
+	}
+	log.Infof("user %s authorized for %s", tc.UserID, operation)
+	return tc, nil
+}
 
 func SetClmFamily(cf string) {
 	colmfamily = cf
@@ -253,6 +315,9 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		err := fmt.Errorf("invalid argument: expecting type Nisd")
 		return nil, err
 	}
+	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "ApplyNisd"); err != nil {
+		return nil, err
+	}
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
@@ -278,6 +343,11 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadAllNisdConfigs"); err != nil {
+		return nil, err
+	}
 	log.Trace("fetching nisd details for key : ", NisdCfgKey)
 	rrargs := storageiface.RangeReadArgs{
 		Selector:   colmfamily,
@@ -299,8 +369,10 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
 	req := args[1].(ctlplfl.GetReq)
-	err := req.ValidateRequest()
-	if err != nil {
+	if err := req.ValidateRequest(); err != nil {
+		return nil, err
+	}
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadNisdConfig"); err != nil {
 		return nil, err
 	}
 	key := getConfKey(NisdCfgKey, req.ID)
@@ -339,9 +411,11 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	nisd := args[0].(ctlplfl.Nisd)
-	err := nisd.Validate()
-	if err != nil {
+	if err := nisd.Validate(); err != nil {
 		log.Error("failed to validate nisd: ", err)
+		return nil, err
+	}
+	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "WPNisdCfg"); err != nil {
 		return nil, err
 	}
 	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
@@ -364,6 +438,9 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdDeviceInfo"); err != nil {
+		return nil, err
+	}
 	key := getConfKey(deviceCfgKey, req.ID)
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector:   colmfamily,
@@ -382,7 +459,9 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	dev := args[0].(ctlplfl.Device)
-
+	if _, err := validateAndAuthorizeRBAC(dev.UserToken, "WPDeviceInfo"); err != nil {
+		return nil, err
+	}
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    dev.ID,
 		Success: true,
@@ -435,41 +514,9 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		err := fmt.Errorf("invalid argument: expecting type vdev")
 		return nil, err
 	}
-	// Validate user token
-	if req.UserToken == "" {
-		log.Error("user token is required for vdev creation")
-		return nil, fmt.Errorf("user token is required")
-	}
-
-	// Verify token with service secret
-	tc := &auth.Token{
-		Secret: []byte(ctlplfl.CP_SECRET),
-	}
-	claims, err := tc.VerifyToken(req.UserToken)
+	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPCreateVdev")
 	if err != nil {
-		log.Errorf("token verification failed: %v", err)
-		return nil, fmt.Errorf("authentication failed: %v", err)
-	}
-
-	// Extract user information from claims
-	userID, ok := claims["userID"].(string)
-	if !ok || userID == "" {
-		log.Error("userID not found in token")
-		return nil, fmt.Errorf("invalid token: missing userID")
-	}
-
-	userRole, ok := claims["role"].(string)
-	if !ok || userRole == "" {
-		log.Error("role not found in token")
-		return nil, fmt.Errorf("invalid token: missing role")
-	}
-
-	// Check authorization
-	if authorizer != nil {
-		if !authorizer.Authorize("WPCreateVdev", userID, []string{userRole}, map[string]string{}, nil, "") {
-			log.Errorf("user %s with role %s not authorized for WPCreateVdev", userID, userRole)
-			return nil, fmt.Errorf("authorization failed")
-		}
+		return nil, err
 	}
 
 	err = req.Vdev.Init()
@@ -477,7 +524,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Errorf("failed to initialize vdev: %v", err)
 		return nil, err
 	}
-	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, userID)
+	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, tc.UserID)
 	key := getConfKey(vdevKey, req.Vdev.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
@@ -498,7 +545,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	// Add ownership key to mark user as owner of this vdev
-	ownershipKey := fmt.Sprintf("/u/%s/v/%s", userID, req.Vdev.ID)
+	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.Vdev.ID)
 	commitChgs = append(commitChgs, funclib.CommitChg{
 		Key:   []byte(ownershipKey),
 		Value: []byte("1"),
@@ -745,6 +792,9 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	pt := args[0].(ctlplfl.DevicePartition)
+	if _, err := validateAndAuthorizeRBAC(pt.UserToken, "WPCreatePartition"); err != nil {
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    pt.PartitionID,
 		Success: true,
@@ -770,6 +820,9 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(ptKey, req.ID)
 	}
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPartition"); err != nil {
+		return nil, err
+	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
@@ -786,6 +839,9 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
 	pdu := args[0].(ctlplfl.PDU)
+	if _, err := validateAndAuthorizeRBAC(pdu.UserToken, "WPPDUCfg"); err != nil {
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    pdu.ID,
 		Success: true,
@@ -810,6 +866,9 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPDUCfg"); err != nil {
+		return nil, err
+	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
@@ -827,8 +886,10 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
-
 	rack := args[0].(ctlplfl.Rack)
+	if _, err := validateAndAuthorizeRBAC(rack.UserToken, "WPRackCfg"); err != nil {
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    rack.ID,
 		Success: true,
@@ -854,6 +915,9 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadRackCfg"); err != nil {
+		return nil, err
+	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
@@ -874,8 +938,10 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 }
 
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	// Decode the input buffer into structure format
 	hv := args[0].(ctlplfl.Hypervisor)
+	if _, err := validateAndAuthorizeRBAC(hv.UserToken, "WPHyperVisorCfg"); err != nil {
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    hv.ID,
 		Success: true,
@@ -903,7 +969,9 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(hvKey, req.ID)
 	}
-
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadHyperVisorCfg"); err != nil {
+		return nil, err
+	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
@@ -923,6 +991,26 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
+	tc, err := ValidateToken(req.UserToken)
+	if err != nil {
+		return nil, err
+	}
+	if authorizer != nil {
+		if req.GetAll {
+			// Listing all vdevs with chunk info: admin only, same restriction as ReadAllVdevInfo
+			if !authorizer.Authorize("ReadAllVdevInfo", tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
+				log.Errorf("user %s with role %s not authorized to list all vdevs with chunk info", tc.UserID, tc.Role)
+				return nil, fmt.Errorf("authorization failed: admin required to list all vdevs")
+			}
+		} else {
+			// Specific vdev: verify RBAC + ABAC ownership
+			attributes := map[string]string{"vdev": req.ID}
+			if !authorizer.Authorize("ReadVdevsInfoWithChunkMapping", tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.ID)
+				return nil, fmt.Errorf("authorization failed")
+			}
+		}
+	}
 
 	key := vdevKey
 	if !req.GetAll {
@@ -1054,45 +1142,18 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	// Validate user token
-	if req.UserToken == "" {
-		log.Error("user token is required for ReadVdevInfo")
-		return nil, fmt.Errorf("user token is required")
-	}
-
-	// Verify token with service secret
-	tc := &auth.Token{
-		Secret: []byte(ctlplfl.CP_SECRET),
-	}
-	claims, err := tc.VerifyToken(req.UserToken)
+	tc, err := ValidateToken(req.UserToken)
 	if err != nil {
-		log.Errorf("token verification failed: %v", err)
-		return nil, fmt.Errorf("authentication failed: %v", err)
+		return nil, err
 	}
-
-	// Extract user information from claims
-	userID, ok := claims["userID"].(string)
-	if !ok || userID == "" {
-		log.Error("userID not found in token")
-		return nil, fmt.Errorf("invalid token: missing userID")
-	}
-
-	userRole, ok := claims["role"].(string)
-	if !ok || userRole == "" {
-		log.Error("role not found in token")
-		return nil, fmt.Errorf("invalid token: missing role")
-	}
-
-	// Check authorization with ownership verification
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": req.ID}
-		if !authorizer.Authorize("ReadVdevInfo", userID, []string{userRole}, attributes, cbArgs.Store, colmfamily) {
-			log.Errorf("user %s with role %s not authorized to read vdev %s", userID, userRole, req.ID)
+		if !authorizer.Authorize("ReadVdevInfo", tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
 			return nil, fmt.Errorf("authorization failed")
 		}
 	}
-
-	log.Infof("user %s authorized to read vdev %s", userID, req.ID)
+	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.ID)
 	vKey := getConfKey(vdevKey, req.ID)
 	var rqResult *storageiface.RangeReadResult
 	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -1111,7 +1172,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		TTL:    time.Minute,
 	}
 
-	claims = map[string]any{
+	claims := map[string]any{
 		"vdevID": req.ID,
 	}
 
@@ -1177,13 +1238,29 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	req := args[1].(ctlplfl.GetReq)
 
-	err := req.ValidateRequest()
-	if err != nil {
+	if err := req.ValidateRequest(); err != nil {
 		log.Error("failed to validate request:", err)
 		return nil, err
 	}
+	tc, err := ValidateToken(req.UserToken)
+	if err != nil {
+		return nil, err
+	}
 	keys := strings.Split(strings.Trim(req.ID, "/"), "/")
+	if len(keys) < 2 {
+		log.Errorf("invalid request ID format %q: expected vdevID/chunkIndex", req.ID)
+		return nil, fmt.Errorf("invalid request ID format: expected vdevID/chunkIndex")
+	}
 	vdevID, chunk := keys[0], keys[1]
+
+	// Check authorization: ownership of the vdev implies access to its chunks
+	if authorizer != nil {
+		attributes := map[string]string{"vdev": vdevID}
+		if !authorizer.Authorize("ReadChunkNisd", tc.UserID, []string{tc.Role}, attributes, cbargs.Store, colmfamily) {
+			log.Errorf("user %s with role %s not authorized to read chunk nisd for vdev %s", tc.UserID, tc.Role, vdevID)
+			return nil, fmt.Errorf("authorization failed")
+		}
+	}
 
 	vcKey := path.Clean(getConfKey(vdevKey, path.Join(vdevID, chunkKey, chunk))) + "/"
 
@@ -1215,6 +1292,9 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 
 func WPNisdArgs(args ...interface{}) (interface{}, error) {
 	nArgs := args[0].(ctlplfl.NisdArgs)
+	if _, err := validateAndAuthorizeRBAC(nArgs.UserToken, "WPNisdArgs"); err != nil {
+		return nil, err
+	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    "nisd-args",
 		Success: true,
@@ -1235,6 +1315,10 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 
 func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	req := args[1].(ctlplfl.GetReq)
+	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdNisdArgs"); err != nil {
+		return nil, err
+	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      argsKey,

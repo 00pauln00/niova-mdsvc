@@ -63,6 +63,8 @@ const (
 	FD_MAX     = 4
 
 	HASH_SIZE = 8
+
+	PmdbColumnFamily = "PMDBTS_CF"
 )
 
 type FD int
@@ -123,6 +125,7 @@ type Device struct {
 	Name         string `xml:"Name" json:"Name"` // For display purposes
 	DevicePath   string `xml:"device_path,omitempty" json:"DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
+	UserToken    string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	State        uint16 `xml:"State" json:"State"`
 	Size         int64  `xml:"Size" json:"Size"`
 	//Parent info
@@ -136,6 +139,7 @@ type DevicePartition struct {
 	PartitionID   string `json:"partition_id"`
 	PartitionPath string `json:"partition_path"`
 	NISDUUID      string `json:"nisd_uuid"`
+	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	DevID         string `json:"Dev_Id"`
 	Size          int64  `json:"size,omitempty"`
 }
@@ -147,6 +151,7 @@ type NisdArgs struct {
 	MCIBReadCache        int    // -r
 	S3                   string // -s
 	DSync                string // -D
+	UserToken            string // User authentication token
 	AllowDefragMCIBCache bool   // -x
 }
 
@@ -163,6 +168,7 @@ type Nisd struct {
 	TotalSize     int64       `xml:"TotalSize"`
 	AvailableSize int64       `xml:"AvailableSize"`
 	SocketPath    string      `xml:"SocketPath"`
+	UserToken     string      `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	NetInfo       NetInfoList `xml:"NetInfo"`
 	NetInfoCnt    int         `xml:"NetInfoCnt"`
 }
@@ -173,6 +179,7 @@ type PDU struct {
 	Location      string `xml:"Location" json:"Location" yaml:"location"`
 	PowerCapacity string `xml:"PowerCap" json:"PowerCapacity" yaml:"powercap"`
 	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
+	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
 }
 
@@ -182,6 +189,7 @@ type Rack struct {
 	PDUID         string // Foreign key to PDU
 	Location      string
 	Specification string
+	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	Hypervisors   []Hypervisor
 }
 
@@ -192,6 +200,7 @@ type Hypervisor struct {
 	IPAddrs     []string
 	PortRange   string
 	SSHPort     string // SSH port for connection
+	UserToken   string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	Dev         []Device
 	RDMAEnabled bool
 }

@@ -10,6 +10,8 @@ import (
 
 	cpClient "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	userClient "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 
 	"github.com/google/uuid"
@@ -69,21 +71,53 @@ func main() {
 	configPath := flag.String("c", "./gossipNodes", "pass the gossip config path")
 	setupConfig := flag.String("sc", "./config.yaml", "pass the gossip config path")
 	logLevel := flag.Int("ll", 4, "set log level (0=panic, 1=fatal, 2=error, 3=warn, 4=info, 5=debug, 6=trace)")
+	adminSecret := flag.String("as", "", "admin secret key for authentication")
 	flag.Parse()
 	log.SetLevel(log.Level(*logLevel))
 	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
+	if *adminSecret == "" {
+		log.Fatal("admin secret key (-as) is required for NISD operations")
+	}
+
+	// Initialize control plane client
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
+
+	// Initialize user client for authentication
+	userCfg := userClient.Config{
+		AppUUID:          uuid.New().String(),
+		RaftUUID:         *raftID,
+		GossipConfigPath: *configPath,
+	}
+	authClient, tearDown := userClient.New(userCfg)
+	if authClient == nil {
+		log.Fatal("failed to initialize user client for authentication")
+	}
+	defer tearDown()
+
+	// Login as admin to get UserToken
+	loginResp, err := authClient.Login(userlib.AdminUsername, *adminSecret)
+	if err != nil {
+		log.Fatalf("admin login failed: %v", err)
+	}
+	if !loginResp.Success || loginResp.AccessToken == "" {
+		log.Fatal("admin login failed: no access token received")
+	}
+	adminToken := loginResp.AccessToken
+	log.Info("admin authentication successful")
+
 	var conf NisdCntrConfig
 	conf.NisdConfig = make([]Nisd, 0)
-	err := loadConfig(*setupConfig, &conf)
+	err = loadConfig(*setupConfig, &conf)
 	if err != nil {
 		log.Error("failed to load config file: ", err)
 		os.Exit(-1)
 	}
 
 	log.Debugf("read nisd config details: %+v", conf.NisdConfig)
-	nisdArgs, err := c.GetNisdArgs()
+	// Pass admin token for NISD operations (admin-only)
+	req := cpLib.GetReq{UserToken: adminToken}
+	nisdArgs, err := c.GetNisdArgs(req)
 	if err != nil {
 		log.Error("failed to fetch nisd args: ", err)
 	}
