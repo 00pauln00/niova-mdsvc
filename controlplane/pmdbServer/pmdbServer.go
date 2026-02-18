@@ -231,7 +231,7 @@ func main() {
 		log.Warn("failed to create hierarchy struct:", err)
 	}
 
-	err = srvctlplanefuncs.InitAuthorizer("/ctlauth.yaml")
+	err = srvctlplanefuncs.InitAuthorizer("ctlauth.yaml")
 	if err != nil {
 		log.Fatal("failed to initialize authorizer:", err)
 	}
