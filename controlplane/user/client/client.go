@@ -135,6 +135,10 @@ func (c *Client) get(data, resp interface{}, operation string) error {
 }
 
 func (c *Client) CreateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
+	// UserToken must be set in the UserReq (must be admin token)
+	if user.UserToken == "" {
+		return nil, fmt.Errorf("userToken is required for creating users")
+	}
 	resp := &userlib.UserResp{}
 	if err := c.put(user, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
@@ -144,9 +148,13 @@ func (c *Client) CreateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
 
 // UpdateUser updates an existing user's username and/or capabilities.
 // UserID (UUID string) is required and user must exist.
+// Users can only update their own record unless they are admin.
 func (c *Client) UpdateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
 	if user.UserID == "" {
 		return nil, fmt.Errorf("userID is required for update operation")
+	}
+	if user.UserToken == "" {
+		return nil, fmt.Errorf("userToken is required for updating users")
 	}
 
 	user.IsUpdate = true
@@ -165,8 +173,11 @@ func (c *Client) ListUsers(req userlib.GetReq) ([]userlib.UserResp, error) {
 	return users, nil
 }
 
-func (c *Client) GetUser(userID string) (*userlib.UserResp, error) {
-	req := userlib.GetReq{UserID: userID}
+func (c *Client) GetUser(userID string, userToken string) (*userlib.UserResp, error) {
+	req := userlib.GetReq{
+		UserID:    userID,
+		UserToken: userToken,
+	}
 	users, err := c.ListUsers(req)
 	if err != nil {
 		return nil, err
@@ -178,8 +189,11 @@ func (c *Client) GetUser(userID string) (*userlib.UserResp, error) {
 }
 
 // GetUserByUsername retrieves a user by username using the secondary index.
-func (c *Client) GetUserByUsername(username string) (*userlib.UserResp, error) {
-	req := userlib.GetReq{Username: username}
+func (c *Client) GetUserByUsername(username string, userToken string) (*userlib.UserResp, error) {
+	req := userlib.GetReq{
+		Username:  username,
+		UserToken: userToken,
+	}
 	users, err := c.ListUsers(req)
 	if err != nil {
 		return nil, err
@@ -207,7 +221,7 @@ func (c *Client) CreateAdminUser(req *userlib.UserReq) (*userlib.UserResp, error
 }
 
 // UpdateAdminSecretKey updates the secret key for an admin user.
-func (c *Client) UpdateAdminSecretKey(userID, newSecretKey string) (*userlib.UserResp, error) {
+func (c *Client) UpdateAdminSecretKey(userID, newSecretKey, userToken string) (*userlib.UserResp, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("userID is required")
 	}
@@ -219,6 +233,7 @@ func (c *Client) UpdateAdminSecretKey(userID, newSecretKey string) (*userlib.Use
 		UserID:       userID,
 		IsUpdate:     true,
 		NewSecretKey: newSecretKey,
+		UserToken:    userToken,
 	}
 
 	resp := &userlib.UserResp{}
