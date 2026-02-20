@@ -566,12 +566,12 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 
 	na := &cpLib.NisdArgs{
 		Defrag:               true,
-		MBCCnt:               8,
-		MergeHCnt:            4,
-		MCIBReadCache:        256,
-		S3:                   "s3://backup-bucket/data",
-		DSync:                "enabled",
-		AllowDefragMCIBCache: false,
+		MBCCnt:               0,
+		MergeHCnt:            0,
+		MCIBReadCache:        32,
+		S3:                   "",
+		DSync:                "",
+		AllowDefragMCIBCache: true,
 		UserToken:            adminToken,
 	}
 	_, err := c.PutNisdArgs(na)
