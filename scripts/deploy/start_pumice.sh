@@ -36,6 +36,7 @@ export NIOVA_LOCAL_CTL_SVC_DIR="${CONFIGS_DIR}"
 export LD_LIBRARY_PATH="/lib:${LIB_DIR}"
 export NIOVA_INOTIFY_BASE_PATH="${CTL_DIR}"
 export NIOVA_APPLY_HANDLER_VERSION=0
+export USER_ENCRYPTION_KEY="81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII"
 
 log "Environment variables exported"
 
@@ -81,6 +82,8 @@ log "Starting CTLPlane_pmdbServer"
     -u "${PEER_UUID}" \
     -g "${CONFIGS_DIR}/gossipNodes" \
     -l "${LOG_DIR}/pmdb_server_${PEER_UUID}.log" \
+    -auth "${BASE_DIR}/ctlauth.yaml" \
+    -ll "Trace" \
     -p 1 \
     > "${LOG_DIR}/pmdb_server_${PEER_UUID}_stdouterr" 2>&1 &
 
@@ -100,6 +103,7 @@ log "Starting CTLPlane_proxy with client UUID=${CUUID}"
     -pa "${CONFIGS_DIR}/gossipNodes" \
     -n "Node_${CUUID}" \
     -l "${LOG_DIR}/pmdb_client_${CUUID}.log" \
+    -ll "Trace" \
     > "${LOG_DIR}/pmdb_client_${CUUID}_stdouterr" 2>&1 &
 
 log "CTLPlane_proxy started"
