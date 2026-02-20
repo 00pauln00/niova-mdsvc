@@ -1723,7 +1723,7 @@ func (m model) getNISDsList() ([]ctlplfl.Nisd, error) {
 	if m.cpClient == nil {
 		return nil, fmt.Errorf("control plane client is not initialized")
 	}
-	return m.cpClient.GetNisds()
+	return m.cpClient.GetNisds(ctlplfl.GetReq{})
 }
 
 // Helper function to get partition name for NISD display
@@ -6843,6 +6843,7 @@ func (m *model) initializeNISD() error {
 			m.selectedPartitionForNISD.PartitionID,
 		},
 		NetInfoCnt: len(netInfos),
+		// UserToken: , pass user token
 	}
 
 	// Call PutNisd
@@ -6919,6 +6920,7 @@ func (m *model) initializeSelectedNISDs() error {
 				partitionInfo.Partition.PartitionID,
 			},
 			NetInfoCnt: len(netInfos),
+			// UserToken: , pass user token
 		}
 
 		// Call PutNisd

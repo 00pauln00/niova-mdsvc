@@ -216,11 +216,12 @@ func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) 
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisds() ([]ctlplfl.Nisd, error) {
+func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
+	req.GetAll = true
 	ncfg := make([]ctlplfl.Nisd, 0)
-	err := ccf.get(nil, &ncfg, ctlplfl.GET_NISD_LIST)
+	err := ccf.get(req, &ncfg, ctlplfl.GET_NISD_LIST)
 	if err != nil {
-		log.Error("failed to fet nisd info: ", err)
+		log.Error("failed to get nisd info: ", err)
 		return nil, err
 	}
 	return ncfg, nil
@@ -349,20 +350,11 @@ func (ccf *CliCFuncs) PutNisdArgs(req *ctlplfl.NisdArgs) (*ctlplfl.ResponseXML, 
 	return resp, nil
 }
 
-func (ccf *CliCFuncs) GetNisdArgs() (ctlplfl.NisdArgs, error) {
+func (ccf *CliCFuncs) GetNisdArgs(req ctlplfl.GetReq) (ctlplfl.NisdArgs, error) {
 	var args ctlplfl.NisdArgs
-	url := "name=" + ctlplfl.GET_NISD_ARGS
-	rsb, err := ccf.request(nil, url, false)
+	err := ccf.get(req, &args, ctlplfl.GET_NISD_ARGS)
 	if err != nil {
-		log.Error("request failed: ", err)
-		return args, err
-	}
-	if rsb == nil {
-		return args, fmt.Errorf("failed to fetch response from control plane: %v", err)
-	}
-	err = pmCmn.Decoder(ccf.encType, rsb, &args)
-	if err != nil {
-		log.Error("failed to decode response: ", err)
+		log.Error("failed to get nisd args: ", err)
 		return args, err
 	}
 
