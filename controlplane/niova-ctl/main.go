@@ -20,6 +20,8 @@ import (
 
 	ctlplcl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	usercl "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 )
 
 const configFile = "niova-config.json"
@@ -89,6 +91,15 @@ const (
 	stateShowAddedVdev
 	stateVdevCreationProgress
 	stateVdevCreationSummary
+	// User Management States
+	stateUserCreateForm
+	stateUserCreateAdminKey
+	stateUserCreateToken
+	stateUserCreateResult
+	// User Login States
+	stateUserLoginForm
+	stateUserLoginSecret
+	stateUserLoginResult
 	// Configuration View
 	stateViewConfig
 )
@@ -239,6 +250,16 @@ type model struct {
 	cpHypervisors       []ctlplfl.Hypervisor // Hypervisor data from Control Plane
 	cpHypervisorRefresh bool                 // Flag to trigger Hypervisor refresh from CP
 
+	// User Management
+	userClient         *usercl.Client
+	userUsernameInput  textinput.Model
+	userSecretKeyInput textinput.Model
+	userTokenInput     textinput.Model
+	userCreateResp     *userlib.UserResp
+	userCreateErr      string
+	loggedInUser       *userlib.LoginResp
+	userLoginErr       string
+
 	// General
 	message  string
 	quitting bool
@@ -269,6 +290,21 @@ type deviceDiscoveredMsg struct {
 	devices []ctlplfl.Device
 	err     error
 }
+
+type userCreatedMsg struct {
+	resp *userlib.UserResp
+	err  error
+}
+
+type userLoggedInMsg struct {
+	resp *userlib.LoginResp
+	err  error
+}
+
+// userClientTeardownFn holds the teardown function for the lazily-initialized
+// user client. It's package-level because Bubbletea copies the model by value,
+// so a teardown set inside Update() wouldn't be visible in main().
+var userClientTeardownFn func()
 
 var (
 	titleStyle = lipgloss.NewStyle().
@@ -390,6 +426,8 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 
 	// Initialize menu items
 	menuItems := []menuItem{
+		{"Login", "Login with username and secret key"},
+		{"Create User", "Create admin or regular users"},
 		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
 		{"Manage Racks", "Add, edit, or delete server racks"},
 		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
@@ -428,6 +466,19 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	vdevCountInput.Placeholder = "1"
 	vdevCountInput.CharLimit = 10
 	vdevCountInput.SetValue("1")
+
+	// Initialize user management text inputs
+	userUsernameInput := textinput.New()
+	userUsernameInput.Placeholder = "Enter username (use 'admin' for admin user)"
+	userUsernameInput.CharLimit = 256
+
+	userSecretKeyInput := textinput.New()
+	userSecretKeyInput.Placeholder = "Enter secret key (leave empty to auto-generate)"
+	userSecretKeyInput.CharLimit = 512
+
+	userTokenInput := textinput.New()
+	userTokenInput.Placeholder = "Enter admin JWT token"
+	userTokenInput.CharLimit = 2048
 
 	isConnected := false
 	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
@@ -473,6 +524,10 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		cpGossipPath: cpGossipPath,
 		cpClient:     cpClient,
 		cpConnected:  isConnected,
+		// User management
+		userUsernameInput:  userUsernameInput,
+		userSecretKeyInput: userSecretKeyInput,
+		userTokenInput:     userTokenInput,
 	}
 }
 
@@ -494,6 +549,27 @@ func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 	// Set connected status - InitCliCFuncs starts async connection
 	log.Info("Control plane client initialized with UUID: ", appUUID)
 	return cpClient
+}
+
+// initUserClient initializes the user management client
+func initUserClient(raftUUID, gossipPath string) (*usercl.Client, func()) {
+	if raftUUID == "" || gossipPath == "" {
+		log.Warn("Cannot initialize user client: missing raft UUID or gossip path")
+		return nil, func() {}
+	}
+
+	appUUID := uuid.New().String()
+	cfg := usercl.Config{
+		AppUUID:          appUUID,
+		RaftUUID:         raftUUID,
+		GossipConfigPath: gossipPath,
+		LogLevel:         "Info",
+		LogFile:          "/tmp/niova-ctl-user.log",
+	}
+
+	client, teardown := usercl.New(cfg)
+	log.Info("User client initialized with UUID: ", appUUID)
+	return client, teardown
 }
 
 func (m model) Init() tea.Cmd {
@@ -538,6 +614,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.devicePage = 0
 			m.state = stateDeviceSelection
 			m = m.updateDeviceList()
+		}
+		return m, nil
+
+	case userCreatedMsg:
+		if msg.err != nil {
+			m.userCreateErr = msg.err.Error()
+			m.userCreateResp = nil
+		} else if !msg.resp.Success {
+			m.userCreateErr = msg.resp.Error
+			m.userCreateResp = nil
+		} else {
+			m.userCreateResp = msg.resp
+			m.userCreateErr = ""
+		}
+		m.state = stateUserCreateResult
+		return m, nil
+
+	case userLoggedInMsg:
+		if msg.err != nil {
+			m.userLoginErr = msg.err.Error()
+			m.state = stateUserLoginResult
+		} else if !msg.resp.Success {
+			m.userLoginErr = msg.resp.Error
+			m.state = stateUserLoginResult
+		} else {
+			m.loggedInUser = msg.resp
+			m.message = "Logged in as " + msg.resp.Username
+			m.state = stateMenu
 		}
 		return m, nil
 	}
@@ -660,6 +764,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateVdevCreationProgress(msg)
 	case stateVdevCreationSummary:
 		m, cmd = m.updateVdevCreationSummary(msg)
+	// User Management
+	case stateUserCreateForm:
+		m, cmd = m.updateUserCreateForm(msg)
+	case stateUserCreateAdminKey:
+		m, cmd = m.updateUserCreateAdminKey(msg)
+	case stateUserCreateToken:
+		m, cmd = m.updateUserCreateToken(msg)
+	case stateUserCreateResult:
+		m, cmd = m.updateUserCreateResult(msg)
+	// User Login
+	case stateUserLoginForm:
+		m, cmd = m.updateUserLoginForm(msg)
+	case stateUserLoginSecret:
+		m, cmd = m.updateUserLoginSecret(msg)
+	case stateUserLoginResult:
+		m, cmd = m.updateUserLoginResult(msg)
 	// Control Plane
 	// Configuration View
 	case stateViewConfig:
@@ -685,37 +805,91 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 			}
 		case "enter", " ":
 			switch m.menuCursor {
-			case 0: // Manage PDUs
+			case 0: // Login
+				var err error
+				m, err = m.ensureUserClient()
+				if err != nil {
+					m.message = "Error: " + err.Error()
+					return m, nil
+				}
+				m.state = stateUserLoginForm
+				m.userUsernameInput.SetValue("")
+				m.userSecretKeyInput.SetValue("")
+				m.userLoginErr = ""
+				m.message = ""
+				m.userUsernameInput.Focus()
+				return m, textinput.Blink
+			case 1: // Create User
+				var err error
+				m, err = m.ensureUserClient()
+				if err != nil {
+					m.message = "Error: " + err.Error()
+					return m, nil
+				}
+				m.state = stateUserCreateForm
+				m.userUsernameInput.SetValue("")
+				m.userSecretKeyInput.SetValue("")
+				m.userTokenInput.SetValue("")
+				m.userCreateResp = nil
+				m.userCreateErr = ""
+				m.message = ""
+				m.userUsernameInput.Focus()
+				return m, textinput.Blink
+			case 2: // Manage PDUs
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = statePDUManagement
 				m.pduManagementCursor = 0
 				m.message = ""
 				return m, nil
-			case 1: // Manage Racks
+			case 3: // Manage Racks
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = stateRackManagement
 				m.rackManagementCursor = 0
 				m.selectedPDUIdx = -1
 				m.message = ""
 				return m, nil
-			case 2: // Manage Hypervisors
+			case 4: // Manage Hypervisors
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = stateHypervisorManagement
 				m.hvManagementCursor = 0
 				m.selectedRackIdx = -1
 				m.message = ""
 				return m, nil
-			case 3: // Manage Devices
+			case 5: // Manage Devices
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = stateDeviceManagement
 				m.deviceMgmtCursor = 0
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
 				m.message = ""
 				return m, nil
-			case 4: // Manage Partitions
+			case 6: // Manage Partitions
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = statePartitionManagement
 				m.partitionMgmtCursor = 0
 				m.selectedPartitionIdx = -1
 				m.message = ""
 				return m, nil
-			case 5: // Manage NISDs
+			case 7: // Manage NISDs
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = stateNISDManagement
 				m.nisdMgmtCursor = 0
 				m.selectedNISDHypervisorIdx = -1
@@ -724,13 +898,21 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
 				return m, nil
-			case 6: // Manage Vdevs
+			case 8: // Manage Vdevs
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = stateVdevManagement
 				m.vdevMgmtCursor = 0
 				m.selectedDevicesForVdev = make(map[int]bool)
 				m.message = ""
 				return m, nil
-			case 7: // View Configuration
+			case 9: // View Configuration
+				if m.loggedInUser == nil {
+					m.message = "Error: Please login first"
+					return m, nil
+				}
 				m.state = stateViewConfig
 				// Reset config cursor and expand states
 				m.configCursor = 0
@@ -746,7 +928,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				}
 				m = m.updateConfigView()
 				return m, nil
-			case 8: // Save & Exit
+			case 10: // Save & Exit
 				if err := m.config.SaveToFile(m.configPath); err != nil {
 					m.message = fmt.Sprintf("Error saving config: %v", err)
 					return m, nil
@@ -754,13 +936,352 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = fmt.Sprintf("Configuration saved to %s", m.configPath)
 				m.quitting = true
 				return m, tea.Quit
-			case 9: // Exit
+			case 11: // Exit
 				m.quitting = true
 				return m, tea.Quit
 			}
 		}
 	}
 	return m, nil
+}
+
+// userToken returns the logged-in user's access token, or empty string if not logged in.
+func (m model) userToken() string {
+	if m.loggedInUser != nil {
+		return m.loggedInUser.AccessToken
+	}
+	return ""
+}
+
+// ensureUserClient lazily initializes the user client. Returns an error message
+// string if initialization fails.
+func (m model) ensureUserClient() (model, error) {
+	if m.cpRaftUUID == "" || m.cpGossipPath == "" {
+		return m, fmt.Errorf("Control plane not configured. Use -cp flag with -raft-uuid and -gossip-path.")
+	}
+	if m.userClient == nil {
+		client, teardown := initUserClient(m.cpRaftUUID, m.cpGossipPath)
+		if client == nil {
+			return m, fmt.Errorf("Failed to initialize user client.")
+		}
+		m.userClient = client
+		userClientTeardownFn = teardown
+	}
+	return m, nil
+}
+
+// --- User Management Update Handlers ---
+
+func (m model) updateUserCreateForm(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			username := strings.TrimSpace(m.userUsernameInput.Value())
+			if username == "" {
+				m.message = "Error: Username cannot be empty"
+				return m, nil
+			}
+			if username == userlib.AdminUsername {
+				m.state = stateUserCreateAdminKey
+				m.userUsernameInput.Blur()
+				m.userSecretKeyInput.Focus()
+				m.message = ""
+				return m, textinput.Blink
+			}
+			// Regular user creation: use stored token if logged in
+			if m.loggedInUser != nil {
+				req := &userlib.UserReq{
+					Username:  username,
+					UserToken: m.loggedInUser.AccessToken,
+				}
+				client := m.userClient
+				m.userUsernameInput.Blur()
+				m.message = "Creating user..."
+				return m, func() tea.Msg {
+					resp, err := client.CreateUser(req)
+					return userCreatedMsg{resp: resp, err: err}
+				}
+			}
+			// Not logged in — prompt for manual token
+			m.state = stateUserCreateToken
+			m.userUsernameInput.Blur()
+			m.userTokenInput.Focus()
+			m.message = ""
+			return m, textinput.Blink
+		}
+	}
+	var cmd tea.Cmd
+	m.userUsernameInput, cmd = m.userUsernameInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateUserCreateAdminKey(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			req := &userlib.UserReq{
+				Username:     userlib.AdminUsername,
+				NewSecretKey: strings.TrimSpace(m.userSecretKeyInput.Value()),
+			}
+			client := m.userClient
+			m.userSecretKeyInput.Blur()
+			m.message = "Creating admin user..."
+			return m, func() tea.Msg {
+				resp, err := client.CreateAdminUser(req)
+				return userCreatedMsg{resp: resp, err: err}
+			}
+		}
+	}
+	var cmd tea.Cmd
+	m.userSecretKeyInput, cmd = m.userSecretKeyInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateUserCreateToken(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			token := strings.TrimSpace(m.userTokenInput.Value())
+			if token == "" {
+				m.message = "Error: Admin JWT token is required"
+				return m, nil
+			}
+			username := strings.TrimSpace(m.userUsernameInput.Value())
+			req := &userlib.UserReq{
+				Username:  username,
+				UserToken: token,
+			}
+			client := m.userClient
+			m.userTokenInput.Blur()
+			m.message = "Creating user..."
+			return m, func() tea.Msg {
+				resp, err := client.CreateUser(req)
+				return userCreatedMsg{resp: resp, err: err}
+			}
+		}
+	}
+	var cmd tea.Cmd
+	m.userTokenInput, cmd = m.userTokenInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateUserCreateResult(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", "esc":
+			m.state = stateMenu
+			m.userCreateResp = nil
+			m.userCreateErr = ""
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+// --- User Management View Functions ---
+
+func (m model) viewUserCreateForm() string {
+	title := titleStyle.Render("Create User")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		s.WriteString(errorStyle.Render(m.message) + "\n\n")
+	}
+
+	s.WriteString("Enter username:\n\n")
+	s.WriteString(m.userUsernameInput.View() + "\n\n")
+	s.WriteString(helpStyle.Render("Tip: Enter 'admin' to create the bootstrap admin user (no token needed).") + "\n")
+	s.WriteString(helpStyle.Render("     Any other username requires an admin JWT token.") + "\n\n")
+	s.WriteString(helpStyle.Render("enter: continue • esc: back to menu"))
+
+	return s.String()
+}
+
+func (m model) viewUserCreateAdminKey() string {
+	title := titleStyle.Render("Create Admin User")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	s.WriteString(fmt.Sprintf("Username: %s\n\n", selectedStyle.Render(userlib.AdminUsername)))
+	s.WriteString("Enter secret key (leave empty to auto-generate):\n\n")
+	s.WriteString(m.userSecretKeyInput.View() + "\n\n")
+	s.WriteString(helpStyle.Render("enter: create admin user • esc: back to menu"))
+
+	return s.String()
+}
+
+func (m model) viewUserCreateToken() string {
+	title := titleStyle.Render("Create User")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	username := strings.TrimSpace(m.userUsernameInput.Value())
+	s.WriteString(fmt.Sprintf("Username: %s\n\n", selectedStyle.Render(username)))
+	s.WriteString("Enter admin JWT token:\n\n")
+	s.WriteString(m.userTokenInput.View() + "\n\n")
+	s.WriteString(helpStyle.Render("enter: create user • esc: back to menu"))
+
+	return s.String()
+}
+
+func (m model) viewUserCreateResult() string {
+	title := titleStyle.Render("Create User — Result")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.userCreateErr != "" {
+		s.WriteString(errorStyle.Render("Error: "+m.userCreateErr) + "\n\n")
+		s.WriteString(helpStyle.Render("enter/esc: back to menu"))
+		return s.String()
+	}
+
+	if m.userCreateResp != nil {
+		s.WriteString(successStyle.Render("User Created Successfully") + "\n\n")
+		s.WriteString("User Details:\n")
+		s.WriteString(fmt.Sprintf("  Username:   %s\n", m.userCreateResp.Username))
+		s.WriteString(fmt.Sprintf("  UserID:     %s\n", m.userCreateResp.UserID))
+		s.WriteString(fmt.Sprintf("  Role:       %s\n", m.userCreateResp.UserRole))
+		s.WriteString(fmt.Sprintf("  Status:     %s\n\n", m.userCreateResp.Status))
+
+		secretKeyBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#01BE85")).
+			Padding(0, 2).
+			Render(fmt.Sprintf("Secret Key: %s", m.userCreateResp.SecretKey))
+		s.WriteString(secretKeyBox + "\n\n")
+
+		s.WriteString(helpStyle.Render("Copy the secret key above — it is needed for login.") + "\n")
+		s.WriteString(helpStyle.Render("This is the only time the secret key will be displayed.") + "\n\n")
+	}
+
+	s.WriteString(helpStyle.Render("enter/esc: back to menu"))
+	return s.String()
+}
+
+// --- User Login Update Handlers ---
+
+func (m model) updateUserLoginForm(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			username := strings.TrimSpace(m.userUsernameInput.Value())
+			if username == "" {
+				m.message = "Error: Username cannot be empty"
+				return m, nil
+			}
+			m.state = stateUserLoginSecret
+			m.userUsernameInput.Blur()
+			m.userSecretKeyInput.SetValue("")
+			m.userSecretKeyInput.Focus()
+			m.message = ""
+			return m, textinput.Blink
+		}
+	}
+	var cmd tea.Cmd
+	m.userUsernameInput, cmd = m.userUsernameInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateUserLoginSecret(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			secretKey := strings.TrimSpace(m.userSecretKeyInput.Value())
+			if secretKey == "" {
+				m.message = "Error: Secret key cannot be empty"
+				return m, nil
+			}
+			username := strings.TrimSpace(m.userUsernameInput.Value())
+			client := m.userClient
+			m.userSecretKeyInput.Blur()
+			m.message = "Logging in..."
+			return m, func() tea.Msg {
+				resp, err := client.Login(username, secretKey)
+				return userLoggedInMsg{resp: resp, err: err}
+			}
+		}
+	}
+	var cmd tea.Cmd
+	m.userSecretKeyInput, cmd = m.userSecretKeyInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateUserLoginResult(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", "esc":
+			m.state = stateMenu
+			m.userLoginErr = ""
+			m.message = ""
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+// --- User Login View Functions ---
+
+func (m model) viewUserLoginForm() string {
+	title := titleStyle.Render("Login")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		s.WriteString(errorStyle.Render(m.message) + "\n\n")
+	}
+
+	s.WriteString("Enter username:\n\n")
+	s.WriteString(m.userUsernameInput.View() + "\n\n")
+	s.WriteString(helpStyle.Render("enter: continue • esc: back to menu"))
+
+	return s.String()
+}
+
+func (m model) viewUserLoginSecret() string {
+	title := titleStyle.Render("Login")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		s.WriteString(errorStyle.Render(m.message) + "\n\n")
+	}
+
+	username := strings.TrimSpace(m.userUsernameInput.Value())
+	s.WriteString(fmt.Sprintf("Username: %s\n\n", selectedStyle.Render(username)))
+	s.WriteString("Enter secret key:\n\n")
+	s.WriteString(m.userSecretKeyInput.View() + "\n\n")
+	s.WriteString(helpStyle.Render("enter: login • esc: back to menu"))
+
+	return s.String()
+}
+
+func (m model) viewUserLoginResult() string {
+	title := titleStyle.Render("Login — Error")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.userLoginErr != "" {
+		s.WriteString(errorStyle.Render("Error: "+m.userLoginErr) + "\n\n")
+	}
+
+	s.WriteString(helpStyle.Render("enter/esc: back to menu"))
+	return s.String()
 }
 
 func (m model) updateHypervisorForm(msg tea.Msg) (model, tea.Cmd) {
@@ -1117,9 +1638,14 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 				}
 				log.Info("Adding Hypervisor with devices: ", m.currentHv)
 				// Add the hypervisor with devices to pumiceDB
-				_, err = m.cpClient.PutHypervisor(&m.currentHv)
+				m.currentHv.UserToken = m.userToken()
+				hvResp, err := m.cpClient.PutHypervisor(&m.currentHv)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
+					return m, nil
+				}
+				if hvResp != nil && !hvResp.Success {
+					m.message = fmt.Sprintf("Failed to add hypervisor: %s", hvResp.Error)
 					return m, nil
 				}
 			}
@@ -1552,13 +2078,17 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 					State:         ctlplfl.INITIALIZED, // Active status
 					HypervisorID:  hv.ID,
 					FailureDomain: updatedDevice.FailureDomain,
+					UserToken:     m.userToken(),
 				}
 				log.Info("Put device info: ", deviceInfo)
 
-				_, cpErr := m.cpClient.PutDevice(&deviceInfo)
+				devResp, cpErr := m.cpClient.PutDevice(&deviceInfo)
 				if cpErr != nil {
 					log.Warn("Failed to sync device to control plane: ", cpErr)
 					m.message += " (Control plane sync failed)"
+				} else if devResp != nil && !devResp.Success {
+					log.Warn("Control plane rejected device sync: ", devResp.Error)
+					m.message += fmt.Sprintf(" (Control plane: %s)", devResp.Error)
 				} else {
 					log.Info("Successfully synced device to control plane")
 					m.message += " and synced to control plane"
@@ -1723,7 +2253,7 @@ func (m model) getNISDsList() ([]ctlplfl.Nisd, error) {
 	if m.cpClient == nil {
 		return nil, fmt.Errorf("control plane client is not initialized")
 	}
-	return m.cpClient.GetNisds(ctlplfl.GetReq{})
+	return m.cpClient.GetNisds(ctlplfl.GetReq{UserToken: m.userToken()})
 }
 
 // Helper function to get partition name for NISD display
@@ -2330,6 +2860,22 @@ func (m model) View() string {
 		return m.viewVdevCreationProgress()
 	case stateVdevCreationSummary:
 		return m.viewVdevCreationSummary()
+	// User Management Views
+	case stateUserCreateForm:
+		return m.viewUserCreateForm()
+	case stateUserCreateAdminKey:
+		return m.viewUserCreateAdminKey()
+	case stateUserCreateToken:
+		return m.viewUserCreateToken()
+	case stateUserCreateResult:
+		return m.viewUserCreateResult()
+	// User Login Views
+	case stateUserLoginForm:
+		return m.viewUserLoginForm()
+	case stateUserLoginSecret:
+		return m.viewUserLoginSecret()
+	case stateUserLoginResult:
+		return m.viewUserLoginResult()
 	// Control Plane Views
 	// Configuration View
 	case stateViewConfig:
@@ -2366,16 +2912,39 @@ func (m model) viewMenu() string {
 		s.WriteString(fmt.Sprintf("Control Plane: %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Disabled")))
 	}
 
+	// Login status
+	if m.loggedInUser != nil {
+		s.WriteString(successStyle.Render(fmt.Sprintf("Logged in as: %s (role: %s)", m.loggedInUser.Username, m.loggedInUser.UserRole)) + "\n\n")
+	} else {
+		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Not logged in") + "\n\n")
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+
 	s.WriteString("Select an option:\n\n")
 	for i, item := range m.menuItems {
+		// Items 2-9 are locked when not logged in
+		locked := m.loggedInUser == nil && i >= 2 && i <= 9
 		cursor := "  "
 		if m.menuCursor == i {
 			cursor = "▶ "
-			s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%s", cursor, item.title)))
+			if locked {
+				s.WriteString(dimStyle.Render(fmt.Sprintf("%s%s", cursor, item.title)))
+			} else {
+				s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%s", cursor, item.title)))
+			}
 		} else {
-			s.WriteString(fmt.Sprintf("%s%s", cursor, item.title))
+			if locked {
+				s.WriteString(dimStyle.Render(fmt.Sprintf("%s%s", cursor, item.title)))
+			} else {
+				s.WriteString(fmt.Sprintf("%s%s", cursor, item.title))
+			}
 		}
-		s.WriteString(fmt.Sprintf(" - %s\n", item.desc))
+		if locked {
+			s.WriteString(dimStyle.Render(fmt.Sprintf(" - %s [Login Required]", item.desc)) + "\n")
+		} else {
+			s.WriteString(fmt.Sprintf(" - %s\n", item.desc))
+		}
 	}
 
 	s.WriteString("\n")
@@ -3026,7 +3595,7 @@ func (m model) updateViewHypervisor(msg tea.Msg) (model, tea.Cmd) {
 
 		if m.cpClient != nil {
 			log.Info("Calling GetHypervisor with GetAll=true")
-			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
+			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query Hypervisors from Control Plane: ", err)
@@ -4468,13 +5037,17 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 					PartitionID: partitionInfo.Name,
 					NISDUUID:    uuid.New().String(), // Generate new UUID for NISD instance
 					Size:        partitionInfo.Size,  // Use the actual partition size
+					UserToken:   m.userToken(),
 				}
 
 				// Call PutPartition to create the partition key
-				_, err := m.cpClient.PutPartition(&partition)
+				ptResp, err := m.cpClient.PutPartition(&partition)
 				if err != nil {
 					log.Info("Failed to add partition to pumiceDB: %v", err)
 					errorMessages = append(errorMessages, fmt.Sprintf("Failed to create key for %s: %v", partitionInfo.Name, err))
+					continue
+				} else if ptResp != nil && !ptResp.Success {
+					errorMessages = append(errorMessages, fmt.Sprintf("Failed to create key for %s: %s", partitionInfo.Name, ptResp.Error))
 					continue
 				}
 
@@ -4693,14 +5266,18 @@ func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 		PartitionID: deviceByIdName,
 		NISDUUID:    uuid.New().String(),
 		Size:        m.selectedDeviceForPartition.Size, // Store the entire device size
+		UserToken:   m.userToken(),
 	}
 
 	// Try to call PutPartition if control plane is enabled
 	if m.cpClient != nil {
 		log.Info("PutPartition for whole device: ", devicePartition)
-		_, err := m.cpClient.PutPartition(&devicePartition)
+		ptResp, err := m.cpClient.PutPartition(&devicePartition)
 		if err != nil {
 			return DevicePartition{}, fmt.Errorf("failed to call PutPartition for whole device: %v", err)
+		}
+		if ptResp != nil && !ptResp.Success {
+			return DevicePartition{}, fmt.Errorf("PutPartition for whole device failed: %s", ptResp.Error)
 		}
 	} else {
 		log.Error("Failed to write partition key in CP: ", devicePartition)
@@ -4816,15 +5393,18 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 				PowerCapacity: powerCapacity,
 				Specification: description,
 				Racks:         []Rack{},
+				UserToken:     m.userToken(),
 			}
 
 			m.config.AddPDU(&pdu)
 
 			log.Info("Adding PDU: ", pdu)
-			_, err := m.cpClient.PutPDU(&pdu)
+			pduResp, err := m.cpClient.PutPDU(&pdu)
 			if err != nil {
 				m.message = fmt.Sprintf("Added PDU %s but failed to save: %v",
 					m.currentPDU.ID, err)
+			} else if pduResp != nil && !pduResp.Success {
+				m.message = fmt.Sprintf("Failed to add PDU: %s", pduResp.Error)
 			} else {
 				m.currentPDU = pdu
 
@@ -4922,7 +5502,7 @@ func (m model) updateViewPDU(msg tea.Msg) (model, tea.Cmd) {
 		// If control plane client is available, fetch PDU data from CP
 		if m.cpClient != nil {
 			log.Info("Calling GetPDUs with GetAll=true")
-			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
+			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query PDUs from Control Plane: ", err)
@@ -5105,6 +5685,7 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 				PDUID:         pdu.ID,
 				Location:      location,
 				Specification: description,
+				UserToken:     m.userToken(),
 			}
 
 			err := m.config.AddRack(&rack)
@@ -5114,9 +5695,13 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 			}
 
 			log.Info("Adding Rack: ", rack)
-			_, err = m.cpClient.PutRack(&rack)
+			rackResp, err := m.cpClient.PutRack(&rack)
 			if err != nil {
 				m.message = fmt.Sprintf("Failed to add rack to pumiceDB: %v", err)
+				return m, nil
+			}
+			if rackResp != nil && !rackResp.Success {
+				m.message = fmt.Sprintf("Failed to add rack: %s", rackResp.Error)
 				return m, nil
 			}
 			m.currentRack = rack
@@ -5228,7 +5813,7 @@ func (m model) updateViewRack(msg tea.Msg) (model, tea.Cmd) {
 		// If control plane client is available, fetch Rack data from CP
 		if m.cpClient != nil {
 			log.Info("Calling GetRacks with GetAll=true")
-			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
+			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query Racks from Control Plane: ", err)
@@ -6387,10 +6972,11 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 
 	// Create Device from form inputs
 	deviceInfo := ctlplfl.Device{
-		ID:         m.writeDeviceInputs[0].Value(),
+		ID:            m.writeDeviceInputs[0].Value(),
 		SerialNumber:  m.writeDeviceInputs[2].Value(),
 		HypervisorID:  m.writeDeviceInputs[4].Value(),
 		FailureDomain: m.writeDeviceInputs[5].Value(),
+		UserToken:     m.userToken(),
 	}
 
 	// Parse status field
@@ -6402,10 +6988,13 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 
 	log.Info("Sending device info to control plane: ", deviceInfo)
 
-	_, err := m.cpClient.PutDeviceInfo(&deviceInfo)
+	devResp, err := m.cpClient.PutDeviceInfo(&deviceInfo)
 	if err != nil {
 		m.message = fmt.Sprintf("Error writing device to control plane: %v", err)
 		log.Error("Failed to write device info: ", err)
+	} else if devResp != nil && !devResp.Success {
+		m.message = fmt.Sprintf("Error writing device to control plane: %s", devResp.Error)
+		log.Error("Control plane rejected device write: ", devResp.Error)
 	} else {
 		m.message = fmt.Sprintf("Successfully wrote device %s to control plane", deviceInfo.ID)
 		log.Info("Successfully wrote device info to control plane")
@@ -6843,7 +7432,7 @@ func (m *model) initializeNISD() error {
 			m.selectedPartitionForNISD.PartitionID,
 		},
 		NetInfoCnt: len(netInfos),
-		// UserToken: , pass user token
+		UserToken:  m.userToken(),
 	}
 
 	// Call PutNisd
@@ -6856,6 +7445,9 @@ func (m *model) initializeNISD() error {
 
 	if resp == nil {
 		return fmt.Errorf("received nil response from control plane")
+	}
+	if !resp.Success {
+		return fmt.Errorf("failed to register NISD: %s", resp.Error)
 	}
 
 	// Store the initialized NISD for display
@@ -6920,7 +7512,7 @@ func (m *model) initializeSelectedNISDs() error {
 				partitionInfo.Partition.PartitionID,
 			},
 			NetInfoCnt: len(netInfos),
-			// UserToken: , pass user token
+			UserToken:  m.userToken(),
 		}
 
 		// Call PutNisd
@@ -6934,6 +7526,10 @@ func (m *model) initializeSelectedNISDs() error {
 
 		if resp == nil {
 			errors = append(errors, fmt.Sprintf("received nil response from control plane for NISD %s", partitionInfo.Partition.NISDUUID))
+			continue
+		}
+		if !resp.Success {
+			errors = append(errors, fmt.Sprintf("failed to register NISD %s: %s", partitionInfo.Partition.NISDUUID, resp.Error))
 			continue
 		}
 
@@ -7458,7 +8054,7 @@ func (m model) updateVdevDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			// Get devices from control plane for navigation
 			var deviceCount int
 			if m.cpClient != nil && m.cpConnected {
-				req := ctlplfl.GetReq{ID: "", GetAll: true}
+				req := ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
 				devices, err := m.cpClient.GetDevices(req)
 				if err == nil {
 					deviceCount = len(devices)
@@ -7702,7 +8298,7 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				vdevs, err := m.cpClient.GetVdevCfgs()
+				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
 				if err == nil && len(vdevs) > 0 {
 					// Sort to ensure consistent ordering for navigation bounds
 					sort.Slice(vdevs, func(i, j int) bool {
@@ -7740,7 +8336,7 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		vdevs, err := m.cpClient.GetVdevCfgs()
+		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -7824,7 +8420,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true}
+				req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err == nil {
 					// Sort to ensure consistent ordering for navigation bounds
@@ -7839,7 +8435,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			// Delete selected Vdev
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true}
+				req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to query Vdevs: %v", err)
@@ -7890,7 +8486,7 @@ func (m model) viewDeleteVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true}
+		req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
 		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
@@ -8130,6 +8726,7 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 			Size:       size,
 			NumReplica: 1,
 		},
+		UserToken: m.userToken(),
 	}
 
 	if m.cpClient != nil && m.cpConnected {
@@ -8141,6 +8738,14 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 				Index:   index,
 				Success: false,
 				Error:   err,
+			}
+		}
+		if resp != nil && !resp.Success {
+			log.Error("CreateVdev rejected: ", resp.Error)
+			return VdevCreationMsg{
+				Index:   index,
+				Success: false,
+				Error:   fmt.Errorf("%s", resp.Error),
 			}
 		}
 		log.Info("Vdev created successfully: ", resp.ID)
@@ -8282,6 +8887,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						Size:          device.Size,
 						HypervisorID:  hv.ID,
 						FailureDomain: device.FailureDomain,
+						UserToken:     m.userToken(),
 					}
 
 					// Validate and fix device info
@@ -8294,9 +8900,12 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						", Serial: ", deviceInfo.SerialNumber,
 						", HV: ", deviceInfo.HypervisorID)
 
-					_, err := m.cpClient.PutDevice(&deviceInfo)
+					devResp, err := m.cpClient.PutDevice(&deviceInfo)
 					if err != nil {
 						log.Warn("Failed to initialize device in control plane: ", err)
+						errorCount++
+					} else if devResp != nil && !devResp.Success {
+						log.Warn("Control plane rejected device init: ", devResp.Error)
 						errorCount++
 					} else {
 						deviceCount++
@@ -8316,6 +8925,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						Size:          device.Size,
 						HypervisorID:  m.currentHv.ID,
 						FailureDomain: device.FailureDomain,
+						UserToken:     m.userToken(),
 					}
 
 					// Validate and fix device info
@@ -8328,9 +8938,12 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						", Serial: ", deviceInfo.SerialNumber,
 						", HV: ", deviceInfo.HypervisorID)
 
-					_, err := m.cpClient.PutDevice(&deviceInfo)
+					devResp, err := m.cpClient.PutDevice(&deviceInfo)
 					if err != nil {
 						log.Warn("Failed to initialize discovered device in control plane: ", err)
+						errorCount++
+					} else if devResp != nil && !devResp.Success {
+						log.Warn("Control plane rejected discovered device init: ", devResp.Error)
 						errorCount++
 					} else {
 						deviceCount++
@@ -8471,10 +9084,15 @@ func main() {
 		return
 	}
 
+	defer func() {
+		if userClientTeardownFn != nil {
+			userClientTeardownFn()
+		}
+	}()
+
 	p := tea.NewProgram(
 		initialModel(*cpEnabled, *cpRaftUUID, *cpGossipPath),
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
 	)
 
 	if _, err := p.Run(); err != nil {

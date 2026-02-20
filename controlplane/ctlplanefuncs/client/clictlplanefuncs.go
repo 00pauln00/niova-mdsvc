@@ -372,15 +372,19 @@ func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
 	return vdev, nil
 }
 
-func (ccf *CliCFuncs) GetVdevCfgs() ([]ctlplfl.VdevCfg, error) {
+func (ccf *CliCFuncs) GetVdevCfgs(req *ctlplfl.GetReq) ([]ctlplfl.VdevCfg, error) {
 	vdevs := make([]ctlplfl.VdevCfg, 0)
-	err := ccf.get(nil, &vdevs, ctlplfl.GET_ALL_VDEV)
+	err := ccf.get(req, &vdevs, ctlplfl.GET_ALL_VDEV)
 	if err != nil {
 		log.Error("Read Vdev Cfg failed: ", err)
 		return nil, err
 	}
 
 	return vdevs, nil
+}
+
+func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {
+	return ccf.PutDevice(device)
 }
 
 func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, error) {

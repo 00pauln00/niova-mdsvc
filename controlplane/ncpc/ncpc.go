@@ -934,7 +934,7 @@ func main() {
 		log.Info("Vdev created successfully with UUID:", resp)
 	case "GetVdevs":
 		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		vdevs, err := c.GetVdevCfgs()
+		vdevs, err := c.GetVdevCfgs(nil)
 		if err != nil {
 			log.Error("failed to get vdev info:", err)
 			os.Exit(-1)
