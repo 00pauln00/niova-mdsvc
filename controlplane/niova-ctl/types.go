@@ -382,7 +382,7 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, userT
 			GetNisds(ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
 		}); ok {
 			// Get all NISDs and filter by hypervisor UUID locally
-			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true,})
+			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true, UserToken: userToken})
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {
