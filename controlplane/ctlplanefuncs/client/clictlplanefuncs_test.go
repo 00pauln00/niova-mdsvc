@@ -1205,3 +1205,368 @@ func TestVdevAuthorizationWithMultipleUsersAndVdevs(t *testing.T) {
 	wg.Wait()
     t.Log("Multiple Users + Multiple Vdevs + Multiple NISDs Authorization Test Passed")
 }
+func creatUser(t *testing.T) string {
+	authClient, tearDown := newUserClient(t)
+	defer tearDown()
+	userUsername := "test_vdev" + uuid.New().String()[:8]
+	userReq := &userlib.UserReq{
+		Username:  userUsername,
+		UserToken: adminTokenCache,
+	}
+	userResp, err := authClient.CreateUser(userReq)
+    assert.NoError(t, err, "failed to create user1")
+    assert.NotNil(t, userResp)
+    assert.True(t, userResp.Success)
+    assert.NotEmpty(t, userResp.SecretKey)
+    assert.NotEmpty(t, userResp.UserID)
+    assert.Equal(t, userlib.DefaultUserRole, userResp.UserRole)
+    t.Logf("Created user: %s with ID: %s", userUsername, userResp.UserID)
+
+    // Step 3: Login with user1 to get access token
+    userLoginResp, err := authClient.Login(userUsername, userResp.SecretKey)
+    assert.NoError(t, err, "user login should succeed")
+    assert.True(t, userLoginResp.Success)
+    assert.NotEmpty(t, userLoginResp.AccessToken, "user access token should not be empty")
+    userAccessToken := userLoginResp.AccessToken
+    t.Logf("User logged in, access token obtained")
+	return userAccessToken
+}
+
+func TestUserPutAndGetRack(t *testing.T) {
+     c := newClient(t)
+     adminToken := getAdminToken(t)
+     racks := []cpLib.Rack{
+         {
+             ID:            "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+             PDUID:         "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+             Name:          "rack-1",
+             Location:      "us-east",
+             Specification: "rack1-spec",
+             UserToken:     adminToken,
+         },
+         {
+             ID:            "93e2925e-ab23-11f0-958d-87f55a6a9981",
+             PDUID:         "13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
+             Name:          "rack-2",
+             Location:      "us-west",
+             Specification: "rack2-spec",
+             UserToken:     adminToken,
+         },
+     }
+
+     for _, r := range racks {
+         resp, err := c.PutRack(&r)
+         assert.NoError(t, err)
+         assert.True(t, resp.Success)
+     }		
+	 userAccessToken := creatUser(t)
+     resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true, UserToken: userAccessToken})
+     log.Info("GetRacks: ", resp)
+     assert.NoError(t, err)
+ }
+
+func TestNonAdminUserPutRack(t *testing.T) {
+     c := newClient(t)
+     _ = getAdminToken(t)
+	 userAccessToken := creatUser(t)
+     racks := []cpLib.Rack{
+         {
+             ID:            "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+             PDUID:         "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+             Name:          "rack-1",
+             Location:      "us-east",
+             Specification: "rack1-spec",
+             UserToken:     userAccessToken,
+         },
+         {
+             ID:            "93e2925e-ab23-11f0-958d-87f55a6a9981",
+             PDUID:         "13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
+             Name:          "rack-2",
+             Location:      "us-west",
+             Specification: "rack2-spec",
+             UserToken:     userAccessToken,
+         },
+     }
+
+     for _, r := range racks {
+         _, err := c.PutRack(&r)
+         assert.NoError(t, err)
+     }
+ }
+
+func TestUserPutAndGetNisdArgs(t *testing.T) {
+    c := newClient(t)
+    adminToken := getAdminToken(t)
+
+    na := &cpLib.NisdArgs{
+        Defrag:               true,
+        MBCCnt:               8,
+        MergeHCnt:            4,
+        MCIBReadCache:        256,
+        S3:                   "s3://backup-bucket/data",
+        DSync:                "enabled",
+        AllowDefragMCIBCache: false,
+        UserToken:            adminToken,
+    }
+    _, err := c.PutNisdArgs(na)
+    assert.NoError(t, err)
+	userAccessToken := creatUser(t)
+    req := cpLib.GetReq{UserToken: userAccessToken}
+    _, err = c.GetNisdArgs(req)
+    assert.NoError(t, err)
+}
+
+func TestNonAdminUserPutNisdArgs(t *testing.T) {
+    c := newClient(t)
+    _ := getAdminToken(t)
+	userAccessToken := creatUser(t)
+    na := &cpLib.NisdArgs{
+        Defrag:               true,
+        MBCCnt:               8,
+        MergeHCnt:            4,
+        MCIBReadCache:        256,
+        S3:                   "s3://backup-bucket/data",
+        DSync:                "enabled",
+        AllowDefragMCIBCache: false,
+        UserToken:            userAccessToken,
+    }
+    _, err := c.PutNisdArgs(na)
+    assert.NoError(t, err)
+}
+
+
+func TestUserPutAndGetNisd(t *testing.T) {
+    c := newClient(t)
+    adminToken := getAdminToken(t)
+
+    mockNisd := []cpLib.Nisd{
+        {
+            PeerPort: 8001,
+            ID:       "3355858e-ea0e-11f0-9768-e71fc352cd1d",
+            FailureDomain: []string{
+                "87694b06-ea0e-11f0-8fc4-e3e2449638d1",
+                "87694b06-ea0e-11f0-8fc4-e3e2449638d2",
+                "87694b06-ea0e-11f0-8fc4-e3e2449638d3",
+                "nvme-e3f4123",
+            },
+            TotalSize:     1_000_000_000_000, // 1 TB
+            AvailableSize: 750_000_000_000,   // 750 GB
+            SocketPath:    "/path/sockets1",
+            NetInfo: cpLib.NetInfoList{
+                cpLib.NetworkInfo{
+                    IPAddr: "192.168.0.0.1",
+                    Port:   5444,
+                },
+                cpLib.NetworkInfo{
+                    IPAddr: "192.168.0.0.2",
+                    Port:   6444,
+                },
+            },
+            NetInfoCnt: 2,
+            UserToken:  adminToken,
+        },
+        {
+            PeerPort: 8003,
+            ID:       "397fc08c-ea0e-11f0-9e9a-47f5587ee1f8",
+            FailureDomain: []string{
+                "e80029a8-ea0e-11f0-962b-f3f3668c2241",
+                "e80029a8-ea0e-11f0-962b-f3f3668c2242",
+                "e80029a8-ea0e-11f0-962b-f3f3668c2243",
+                "nvme-e3f4125",
+            },
+            TotalSize:     2_000_000_000_000, // 2 TB
+            AvailableSize: 1_500_000_000_000, // 1.5 TB
+            SocketPath:    "/path/sockets3",
+            NetInfo: cpLib.NetInfoList{
+                cpLib.NetworkInfo{
+                    IPAddr: "192.168.0.0.1",
+                    Port:   5444,
+                },
+                cpLib.NetworkInfo{
+                    IPAddr: "192.168.0.0.2",
+                    Port:   6444,
+                },
+            },
+            NetInfoCnt: 2,
+            UserToken:  adminToken,
+        },
+    }
+
+    for _, n := range mockNisd {
+        resp, err := c.PutNisd(&n)
+        assert.NoError(t, err)
+        assert.True(t, resp.Success)
+    }
+	userAccessToken := creatUser(t)
+    req := cpLib.GetReq{
+        GetAll:    true,
+        UserToken: userAccessToken,
+    }
+    _, err := c.GetNisds(req)
+    assert.NoError(t, err)
+}
+
+func TestUserPutAndGetPDU(t *testing.T) {
+    c := newClient(t)
+    adminToken := getAdminToken(t)
+
+    pdus := []cpLib.PDU{
+        {
+            ID:            "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+            Name:          "pdu-1",
+            Location:      "us-west",
+            PowerCapacity: "15Kw",
+            Specification: "specification1",
+            UserToken:     adminToken,
+        },
+        {
+            ID:            "13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
+            Name:          "pdu-2",
+            Location:      "us-east",
+            PowerCapacity: "15Kw",
+            Specification: "specification2",
+            UserToken:     adminToken,
+        },
+    }
+
+    for _, p := range pdus {
+        resp, err := c.PutPDU(&p)
+        assert.NoError(t, err)
+        assert.True(t, resp.Success)
+    }
+	userAccessToken := creatUser(t)
+    res, err := c.GetPDUs(&cpLib.GetReq{GetAll: true, UserToken: userAccessToken})
+    log.Info("resp from get pdus:", res)
+    assert.NoError(t, err)
+}
+
+func TestUserPutAndGetHypervisor(t *testing.T) {
+    c := newClient(t)
+    adminToken := getAdminToken(t)
+
+    hypervisors := []cpLib.Hypervisor{
+        {
+            RackID:    "rack-1",
+            ID:        "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+            IPAddrs:   []string{"127.0.0.1", "127.0.0.1"},
+            PortRange: "8000-9000",
+            SSHPort:   "6999",
+            Name:      "hv-1",
+            UserToken: adminToken,
+        },
+        {
+            RackID:      "rack-2",
+            ID:          "8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
+            IPAddrs:     []string{"127.0.0.1", "127.0.0.1"},
+            PortRange:   "5000-7000",
+            SSHPort:     "7999",
+            Name:        "hv-2",
+            RDMAEnabled: true,
+            UserToken:   adminToken,
+        },
+    }
+
+    for _, hv := range hypervisors {
+        resp, err := c.PutHypervisor(&hv)
+        assert.NoError(t, err)
+        assert.True(t, resp.Success)
+    }
+	userAccessToken := creatUser(t)
+    _, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true, UserToken: userAccessToken})
+    assert.NoError(t, err)
+}
+
+func TestUserPutAndGetPartition(t *testing.T) {
+    c := newClient(t)
+    adminToken := getAdminToken(t)
+    pt := &cpLib.DevicePartition{
+        PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
+        DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
+        Size:          10 * 1024 * 1024 * 1024,
+        PartitionPath: "some path",
+        NISDUUID:      "b962cea8-ab42-11f0-a0ad-1bd216770b60",
+        UserToken:     adminToken,
+    }
+    resp, err := c.PutPartition(pt)
+    log.Info("created partition: ", resp)
+    assert.NoError(t, err)
+	userAccessToken := creatUser(t)
+    _, err = c.GetPartition(cpLib.GetReq{ID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1", UserToken: userAccessToken})
+    assert.NoError(t, err)
+}
+
+func TestUserPutAndGetDevice(t *testing.T) {
+    c := newClient(t)
+    adminToken := getAdminToken(t)
+
+    mockDevices := []cpLib.Device{
+        {
+            ID:            "6qp847cd0-ab3e-11f0-aa15-1f40dd976538",
+            SerialNumber:  "SN123456789",
+            State:         1,
+            HypervisorID:  "hv-01",
+            FailureDomain: "fd-01",
+            DevicePath:    "/temp/path1",
+            Name:          "dev-1",
+            UserToken:     adminToken,
+        },
+        {
+            ID:            "6bd604a6-ab3e-11f0-805a-3f086c1f2d21",
+            SerialNumber:  "SN987654321",
+            State:         0,
+            HypervisorID:  "hv-02",
+            FailureDomain: "fd-01",
+            DevicePath:    "/temp/path2",
+            Name:          "dev-2",
+            Size:          12345689,
+            Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+                PartitionID:   "b97c34qwe-9775558a141a",
+                PartitionPath: "/part/path1",
+                NISDUUID:      "1",
+                DevID:         "60447cdsad0-ab3e-1342340dd976538",
+                Size:          123467,
+            }, cpLib.DevicePartition{
+                PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
+                PartitionPath: "/part/path2",
+                NISDUUID:      "1",
+                DevID:         "60447csdd0-ab3e-11f0-aa15-1f402342538",
+                Size:          123467,
+            },
+            },
+            UserToken: adminToken,
+        },
+        {
+            ID:            "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+            SerialNumber:  "SN112233445",
+            State:         2,
+            HypervisorID:  "hv-01",
+            FailureDomain: "fd-02",
+            DevicePath:    "/temp/path3",
+            Name:          "dev-3",
+            Size:          9999999,
+            Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
+                PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+                PartitionPath: "/part/path3",
+                NISDUUID:      "1",
+                DevID:         "60447cd0-ab3e-11f0-aa15-1f40dd976538",
+                Size:          123467,
+            },
+            },
+            UserToken: adminToken,
+        },
+    }
+
+    for _, p := range mockDevices {
+        resp, err := c.PutDevice(&p)
+        assert.NoError(t, err)
+        assert.True(t, resp.Success)
+    }	
+	userAccessToken := creatUser(t)
+    _, err := c.GetDevices(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538", UserToken: userAccessToken})
+    assert.NoError(t, err)
+
+    _, err = c.GetDevices(cpLib.GetReq{GetAll: true, UserToken: userAccessToken})
+    assert.NoError(t, err)
+
+}
+
