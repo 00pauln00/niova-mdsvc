@@ -36,6 +36,7 @@ ReadAllNisdConfigs:
 ReadNisdConfig:
   RBAC:
     - admin
+    - user
 RdDeviceInfo:
   RBAC:
     - admin
