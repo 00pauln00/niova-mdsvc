@@ -1145,6 +1145,7 @@ func TestVdevAuthorizationWithMultipleUsersAndVdevs(t *testing.T) {
     ctlClient := newClient(t)
     authClient, tearDown := newUserClient(t)
     defer tearDown()
+	adminToken := getAdminToken(t)
 
     // ----------------------------
     // Step 1: Create Multiple NISDs
@@ -1163,27 +1164,12 @@ func TestVdevAuthorizationWithMultipleUsersAndVdevs(t *testing.T) {
             },
             TotalSize:     100_000_000_000,
             AvailableSize: 100_000_000_000,
+			UserToken:     adminToken,
         }
 
         _, err := ctlClient.PutNisd(&nisd)
         assert.NoError(t, err, "failed to create NISD %d", i)
     }
-
-    // ----------------------------
-    // Step 2: Create Admin
-    // ----------------------------
-    adminReq := &userlib.UserReq{
-        Username:     userlib.AdminUsername,
-        NewSecretKey: "admin-secret-" + uuid.New().String()[:6],
-    }
-
-    adminResp, err := authClient.CreateAdminUser(adminReq)
-    assert.NoError(t, err)
-    assert.True(t, adminResp.Success)
-
-    adminLogin, err := authClient.Login(userlib.AdminUsername, adminResp.SecretKey)
-    assert.NoError(t, err)
-    assert.True(t, adminLogin.Success)
 
     // ----------------------------
     // Step 3: Create Multiple Users
@@ -1200,6 +1186,7 @@ func TestVdevAuthorizationWithMultipleUsersAndVdevs(t *testing.T) {
 
         userResp, err := authClient.CreateUser(&userlib.UserReq{
             Username: username,
+			UserToken: adminToken,
         })
         assert.NoError(t, err)
         assert.True(t, userResp.Success)
@@ -1402,7 +1389,7 @@ func TestUserPutAndGetNisdArgs(t *testing.T) {
 
 func TestNonAdminUserPutNisdArgs(t *testing.T) {
     c := newClient(t)
-    _ := getAdminToken(t)
+    _= getAdminToken(t)
 	userAccessToken := creatUser(t)
     na := &cpLib.NisdArgs{
         Defrag:               true,
