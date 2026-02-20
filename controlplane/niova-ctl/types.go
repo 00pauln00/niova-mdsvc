@@ -364,7 +364,7 @@ func (c *Config) GetHypervisorFailureDomain(hvUUID string) string {
 
 // AllocatePortPair allocates a client and server port pair from the given range,
 // avoiding already allocated ports by querying existing NISDs from the control plane
-func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpClient interface{}) (int, int, error) {
+func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, userToken string, cpClient interface{}) (int, int, error) {
 	startPort, endPort, err := ParsePortRange(portRange)
 	if err != nil {
 		return 0, 0, err
@@ -381,7 +381,7 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 			GetNisds(ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
 		}); ok {
 			// Get all NISDs and filter by hypervisor UUID locally
-			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true})
+			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true,})
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {
