@@ -54,9 +54,6 @@ var encodingOverhead = 256
 
 var RecvdPort int
 
-// Use the default column family
-var colmfamily = "PMDBTS_CF"
-
 type pmdbServerHandler struct {
 	raftUUID          uuid.UUID
 	peerUUID          uuid.UUID
@@ -87,7 +84,7 @@ func PopulateHierarchy() error {
 	for {
 		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
 		readResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
-			Selector: colmfamily,
+			Selector: cpLib.PmdbColumnFamily,
 			Key:      key,
 			Prefix:   prefix,
 			BufSize:  cpLib.MAX_REPLY_SIZE,
@@ -168,7 +165,7 @@ func main() {
 	go serverHandler.lookoutInstance.Start()
 
 	//Wait till HTTP Server has started
-	srvctlplanefuncs.SetClmFamily(colmfamily)
+	srvctlplanefuncs.SetClmFamily(cpLib.PmdbColumnFamily)
 	cpAPI := PumiceDBFunc.NewFuncServer()
 
 	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
@@ -219,7 +216,7 @@ func main() {
 	// Initalise leaseObj
 	nso.leaseObj.InitLeaseObject(nso.pso)
 	// Separate column families for application requests and lease
-	nso.pso.ColumnFamilies = []string{colmfamily, nso.leaseObj.LeaseColmFam}
+	nso.pso.ColumnFamilies = []string{cpLib.PmdbColumnFamily, nso.leaseObj.LeaseColmFam}
 
 	// Start the pmdb server
 	//TODO Check error
@@ -566,7 +563,7 @@ func (nso *NiovaKVServer) Apply(applyArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	byteToStr := string(applyNiovaKV.Value)
 
 	log.Trace("Write the KeyValue by calling PmdbWriteKV")
-	err := applyArgs.Store.Write(applyNiovaKV.Key, byteToStr, colmfamily)
+	err := applyArgs.Store.Write(applyNiovaKV.Key, byteToStr, cpLib.PmdbColumnFamily)
 	if err != nil {
 		log.Error("Value not written to rocksdb")
 		return -1
@@ -606,7 +603,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if reqStruct.Operation == requestResponseLib.KV_READ {
 
 		log.Trace("read - ", reqStruct.SeqNum)
-		readResult, err := readArgs.Store.Read(reqStruct.Key, colmfamily)
+		readResult, err := readArgs.Store.Read(reqStruct.Key, cpLib.PmdbColumnFamily)
 		singleReadMap := make(map[string][]byte)
 		singleReadMap[reqStruct.Key] = readResult
 		resultResponse = requestResponseLib.KVResponse{
@@ -619,7 +616,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
 		readResult, err := readArgs.Store.RangeRead(storageiface.RangeReadArgs{
-			Selector:   colmfamily,
+			Selector:   cpLib.PmdbColumnFamily,
 			Key:        reqStruct.Key,
 			BufSize:    readArgs.ReplySize - int64(encodingOverhead),
 			Prefix:     reqStruct.Prefix,

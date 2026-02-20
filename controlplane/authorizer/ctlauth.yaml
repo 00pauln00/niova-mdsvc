@@ -57,7 +57,7 @@ ReadVdevsInfoWithChunkMapping:
     - admin
   ABAC:
     - argument: vdev
-      prefix: "vdev/"
+      prefix: "v/"
 ReadVdevInfo:
   RBAC:
     - user
@@ -74,7 +74,21 @@ ReadChunkNisd:
     - admin
   ABAC:
     - argument: vdev
-      prefix: "vdev/"
+      prefix: "v/"
 RdNisdArgs:
   RBAC:
     - admin
+PutUser:
+  RBAC:
+    - admin
+GetUser:
+  RBAC:
+    - admin
+    - user
+CreateAdminUser:
+  RBAC:
+    - admin
+Login:
+  RBAC:
+    - admin
+    - user

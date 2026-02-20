@@ -12,14 +12,13 @@ import (
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	pumiceFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	"github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 )
-
-var columnFamily string = "PMDBTS_CF"
 
 // Default admin secret key - used for initial admin user creation
 // This should be changed after first login via update request
@@ -47,7 +46,7 @@ func checkUserExistsByID(userID string, callbackArgs *pumiceserver.PmdbCbArgs) (
 
 	prefixKey := fmt.Sprintf("%s/%s", userKeyPrefix, userID)
 	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector:   columnFamily,
+		Selector:   cpLib.PmdbColumnFamily,
 		Key:        prefixKey,
 		Prefix:     prefixKey,
 		BufSize:    callbackArgs.ReplySize,
@@ -77,7 +76,7 @@ func getUserIDByUsername(username string, callbackArgs *pumiceserver.PmdbCbArgs)
 
 	indexKey := fmt.Sprintf("%s/%s/%s", userIndexPrefix, usernameIdxPrefix, username)
 	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector:   columnFamily,
+		Selector:   cpLib.PmdbColumnFamily,
 		Key:        indexKey,
 		Prefix:     indexKey,
 		BufSize:    callbackArgs.ReplySize,
@@ -191,6 +190,7 @@ func handleUpdateUser(req *userlib.UserReq, existing *userlib.User) (string, err
 // For create operations, it generates a new UUID and secret key.
 // For update operations, it updates username/capabilities but keeps the existing secret key.
 // UserID (UUID) is always generated server-side for create operations.
+// Only admin users can create new users.
 func PutUser(args ...interface{}) (interface{}, error) {
 	req := args[0].(userlib.UserReq)
 	callbackArgs := args[1].(*pumiceserver.PmdbCbArgs)
@@ -199,6 +199,31 @@ func PutUser(args ...interface{}) (interface{}, error) {
 	var isCreate bool
 	var oldUsername string // Track old username for index deletion on update
 	user := &userlib.User{}
+
+	tokenClaims, err := srvctlplanefuncs.ValidateToken(req.UserToken)
+	if err != nil {
+		return returnError(err.Error())
+	}
+	callerUserID := tokenClaims.UserID
+	callerRole := tokenClaims.Role
+	callerIsAdmin := tokenClaims.IsAdmin
+	log.Infof("PutUser called by user %s with role %s", callerUserID, callerRole)
+	// Check authorization
+	authz := srvctlplanefuncs.GetAuthorizer()
+	if authz != nil {
+		if !authz.CheckRBAC(userlib.PutUserAPI, []string{callerRole}) {
+			log.Errorf("User %s with role %s not authorized for PutUser", callerUserID, callerRole)
+			return returnError("authorization failed: insufficient permissions")
+		}
+	}
+	if !req.IsUpdate {
+		// Only admins can create new users
+		if !callerIsAdmin || callerRole != userlib.AdminUserRole {
+			log.Errorf("User %s with role %s attempted to create a user - permission denied", callerUserID, callerRole)
+			return returnError("permission denied: only admin users can create new users")
+		}
+		log.Infof("Admin user %s authorized for user creation", callerUserID)
+	}
 
 	if req.IsUpdate {
 		// UPDATE operation
@@ -218,6 +243,15 @@ func PutUser(args ...interface{}) (interface{}, error) {
 			log.Error("Cannot update: user not found: ", req.UserID)
 			return returnError(fmt.Sprintf("user not found: %s", req.UserID))
 		}
+
+		// Users can only update their own record, unless they are admin
+		if !callerIsAdmin && callerUserID != req.UserID {
+			log.Errorf("User %s attempted to update user %s - permission denied", callerUserID, req.UserID)
+			return returnError("permission denied: you can only update your own record")
+		}
+
+		// These fields should remain as they are in the existing record
+		req.IsAdmin = existing.IsAdmin
 
 		// Check if username is being changed
 		if req.Username != "" && req.Username != existing.Username {
@@ -321,22 +355,43 @@ func PutUser(args ...interface{}) (interface{}, error) {
 
 // GetUser retrieves user authentication information from RocksDB.
 // It supports querying by UserID (UUID string), Username, or getting all users.
+// Users can only view their own information unless they are admin.
 func GetUser(args ...interface{}) (interface{}, error) {
 	callbackArgs := args[0].(*pumiceserver.PmdbCbArgs)
 	req := args[1].(userlib.GetReq)
 
+	tokenClaims, err := srvctlplanefuncs.ValidateToken(req.UserToken)
+	if err != nil {
+		return returnGetUserError(err.Error())
+	}
+	callerUserID := tokenClaims.UserID
+	callerRole := tokenClaims.Role
+	callerIsAdmin := tokenClaims.IsAdmin
+	log.Infof("GetUser called by user %s with role %s", callerUserID, callerRole)
+
+	// Check authorization
+	authz := srvctlplanefuncs.GetAuthorizer()
+	if authz != nil {
+		if !authz.CheckRBAC(userlib.GetUserAPI, []string{callerRole}) {
+			log.Errorf("User %s with role %s not authorized for GetUser", callerUserID, callerRole)
+			return returnGetUserError("authorization failed: insufficient permissions")
+		}
+	}
+
 	// Build the key for range read
 	prefixKey := userKeyPrefix
+	var targetUserID string
 
 	// UserID takes precedence over Username
 	if req.UserID != "" {
 		// Query specific user by ID
+		targetUserID = req.UserID
 		prefixKey = fmt.Sprintf("%s/%s", userKeyPrefix, req.UserID)
 	} else if req.Username != "" {
 		userID, err := getUserIDByUsername(req.Username, callbackArgs)
 		if err != nil {
 			log.Errorf("Failed to lookup user by username: %v", err)
-			return returnError(fmt.Sprintf("failed to lookup user by username: %v", err))
+			return returnGetUserError(fmt.Sprintf("failed to lookup user by username: %v", err))
 		}
 		if userID == "" {
 			// Username not found - return empty result
@@ -344,16 +399,30 @@ func GetUser(args ...interface{}) (interface{}, error) {
 			encodedUsers, err := pmCommon.Encoder(pmCommon.GOB, []userlib.UserResp{})
 			if err != nil {
 				log.Error("Failed to encode empty response: ", err)
-				return returnError(fmt.Sprintf("failed to encode response: %v", err))
+				return returnGetUserError(fmt.Sprintf("failed to encode response: %v", err))
 			}
 			return encodedUsers, nil
 		}
 		// Use the resolved UserID for lookup
+		targetUserID = userID
 		prefixKey = fmt.Sprintf("%s/%s", userKeyPrefix, userID)
 	}
 
+	// Regular users can only view their own information
+	// Admins can view any user information (including listing all users)
+	if !callerIsAdmin && targetUserID != "" && targetUserID != callerUserID {
+		log.Errorf("User %s attempted to view user %s - permission denied", callerUserID, targetUserID)
+		return returnGetUserError("authorization failed: you can only view your own information")
+	}
+
+	// If querying all users (no specific ID/username), only admin is allowed
+	if !callerIsAdmin && req.UserID == "" && req.Username == "" {
+		log.Errorf("Non-admin user %s attempted to list all users - permission denied", callerUserID)
+		return returnGetUserError("authorization failed: only admins can list all users")
+	}
+
 	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector:   columnFamily,
+		Selector:   cpLib.PmdbColumnFamily,
 		Key:        prefixKey,
 		Prefix:     prefixKey,
 		BufSize:    callbackArgs.ReplySize,
@@ -369,7 +438,7 @@ func GetUser(args ...interface{}) (interface{}, error) {
 			users = []userlib.User{}
 		} else {
 			log.Error("Range read failure: ", err.Error())
-			return returnError(fmt.Sprintf("range read failure: %v", err))
+			return returnGetUserError(fmt.Sprintf("range read failure: %v", err))
 		}
 	} else {
 		// Deserialize entities
@@ -405,7 +474,7 @@ func GetUser(args ...interface{}) (interface{}, error) {
 	encodedUsers, err := pmCommon.Encoder(pmCommon.GOB, userResps)
 	if err != nil {
 		log.Error("Failed to encode user auth info: ", err)
-		return returnError(fmt.Sprintf("failed to encode user auth info: %v", err))
+		return returnGetUserError(fmt.Sprintf("failed to encode user auth info: %v", err))
 	}
 
 	return encodedUsers, nil
@@ -420,10 +489,10 @@ func applyCommitChanges(changes []pumiceFunc.CommitChg, cbArgs *pumiceserver.Pmd
 		switch chg.Op {
 		case pumiceFunc.OpApply:
 			log.Debugf("Applying change: %s", string(chg.Key))
-			err = cbArgs.Store.Write(string(chg.Key), string(chg.Value), columnFamily)
+			err = cbArgs.Store.Write(string(chg.Key), string(chg.Value), cpLib.PmdbColumnFamily)
 		case pumiceFunc.OpDelete:
 			log.Debugf("Deleting key: %s", string(chg.Key))
-			err = cbArgs.Store.Delete(string(chg.Key), columnFamily)
+			err = cbArgs.Store.Delete(string(chg.Key), cpLib.PmdbColumnFamily)
 		default:
 			log.Error("Unknown operation type: ", chg.Op, " for key: ", string(chg.Key))
 			return fmt.Errorf("unknown operation type %d for key %s", chg.Op, string(chg.Key))
@@ -676,4 +745,18 @@ func returnError(errMsg string) (interface{}, error) {
 	}
 
 	return encodedIntermediate, nil
+}
+
+// returnGetUserError returns an encoded error response for GetUser (Read function)
+func returnGetUserError(errMsg string) (interface{}, error) {
+	errorResponse := []userlib.UserResp{{
+		Error:   errMsg,
+		Success: false,
+	}}
+	encodedResponse, err := pmCommon.Encoder(pmCommon.GOB, errorResponse)
+	if err != nil {
+		log.Error("Failed to encode error response: ", err)
+		return nil, err
+	}
+	return encodedResponse, nil
 }

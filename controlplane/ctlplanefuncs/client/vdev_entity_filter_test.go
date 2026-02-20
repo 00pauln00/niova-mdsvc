@@ -13,6 +13,7 @@ import (
 
 func TestCreateLargeHierarchyForEntityFilters(t *testing.T) {
 	c := newClient(t)
+	adminToken := getAdminToken(t)
 
 	pdus := []string{
 		"9bc244bc-df29-11f0-a93b-277aec17e401",
@@ -145,6 +146,7 @@ func TestCreateLargeHierarchyForEntityFilters(t *testing.T) {
 							},
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
+							UserToken:     adminToken,
 						}
 
 						mockNisd = append(mockNisd, nisd)
@@ -156,8 +158,9 @@ func TestCreateLargeHierarchyForEntityFilters(t *testing.T) {
 	}
 	for _, n := range mockNisd {
 		resp, err := c.PutNisd(&n)
-		assert.NoError(t, err)
-		assert.True(t, resp.Success)
+		if assert.NoError(t, err) {
+			assert.True(t, resp.Success)
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -342,10 +345,11 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 
 			log.Infof("CreateVdev response: resp=%+v err=%v", resp, err)
 
-			assert.False(t, resp.Success)
-
-			assert.NotEmpty(t, resp.ID)
-			assert.NotEmpty(t, resp.Error)
+			if assert.NotNil(t, resp, "server should return a response even for invalid filters") {
+				assert.False(t, resp.Success)
+				assert.NotEmpty(t, resp.ID)
+				assert.NotEmpty(t, resp.Error)
+			}
 
 			log.Infof("[TEST END] %s", tc.name)
 		})
