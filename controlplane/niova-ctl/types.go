@@ -376,6 +376,7 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 	// Query existing NISDs from control plane to get allocated ports
 	if cpClient != nil {
 		// Type assert to get the actual client interface
+
 		if client, ok := cpClient.(interface {
 			GetNisds(ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
 		}); ok {
@@ -384,7 +385,7 @@ func (c *Config) AllocatePortPair(hypervisorUUID string, portRange string, cpCli
 			if err == nil {
 				// Process the NISDs to extract allocated ports for this hypervisor
 				for _, nisd := range nisds {
-					if nisd.FailureDomain[ctlplfl.FD_HV] == hypervisorUUID {
+					if nisd.FailureDomain[ctlplfl.HV_IDX] == hypervisorUUID {
 						// Mark the server port as allocated (NISD uses this)
 						allocatedPorts[int(nisd.PeerPort)] = true
 						// TODO maintain per - ip map and mark the ports in that map
