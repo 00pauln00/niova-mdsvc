@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -641,8 +642,10 @@ func (c *Config) CreateMultipleEqualPartitions(hvUUID, deviceName string, numPar
 		//}
 	}
 
-	// Wait for partitions to be recognized by kernel
-	time.Sleep(3 * time.Second)
+	// Inform kernel of partition table changes and wait for device nodes
+	sshClient.RunCommand(fmt.Sprintf("partprobe %s", devicePath))
+	sshClient.RunCommand("udevadm settle")
+	time.Sleep(2 * time.Second)
 
 	return nil
 }
@@ -662,8 +665,7 @@ func (c *Config) GetDevicePartitionNames(hvUUID, deviceName string) ([]string, e
 	defer sshClient.Close()
 
 	// Use lsblk to get partition names for the specific device
-	// The command gets all partitions for the device, sorted by partition number
-	cmd := fmt.Sprintf("lsblk -ln -o NAME /dev/%s | grep -E '^%s' | tail -n +2 | sort", deviceName, deviceName)
+	cmd := fmt.Sprintf("lsblk -ln -o NAME /dev/%s", deviceName)
 	output, err := sshClient.RunCommand(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get partition names for device %s: %v", deviceName, err)
@@ -680,6 +682,7 @@ func (c *Config) GetDevicePartitionNames(hvUUID, deviceName string) ([]string, e
 		}
 	}
 
+	sort.Strings(partitionNames)
 	return partitionNames, nil
 }
 
@@ -715,7 +718,7 @@ func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePart
 	}
 
 	// Get partition information using lsblk
-	cmd := fmt.Sprintf("lsblk -ln -b -o NAME,SIZE /dev/%s | grep -E '^%s' | tail -n +2 | sort", deviceName, deviceName)
+	cmd := fmt.Sprintf("lsblk -ln -b -o NAME,SIZE /dev/%s", deviceName)
 	output, err := sshClient.RunCommand(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get partition info for device %s: %v", deviceName, err)
@@ -770,6 +773,9 @@ func (c *Config) GetDevicePartitionInfo(hvUUID, deviceName string) ([]DevicePart
 		}
 	}
 
+	sort.Slice(partitionInfos, func(i, j int) bool {
+		return partitionInfos[i].Name < partitionInfos[j].Name
+	})
 	return partitionInfos, nil
 }
 
