@@ -178,7 +178,6 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 
 func TestPutAndGetMultiplePDUs(t *testing.T) {
 	c := newClient(t)
-	adminToken := getAdminToken(t)
 
 	pdus := []cpLib.PDU{
 		{ID: "95f62aee-997e-11f0-9f1b-a70cff4b660b",
@@ -531,6 +530,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 
 func TestPutAndGetSingleNisd(t *testing.T) {
    c := newClient(t)
+   adminToken := getAdminToken(t)
 
    nisd := cpLib.Nisd{
            PeerPort:      8001,
@@ -563,9 +563,13 @@ func TestPutAndGetSingleNisd(t *testing.T) {
    assert.True(t, resp.Success)
 
    // GET operation
-   res, err := c.GetNisds()
-   log.Info("GetNisd: ", res)
+   req := cpLib.GetReq{
+		GetAll:    true,
+		UserToken: adminToken,
+	}
+   res, err := c.GetNisds(req)
    assert.NoError(t, err)
+   log.Info("GetNisd: ", res)
    assert.NotEmpty(t, res)
   
    returned := res[0]
@@ -644,7 +648,11 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
     }
 
 	// GET all NISDs
-	res, err := c.GetNisds()
+	req := cpLib.GetReq{
+		GetAll:    true,
+		UserToken: adminToken,
+	}
+    res, err := c.GetNisds(req)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -1099,7 +1107,11 @@ func TestHierarchy(t *testing.T) {
 	// -------------------------------
 
 	// GET all NISDs
-	res, err := c.GetNisds()
+	req := cpLib.GetReq{
+		GetAll:    true,
+		UserToken: adminToken,
+	}
+	res, err := c.GetNisds(req)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
@@ -1174,7 +1186,11 @@ func TestHierarchy(t *testing.T) {
 
 	// Verify some space still remains (cannot hit 100%)
 	// GET all NISDs
-	nisdsAfter, err := c.GetNisds()
+	request := cpLib.GetReq{
+		GetAll:    true,
+		UserToken: adminToken,
+	}
+	nisdsAfter, err := c.GetNisds(request)
 
 	// Store results in the map
 	for _, n := range nisdsAfter {
