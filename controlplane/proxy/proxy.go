@@ -524,7 +524,8 @@ func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response
 		res, err = DecodeRequest(encType, name, body)
 		if err != nil {
 			log.Error("RHCB:failed to decode request: ", err)
-			return err
+			// Encode error into HTTP 200 body; httpclient silently drops non-200 responses.
+			return EncodeErrorResponse(encType, name, response, err)
 		}
 	}
 
@@ -538,12 +539,12 @@ func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response
 	err = handler.pmdbClientObj.Get(reqArgs)
 	if err != nil {
 		log.Error("Error in GetEncoded and Response: ", err)
-		return err
+		return EncodeErrorResponse(encType, name, response, err)
 	}
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
 		log.Error("RHCB:failed to encode response: ", err)
-		return err
+		return EncodeErrorResponse(encType, name, response, err)
 	}
 	return nil
 }
@@ -562,7 +563,8 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 	res, err := DecodeRequest(encType, name, body)
 	if err != nil {
 		log.Error("WHCB:failed to decode request: ", err)
-		return err
+		// Encode error into HTTP 200 body; httpclient silently drops non-200 responses.
+		return EncodeErrorResponse(encType, name, response, err)
 	}
 	r := &funclib.FuncReq{Name: name, Args: res}
 	reqArgs := &pmdbClient.PmdbReq{
@@ -576,18 +578,12 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 	err = handler.pmdbClientObj.Put(reqArgs)
 	if err != nil {
 		log.Error("Error in WriteEncoded and Response: ", err)
-		// Encode the error into the expected response type so the client
-		// can decode it and display the actual error message.
-		errBytes := EncodeErrorResponse(name, err.Error())
-		if errBytes == nil {
-			return err
-		}
-		*response = errBytes
+		return EncodeErrorResponse(encType, name, response, err)
 	}
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
 		log.Error("WHCB:failed to encode response: ", err)
-		return err
+		return EncodeErrorResponse(encType, name, response, err)
 	}
 	return nil
 }

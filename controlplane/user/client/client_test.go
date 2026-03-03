@@ -272,10 +272,9 @@ func TestUpdateUserNotFound(t *testing.T) {
 		UserToken: adminToken,
 	}
 
-	resp, err := c.UpdateUser(updateUser)
+	_, err := c.UpdateUser(updateUser)
 
-	failed := err != nil || (resp != nil && !resp.Success)
-	assert.True(t, failed, "expected update of non-existent user to fail")
+	assert.Error(t, err, "expected update of non-existent user to fail")
 
 	t.Logf("UpdateUser correctly failed for non-existent user %s", nonExistentID)
 }
@@ -425,10 +424,9 @@ func TestUpdateSecretKeyNonAdminFails(t *testing.T) {
 	assert.True(t, createResp.Success)
 
 	// Try to update secret key for non-admin user - should fail
-	updateResp, err := c.UpdateAdminSecretKey(createResp.UserID, "new-secret", adminToken)
+	_, err = c.UpdateAdminSecretKey(createResp.UserID, "new-secret", adminToken)
 
-	failed := err != nil || (updateResp != nil && !updateResp.Success)
-	assert.True(t, failed, "expected secret key update to fail for non-admin user")
+	assert.Error(t, err, "expected secret key update to fail for non-admin user")
 
 	t.Logf("UpdateAdminSecretKey correctly rejected non-admin user")
 }
@@ -511,14 +509,10 @@ func TestUpdateUserUsernameAlreadyTaken(t *testing.T) {
 		UserToken: adminToken,
 	}
 
-	updateResp, err := c.UpdateUser(updateUser)
+	_, err = c.UpdateUser(updateUser)
 
-	failed := err != nil || (updateResp != nil && !updateResp.Success)
-	assert.True(t, failed, "expected update to fail when username is already taken")
-
-	if updateResp != nil && updateResp.Error != "" {
-		assert.Contains(t, updateResp.Error, "already exists", "error should indicate username already exists")
-	}
+	assert.Error(t, err, "expected update to fail when username is already taken")
+	assert.Contains(t, err.Error(), "already exists", "error should indicate username already exists")
 
 	getResp, err := c.GetUser(createResp1.UserID, adminToken)
 	assert.NoError(t, err)

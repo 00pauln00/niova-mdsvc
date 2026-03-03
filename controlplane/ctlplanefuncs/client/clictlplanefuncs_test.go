@@ -1158,15 +1158,6 @@ func createRegularUserAndLogin(t *testing.T, authClient *userClient.Client, admi
 	return loginResp.AccessToken
 }
 
-// writeRejected asserts that a write operation was denied: either the call
-// returned an error, or the server response carries Success=false.
-func writeRejected(t *testing.T, resp *cpLib.ResponseXML, err error, msg string) {
-	t.Helper()
-	rejected := err != nil || (resp != nil && !resp.Success)
-	assert.True(t, rejected, msg)
-	// assert.Error(t, err, msg)
-}
-
 // TestNisdAuthorizationWithUsers verifies that only admin users can register or list nisds
 func TestNisdAuthorizationWithUsers(t *testing.T) {
 	ctlClient := newClient(t)
@@ -1203,12 +1194,12 @@ func TestNisdAuthorizationWithUsers(t *testing.T) {
 
 	// Step 3: No token write rejected
 	resp, err := ctlClient.PutNisd(makeNisd(""))
-	writeRejected(t, resp, err, "PutNisd without token must be rejected")
+	assert.Error(t, err, "PutNisd without token must be rejected")
 	t.Log("No-token write correctly rejected")
 
 	// Step 4: Regular user write rejected (admin-only RBAC)
 	resp, err = ctlClient.PutNisd(makeNisd(userToken))
-	writeRejected(t, resp, err, "PutNisd by regular user must be rejected (admin-only RBAC)")
+	assert.Error(t, err, "PutNisd by regular user must be rejected (admin-only RBAC)")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 5: Admin write accepted
@@ -1263,12 +1254,12 @@ func TestPDUAuthorizationWithUsers(t *testing.T) {
 	}
 	// Step 3: No token write rejected
 	resp, err := ctlClient.PutPDU(makePDU(""))
-	writeRejected(t, resp, err, "PutPDU without token must be rejected")
+	assert.Error(t, err, "PutPDU without token must be rejected")
 	t.Log("No-token write correctly rejected")
 
 	// Step 4: Regular user write rejected
 	resp, err = ctlClient.PutPDU(makePDU(userToken))
-	writeRejected(t, resp, err, "PutPDU by regular user must be rejected")
+	assert.Error(t, err, "PutPDU by regular user must be rejected")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 5: Admin write accepted
@@ -1345,12 +1336,12 @@ func TestRackAuthorizationWithUsers(t *testing.T) {
 
 	// Step 4: No token write rejected
 	resp, err := ctlClient.PutRack(makeRack(""))
-	writeRejected(t, resp, err, "PutRack without token must be rejected")
+	assert.Error(t, err, "PutRack without token must be rejected")
 	t.Log("No-token write correctly rejected")
 
 	// Step 5: Regular user write rejected (admin-only RBAC)
 	resp, err = ctlClient.PutRack(makeRack(userToken))
-	writeRejected(t, resp, err, "PutRack by regular user must be rejected (admin-only RBAC)")
+	assert.Error(t, err, "PutRack by regular user must be rejected (admin-only RBAC)")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 6: Admin write accepted
@@ -1440,12 +1431,12 @@ func TestHypervisorAuthorizationWithUsers(t *testing.T) {
 
 	// Step 4: No token write rejected
 	resp, err := ctlClient.PutHypervisor(makeHV(""))
-	writeRejected(t, resp, err, "PutHypervisor without token must be rejected")
+	assert.Error(t, err, "PutHypervisor without token must be rejected")
 	t.Log("No-token write correctly rejected")
 
 	// Step 5: Regular user write rejected (admin-only RBAC)
 	resp, err = ctlClient.PutHypervisor(makeHV(userToken))
-	writeRejected(t, resp, err, "PutHypervisor by regular user must be rejected (admin-only RBAC)")
+	assert.Error(t, err, "PutHypervisor by regular user must be rejected (admin-only RBAC)")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 6: Admin write accepted
@@ -1553,25 +1544,25 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 	t.Log("Verifying regular user is blocked at all levels...")
 
 	// PDU
-	badPDUResp, err := ctlClient.PutPDU(&cpLib.PDU{ID: uuid.NewString(), Name: "user-pdu", UserToken: userToken})
-	writeRejected(t, badPDUResp, err, "regular user must NOT create a PDU")
+	_, err = ctlClient.PutPDU(&cpLib.PDU{ID: uuid.NewString(), Name: "user-pdu", UserToken: userToken})
+	assert.Error(t, err, "regular user must NOT create a PDU")
 	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true, UserToken: userToken})
 	assert.Error(t, err, "regular user must NOT list PDUs")
 
 	// Rack
-	badRackResp, err := ctlClient.PutRack(&cpLib.Rack{ID: uuid.NewString(), PDUID: pduID, Name: "user-rack", UserToken: userToken})
-	writeRejected(t, badRackResp, err, "regular user must NOT create a Rack")
+	_, err = ctlClient.PutRack(&cpLib.Rack{ID: uuid.NewString(), PDUID: pduID, Name: "user-rack", UserToken: userToken})
+	assert.Error(t, err, "regular user must NOT create a Rack")
 	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true, UserToken: userToken})
 	assert.Error(t, err, "regular user must NOT list Racks")
 
 	// Hypervisor
-	badHVResp, err := ctlClient.PutHypervisor(&cpLib.Hypervisor{ID: uuid.NewString(), RackID: rackID, Name: "user-hv", UserToken: userToken})
-	writeRejected(t, badHVResp, err, "regular user must NOT create a Hypervisor")
+	_, err = ctlClient.PutHypervisor(&cpLib.Hypervisor{ID: uuid.NewString(), RackID: rackID, Name: "user-hv", UserToken: userToken})
+	assert.Error(t, err, "regular user must NOT create a Hypervisor")
 	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true, UserToken: userToken})
 	assert.Error(t, err, "regular user must NOT list Hypervisors")
 
 	// NISD
-	badNISDResp, err := ctlClient.PutNisd(&cpLib.Nisd{
+	_, err = ctlClient.PutNisd(&cpLib.Nisd{
 		PeerPort:      9999,
 		ID:            uuid.NewString(),
 		FailureDomain: []string{pduID, rackID, hvID, "nvme-user-attempt"},
@@ -1581,7 +1572,7 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 		NetInfoCnt:    1,
 		UserToken:     userToken,
 	})
-	writeRejected(t, badNISDResp, err, "regular user must NOT register a NISD")
+	assert.Error(t, err, "regular user must NOT register a NISD")
 	_, err = ctlClient.GetNisds(cpLib.GetReq{UserToken: userToken})
 	assert.Error(t, err, "regular user must NOT list NISDs")
 

@@ -143,6 +143,9 @@ func (c *Client) CreateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
 	if err := c.put(user, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("failed to create user: %s", resp.Error)
+	}
 	return resp, nil
 }
 
@@ -161,6 +164,9 @@ func (c *Client) UpdateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
 	resp := &userlib.UserResp{}
 	if err := c.put(user, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("%s", resp.Error)
 	}
 	return resp, nil
 }
@@ -217,6 +223,9 @@ func (c *Client) CreateAdminUser(req *userlib.UserReq) (*userlib.UserResp, error
 	if err := c.put(req, resp, userlib.AdminUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to create admin user: %w", err)
 	}
+	if resp.Error != "" && !resp.Success {
+		return nil, fmt.Errorf("failed to create admin user: %s", resp.Error)
+	}
 	return resp, nil
 }
 
@@ -239,6 +248,9 @@ func (c *Client) UpdateAdminSecretKey(userID, newSecretKey, userToken string) (*
 	resp := &userlib.UserResp{}
 	if err := c.put(req, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to update admin secret key: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("%s", resp.Error)
 	}
 	return resp, nil
 }
