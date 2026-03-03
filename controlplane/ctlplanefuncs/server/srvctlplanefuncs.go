@@ -233,9 +233,13 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 	}
 
 	// Schema: snap/{name}:{blob}
+	snapBytes, err := pmCmn.Encoder(pmCmn.GOB, Snap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode snap for store: %v", err)
+	}
 	chg := funclib.CommitChg{
 		Key:   []byte(fmt.Sprintf("snap/%s", Snap.SnapName)),
-		Value: args[0].([]byte),
+		Value: snapBytes,
 	}
 
 	commitChgs = append(commitChgs, chg)
@@ -289,6 +293,15 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
+
+	// If WritePrep encoded a FuncError marker (e.g. auth failure), propagate
+	// the real error message to the client instead of producing a silent EOF.
+	var fe funclib.FuncError
+	if decErr := pmCmn.Decoder(pmCmn.GOB, buf, &fe); decErr == nil && fe.Msg != "" {
+		log.Errorf("ApplyFunc: FuncError from WritePrep — msg=%q", fe.Msg)
+		return nil, fmt.Errorf("%s", fe.Msg)
+	}
+
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
 	if err != nil {
 		log.Error("Failed to decode the apply changes: ", err)
@@ -320,6 +333,13 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 	}
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
+
+	var fe funclib.FuncError
+	if decErr := pmCmn.Decoder(pmCmn.GOB, buf, &fe); decErr == nil && fe.Msg != "" {
+		log.Errorf("ApplyNisd: FuncError from WritePrep — msg=%q", fe.Msg)
+		return nil, fmt.Errorf("%s", fe.Msg)
+	}
+
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
 	if err != nil {
 		log.Error("Failed to decode the apply changes: ", err)
@@ -763,6 +783,11 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		return pmCmn.Encoder(pmCmn.GOB, resp)
 	}
 	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
+	var fe funclib.FuncError
+	if decErr := pmCmn.Decoder(pmCmn.GOB, fnI, &fe); decErr == nil && fe.Msg != "" {
+		log.Errorf("APCreateVdev: FuncError from WritePrep — msg=%q", fe.Msg)
+		return nil, fmt.Errorf("%s", fe.Msg)
+	}
 	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &req)
 	log.Infof("allocating vdev for ID: %s", req.Vdev.ID)

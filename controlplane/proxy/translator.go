@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 )
 
 func GetEncodingType(r *http.Request) pmLib.Format {
@@ -104,21 +106,15 @@ func DecodeRequest(enctype pmLib.Format, name string, req []byte) (any, error) {
 	return res, nil
 }
 
-// EncodeErrorResponse constructs a GOB-encoded error response matching the
-// expected response type for the given operation. Returns nil if the operation
-// does not have a known error-capable response type.
-func EncodeErrorResponse(name string, errMsg string) []byte {
-	switch name {
-	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS, cpLib.CREATE_VDEV:
-		return encode(&cpLib.ResponseXML{Success: false, Error: errMsg})
-	case userlib.PutUserAPI, userlib.AdminUserAPI:
-		return encode(&userlib.UserResp{Success: false, Error: errMsg})
-	default:
-		return nil
-	}
-}
-
 func EncodeResponse(enctype pmLib.Format, name string, resp *[]byte) error {
+	// Check if the server embedded a FuncError marker in the reply buffer
+	// (e.g. ABAC denial) so the real message isn't lost through the PMDB layer.
+	var fe funclib.FuncError
+	if decErr := pmLib.Decoder(pmLib.GOB, *resp, &fe); decErr == nil && fe.Msg != "" {
+		log.Errorf("EncodeResponse(%s): server FuncError detected — msg=%q", name, fe.Msg)
+		return fmt.Errorf("%s", fe.Msg)
+	}
+
 	res := GetRespStruct(name)
 	err := pmLib.Decoder(pmLib.GOB, *resp, res)
 	if err != nil {
@@ -131,5 +127,19 @@ func EncodeResponse(enctype pmLib.Format, name string, resp *[]byte) error {
 		log.Error("%v: failed to encode response: ", enctype, err)
 		return err
 	}
+	return nil
+}
+
+// EncodeErrorResponse encodes err as a FuncError into *resp and returns nil so
+// the HTTP server sends 200; httpclient silently drops non-200 response bodies.
+func EncodeErrorResponse(enctype pmLib.Format, name string, resp *[]byte, serverErr error) error {
+	log.Infof("EncodeErrorResponse(%s): encoding error as HTTP 200 body — err=%q", name, serverErr.Error())
+	encoded, encErr := pmLib.Encoder(enctype, &funclib.FuncError{Msg: serverErr.Error()})
+	if encErr != nil {
+		log.Errorf("EncodeErrorResponse: failed to encode FuncError for %s: %v", name, encErr)
+		*resp = []byte(serverErr.Error())
+		return nil
+	}
+	*resp = encoded
 	return nil
 }

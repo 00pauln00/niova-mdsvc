@@ -8,6 +8,7 @@ import (
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 )
 
@@ -57,6 +58,13 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
 	if err != nil {
 		log.Error("failed to send request to server: ", err)
 		return nil, err
+	}
+	// Check if the proxy encoded a FuncError marker in the HTTP 200 body
+	// instead of a real response, which happens when the server function errors.
+	var fe funclib.FuncError
+	if decErr := pmCmn.Decoder(ccf.encType, rsp, &fe); decErr == nil && fe.Msg != "" {
+		log.Errorf("request(%s): server returned error: %q", urla, fe.Msg)
+		return nil, errors.New(fe.Msg)
 	}
 	return rsp, nil
 }
@@ -242,6 +250,9 @@ func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.VdevReq) (*ctlplfl.ResponseXML, e
 	err := ccf.put(vdev, resp, ctlplfl.CREATE_VDEV)
 	if err != nil {
 		return nil, err
+	}
+	if resp.Error != "" {
+		return resp, errors.New(resp.Error)
 	}
 	return resp, nil
 }
