@@ -595,6 +595,44 @@ func (m *model) refreshCPData() {
 		hvs = []ctlplfl.Hypervisor{}
 	}
 
+	// Fetch devices and stitch into Hypervisors
+	devices, err := m.cpClient.GetDevices(ctlplfl.GetReq{GetAll: true, UserToken: token})
+	if err != nil {
+		log.Error("refreshCPData: GetDevices failed: ", err)
+		devices = []ctlplfl.Device{}
+	}
+
+	// Fetch partitions and stitch into Devices
+	partitions, err := m.cpClient.GetPartition(ctlplfl.GetReq{GetAll: true, UserToken: token})
+	if err != nil {
+		log.Error("refreshCPData: GetPartition failed: ", err)
+		partitions = []ctlplfl.DevicePartition{}
+	}
+
+	// Build device map, clear stale partition slices, stitch partitions in
+	devMap := make(map[string]*ctlplfl.Device, len(devices))
+	for i := range devices {
+		devices[i].Partitions = nil
+		devMap[devices[i].ID] = &devices[i]
+	}
+	for _, p := range partitions {
+		if d, ok := devMap[p.DevID]; ok {
+			d.Partitions = append(d.Partitions, p)
+		}
+	}
+
+	// Build hypervisor map and clear stale device slices
+	hvMap := make(map[string]*ctlplfl.Hypervisor, len(hvs))
+	for i := range hvs {
+		hvs[i].Dev = nil
+		hvMap[hvs[i].ID] = &hvs[i]
+	}
+	for _, dev := range devices {
+		if hv, ok := hvMap[dev.HypervisorID]; ok {
+			hv.Dev = append(hv.Dev, dev)
+		}
+	}
+
 	// Stitch Hypervisors into Racks
 	rackMap := make(map[string]*ctlplfl.Rack, len(racks))
 	for i := range racks {
@@ -2245,6 +2283,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				} else {
 					log.Info("Successfully synced device to control plane")
 					m.message += " and synced to control plane"
+					m.refreshCPData()
 				}
 			} else {
 				log.Error("Failed to write DeviceInfo in CP")
@@ -5200,6 +5239,7 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 
 			if len(createdPartitions) > 0 {
 				m.currentPartition = createdPartitions[0] // Set first created partition for display
+				m.refreshCPData()
 				m.state = stateShowAddedPartition
 				if len(errorMessages) > 0 {
 					m.message = fmt.Sprintf("Created %d partition keys successfully. Errors: %s", len(createdPartitions), strings.Join(errorMessages, "; "))
@@ -5298,6 +5338,7 @@ func (m model) updateWholeDevicePrompt(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
+			m.refreshCPData()
 			m.message = "Successfully created partition key for whole device"
 			m.currentPartition = partition // Set the partition for display
 			m.state = stateShowAddedPartition
@@ -9026,6 +9067,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 			} else {
 				m.message = fmt.Sprintf("Successfully initialized %d devices in control plane", deviceCount)
 			}
+			m.refreshCPData()
 
 			m.state = stateDeviceManagement
 			return m, nil
