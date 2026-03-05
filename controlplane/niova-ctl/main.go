@@ -1900,8 +1900,6 @@ func (m model) updateDeleteHypervisor(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ", "y":
 			// Delete selected hypervisor
 			if m.hvListCursor < len(allHypervisors) {
-				hvInfo := allHypervisors[m.hvListCursor]
-				hv := hvInfo.Hypervisor
 				m.message = "Hypervisor deletion is not supported via the control plane API"
 			}
 			m.state = stateHypervisorManagement
@@ -5785,8 +5783,6 @@ func (m model) updateDeleteRack(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ", "y":
 			// Delete selected rack
 			if m.rackListCursor < len(allRacks) {
-				rackInfo := allRacks[m.rackListCursor]
-				rack := rackInfo.Rack
 				m.message = "Rack deletion is not supported via the control plane API"
 				m.state = stateRackManagement
 				return m, nil
@@ -9069,7 +9065,7 @@ func main() {
 		fmt.Println("2. Collecting hypervisor details (IP, name, port range)")
 		fmt.Println("3. Discovering storage devices via SSH")
 		fmt.Println("4. Allowing device selection and partitioning for NISD")
-		fmt.Println("5. Saving hierarchical configuration to", configFile)
+		fmt.Println("5. Discovering and partitioning devices for NISD")
 		fmt.Println("\nControl Plane Options:")
 		fmt.Println("  -cp                  Enable control plane integration")
 		fmt.Println("  -raft-uuid string    Control plane raft UUID")
