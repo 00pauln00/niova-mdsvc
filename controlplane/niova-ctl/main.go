@@ -1663,8 +1663,12 @@ func (m model) submitHypervisorForm() (model, tea.Cmd) {
 	}
 
 	selectedRackInfo := allRacks[m.selectedRackIdx]
+	hvID := m.editingUUID
+	if hvID == "" {
+		hvID = uuid.New().String()
+	}
 	hypervisor := Hypervisor{
-		ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
+		ID:        hvID,
 		Name:      name,
 		RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
 		IPAddrs:   allIPs,                   // Multiple IP addresses
@@ -5418,8 +5422,12 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
+			pduID := m.editingUUID
+			if pduID == "" {
+				pduID = uuid.New().String()
+			}
 			pdu := PDU{
-				ID:            m.editingUUID, // Will be generated if empty in AddPDU
+				ID:            pduID,
 				Name:          name,
 				Location:      location,
 				PowerCapacity: powerCapacity,
@@ -5696,8 +5704,12 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 			}
 
 			pdu := m.cpPDUs[m.selectedPDUIdx]
+			rackID := m.editingUUID
+			if rackID == "" {
+				rackID = uuid.New().String()
+			}
 			rack := Rack{
-				ID:            m.editingUUID, // Will be generated if empty in AddRack
+				ID:            rackID,
 				Name:          name,
 				PDUID:         pdu.ID,
 				Location:      location,
