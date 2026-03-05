@@ -24,20 +24,52 @@ jobs:
   
     # Install golang
     - name: Install golang 1.20.3
-      run: sudo rm -rf /usr/bin/go &&
+      run: |
+           sudo rm -rf /usr/bin/go &&
            sudo wget https://golang.org/dl/go1.23.0.linux-amd64.tar.gz &&
            sudo mkdir /home/runner/work/go &&
            sudo tar -C /home/runner/work/go -xzf  go1.23.0.linux-amd64.tar.gz &&
            export PATH=$PATH:/home/runner/work/go/go/bin &&
            go version
+           
+           echo "/home/runner/work/go/go/bin" >> $GITHUB_PATH
+           /home/runner/work/go/go/bin/go version
 
     # Install Ansible
     - name: Install Ansible
-      run:  pip3 install ansible==9.2
+      run:  pip3 install ansible==9.2 ansible-core==2.16.3
 
     # Install python libraries
     - name: Install python libraries
       run:  pip3 install setuptools wheel func_timeout sockets psutil dpath jmespath
+
+    - name: Install RocksDB tools
+      run: sudo apt-get install -y rocksdb-tools
+      shell: bash
+
+    - name: Install OpenSSH server
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openssh-server
+
+    - name: Start SSH service
+      run: |
+        sudo service ssh start
+        sleep 2
+
+    - name: Generate SSH key for runner
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa
+
+    - name: Authorize SSH key for localhost access
+      run: |
+        cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+        chmod 600 ~/.ssh/authorized_keys
+
+    - name: Disable strict host key checking
+      run: |
+        printf "Host *\n  StrictHostKeyChecking no\n" >> ~/.ssh/config
 
     - name: build libbacktrace
       run: cd modules/niova-pumicedb/modules/libbacktrace/ && 
@@ -55,11 +87,16 @@ jobs:
 
     - name: Build niova-raft
       run: cd modules/niova-pumicedb/modules/niova-raft/ &&
+           git checkout main &&
            ./prepare.sh &&
            ./configure --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-devel &&
            make clean && 
            make -j 4 && 
            make install
+
+    - name: Copy niova-raft
+      run: cd modules/niova-pumicedb/modules/niova-raft/scripts/verification &&
+           cp verify_kv_crc.sh /home/runner/work/niovad/niovad/build_dir/
 
     - name: Build niova-pumicedb
       run: cd modules/niova-pumicedb/ &&
@@ -69,6 +106,13 @@ jobs:
     
     - name: Build go applications using makefile
       run: export PATH=$PATH:/home/runner/work/go/go/bin && make -e DIR=/home/runner/work/niovad/niovad/build_dir
+
+    - name: Build controlplane client go test binary
+      run: |
+        export PATH=$PATH:/home/runner/work/go/go/bin
+        cd /home/runner/work/niova-mdsvc/niova-mdsvc/controlplane/ctlplanefuncs/client
+        go test -c -o /home/runner/work/niovad/niovad/build_dir/ctlplane_test/ctlplanefuncs_client.test
+        ls -lh /home/runner/work/niovad/niovad/build_dir/ctlplane_test/ctlplanefuncs_client.test
 
       env:
         LD_LIBRARY_PATH: /home/runner/work/niovad/niovad/build_dir/lib
@@ -82,6 +126,7 @@ jobs:
       uses: actions/checkout@v4
       with:
        repository: 00pauln00/holon
+       ref: recipe/controlplane_gotest
        path: ./holon
 
     - name: Copy holon repo
@@ -94,8 +139,16 @@ jobs:
       run: mkdir  /home/runner/work/niovad/niovad/code_cov &&
            export GOCOVERDIR=/work/niovad/niovad/code_cov
 
-    - name:  run recipes for controlplane application
+      env:
+        USER_ENCRYPTION_KEY: 81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII
+
+    - name: Copy ctlauth.yaml to build_dir.
+      run: cd /home/runner/work/niova-mdsvc/niova-mdsvc/controlplane/authorizer &&
+           cp ctlauth.yaml /home/runner/work/niovad/niovad/build_dir/holon
+
+    - name: run recipes for controlplane application
       run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
+           export USER_ENCRYPTION_KEY=81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII &&
             cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
            ../run-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon'
                              '/home/runner/work/niovad/niovad/build_dir'
