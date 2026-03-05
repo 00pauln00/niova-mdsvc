@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -125,6 +126,7 @@ const (
 
 type model struct {
 	state state
+	logFile    string
 
 	// Terminal dimensions for dynamic pagination
 	termWidth  int
@@ -377,7 +379,7 @@ func createIPInput() textinput.Model {
 	return t
 }
 
-func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
+func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) model {
 	// Initialize text inputs (expanded for all form types)
 	var inputs []textinput.Model
 	for i := 0; i < 9; i++ {
@@ -502,6 +504,7 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		vdevCountInput:        vdevCountInput,
 		vdevFormActiveField:   inputVdevCount,
 		// Control plane configuration
+		logFile:      logFile,
 		cpEnabled:    cpEnabled,
 		cpRaftUUID:   cpRaftUUID,
 		cpGossipPath: cpGossipPath,
@@ -535,10 +538,20 @@ func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 }
 
 // initUserClient initializes the user management client
-func initUserClient(raftUUID, gossipPath string) (*usercl.Client, func()) {
+func initUserClient(raftUUID, gossipPath, logFile string) (*usercl.Client, func()) {
 	if raftUUID == "" || gossipPath == "" {
 		log.Warn("Cannot initialize user client: missing raft UUID or gossip path")
 		return nil, func() {}
+	}
+
+	userLogFile := "niova-ctl-user.log"
+	if logFile != "" {
+		userLogFile = filepath.Join(filepath.Dir(logFile), userLogFile)
+	} else {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			userLogFile = filepath.Join(homeDir, userLogFile)
+		}
 	}
 
 	appUUID := uuid.New().String()
@@ -547,7 +560,7 @@ func initUserClient(raftUUID, gossipPath string) (*usercl.Client, func()) {
 		RaftUUID:         raftUUID,
 		GossipConfigPath: gossipPath,
 		LogLevel:         "Info",
-		LogFile:          "/tmp/niova-ctl-user.log",
+		LogFile:          userLogFile,
 	}
 
 	client, teardown := usercl.New(cfg)
@@ -1131,7 +1144,7 @@ func (m model) ensureUserClient() (model, error) {
 		return m, fmt.Errorf("Control plane not configured. Use -cp flag with -raft-uuid and -gossip-path.")
 	}
 	if m.userClient == nil {
-		client, teardown := initUserClient(m.cpRaftUUID, m.cpGossipPath)
+		client, teardown := initUserClient(m.cpRaftUUID, m.cpGossipPath, m.logFile)
 		if client == nil {
 			return m, fmt.Errorf("Failed to initialize user client.")
 		}
@@ -9148,7 +9161,7 @@ func main() {
 	}()
 
 	p := tea.NewProgram(
-		initialModel(*cpEnabled, *cpRaftUUID, *cpGossipPath),
+		initialModel(*cpEnabled, *cpRaftUUID, *cpGossipPath, *logFile),
 		tea.WithAltScreen(),
 	)
 
