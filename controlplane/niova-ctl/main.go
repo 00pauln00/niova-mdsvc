@@ -555,18 +555,61 @@ func initUserClient(raftUUID, gossipPath string) (*usercl.Client, func()) {
 	return client, teardown
 }
 
-// refreshCPData fetches all data from the control plane and updates the cached fields.
+// refreshCPData fetches all data from the control plane and assembles the full hierarchy.
 func (m *model) refreshCPData() {
 	if m.cpClient == nil {
 		return
 	}
 	token := m.userToken()
-	if pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: token}); err == nil {
-		m.cpPDUs = pdus
+
+	// Fetch flat lists from CP
+	pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	if err != nil {
+		log.Error("refreshCPData: GetPDUs failed: ", err)
+		pdus = []ctlplfl.PDU{}
 	}
-	if hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: token}); err == nil {
-		m.cpHypervisors = hvs
+
+	racks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	if err != nil {
+		log.Error("refreshCPData: GetRacks failed: ", err)
+		racks = []ctlplfl.Rack{}
 	}
+	m.cpRacks = racks
+
+	hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	if err != nil {
+		log.Error("refreshCPData: GetHypervisor failed: ", err)
+		hvs = []ctlplfl.Hypervisor{}
+	}
+
+	// Stitch Hypervisors into Racks
+	rackMap := make(map[string]*ctlplfl.Rack, len(racks))
+	for i := range racks {
+		racks[i].Hypervisors = nil
+		rackMap[racks[i].ID] = &racks[i]
+	}
+	var standaloneHVs []ctlplfl.Hypervisor
+	for _, hv := range hvs {
+		if r, ok := rackMap[hv.RackID]; ok {
+			r.Hypervisors = append(r.Hypervisors, hv)
+		} else {
+			standaloneHVs = append(standaloneHVs, hv)
+		}
+	}
+	m.cpHypervisors = standaloneHVs
+
+	// Stitch Racks into PDUs
+	pduMap := make(map[string]*ctlplfl.PDU, len(pdus))
+	for i := range pdus {
+		pdus[i].Racks = nil
+		pduMap[pdus[i].ID] = &pdus[i]
+	}
+	for _, rack := range racks {
+		if p, ok := pduMap[rack.PDUID]; ok {
+			p.Racks = append(p.Racks, rack)
+		}
+	}
+	m.cpPDUs = pdus
 }
 
 // findHypervisorByUUID searches cpPDUs and cpHypervisors for a hypervisor with the given UUID.
