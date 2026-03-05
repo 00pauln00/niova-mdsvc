@@ -979,6 +979,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.state = statePDUManagement
 				m.pduManagementCursor = 0
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 3: // Manage Racks
 				if m.loggedInUser == nil {
@@ -989,6 +990,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.rackManagementCursor = 0
 				m.selectedPDUIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 4: // Manage Hypervisors
 				if m.loggedInUser == nil {
@@ -999,6 +1001,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.hvManagementCursor = 0
 				m.selectedRackIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 5: // Manage Devices
 				if m.loggedInUser == nil {
@@ -1010,6 +1013,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 6: // Manage Partitions
 				if m.loggedInUser == nil {
@@ -1020,6 +1024,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.partitionMgmtCursor = 0
 				m.selectedPartitionIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 7: // Manage NISDs
 				if m.loggedInUser == nil {
@@ -1033,6 +1038,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDPartitionIdx = -1
 				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 8: // Manage Vdevs
 				if m.loggedInUser == nil {
@@ -1767,6 +1773,7 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					m.message = fmt.Sprintf("Failed to add hypervisor: %s", hvResp.Error)
 					return m, nil
 				}
+				m.refreshCPData()
 				m.message = fmt.Sprintf("Added hypervisor %s with %d devices", m.currentHv.ID, len(selectedDevices))
 			}
 			m.state = stateShowAddedHypervisor
@@ -1798,6 +1805,7 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 			switch m.hvManagementCursor {
 			case 0: // Add Hypervisor
 				// Check if racks are available
+				m.refreshCPData()
 				allRacks := m.getAllRacks()
 				if len(allRacks) == 0 {
 					m.message = "⚠️  No racks available. Please create racks first before adding hypervisors."
@@ -5445,6 +5453,7 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 			} else {
 				m.currentPDU = pdu
 				m.message = fmt.Sprintf("Added PDU %s to control plane", m.currentPDU.Name)
+				m.refreshCPData()
 				m.state = stateShowAddedPDU
 				return m, nil
 			}
@@ -5612,6 +5621,7 @@ func (m model) updateRackManagement(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			switch m.rackManagementCursor {
 			case 0: // Add Rack
+				m.refreshCPData()
 				if len(m.cpPDUs) > 0 {
 					m.state = stateRackForm
 					m.editingUUID = "" // Clear editing UUID for new rack
@@ -5728,6 +5738,7 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 			m.currentRack = rack
+			m.refreshCPData()
 			m.message = fmt.Sprintf("Added rack %s to PDU %s", m.currentRack.Name, pdu.Name)
 			m.state = stateShowAddedRack
 			return m, nil
