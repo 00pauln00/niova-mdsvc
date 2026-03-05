@@ -5213,6 +5213,7 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 					PartitionID: partitionInfo.Name,
 					NISDUUID:    uuid.New().String(), // Generate new UUID for NISD instance
 					Size:        partitionInfo.Size,  // Use the actual partition size
+					DevID:       m.selectedDeviceForPartition.ID,
 					UserToken:   m.userToken(),
 				}
 
@@ -5407,6 +5408,7 @@ func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 		PartitionID: deviceByIdName,
 		NISDUUID:    uuid.New().String(),
 		Size:        m.selectedDeviceForPartition.Size, // Store the entire device size
+		DevID:       m.selectedDeviceForPartition.ID,
 		UserToken:   m.userToken(),
 	}
 
