@@ -237,6 +237,7 @@ type model struct {
 	vdevFilterTypeInput    textinput.Model
 	vdevFormActiveField    inputField        // Track which field is currently active
 	createdVdevs           []ctlplfl.VdevCfg // Store created Vdevs for summary
+	nisdCache              map[string]ctlplfl.Nisd // NISD UUID → NISD info, populated on device view entry
 	vdevCreationProgress   int               // Track creation progress
 	vdevCreationTotal      int               // Total Vdevs to create
 	vdevCreationErrors     []string          // Store any creation errors
@@ -297,6 +298,7 @@ type deviceDiscoveredMsg struct {
 
 type deviceStateRefreshMsg struct {
 	devices []ctlplfl.Device
+	nisds   []ctlplfl.Nisd
 	err     error
 }
 
@@ -975,14 +977,18 @@ func (m model) userToken() string {
 	return ""
 }
 
-// fetchDeviceStatesFromCP queries the CP for all devices and returns a deviceStateRefreshMsg.
+// fetchDeviceStatesFromCP queries the CP for all devices and NISDs, returning a deviceStateRefreshMsg.
 func (m model) fetchDeviceStatesFromCP() tea.Msg {
 	if m.cpClient == nil || !m.cpConnected {
 		return deviceStateRefreshMsg{err: fmt.Errorf("not connected")}
 	}
 	req := ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()}
 	devices, err := m.cpClient.GetDevices(req)
-	return deviceStateRefreshMsg{devices: devices, err: err}
+	if err != nil {
+		return deviceStateRefreshMsg{err: err}
+	}
+	nisds, _ := m.cpClient.GetNisds(req)
+	return deviceStateRefreshMsg{devices: devices, nisds: nisds}
 }
 
 // syncDeviceStatesFromCP overlays CP device states onto the local config.
@@ -2045,6 +2051,14 @@ func (m model) updateDeviceView(msg tea.Msg) (model, tea.Cmd) {
 	case deviceStateRefreshMsg:
 		if msg.err == nil && len(msg.devices) > 0 {
 			m.syncDeviceStatesFromCP(msg.devices)
+		}
+		if len(msg.nisds) > 0 {
+			if m.nisdCache == nil {
+				m.nisdCache = make(map[string]ctlplfl.Nisd, len(msg.nisds))
+			}
+			for _, n := range msg.nisds {
+				m.nisdCache[n.ID] = n
+			}
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -4303,6 +4317,20 @@ func (m model) viewDeviceView() string {
 			// Show partitions if any
 			if len(device.Partitions) > 0 {
 				s.WriteString(fmt.Sprintf("    Partitions (%d):\n", len(device.Partitions)))
+				// Collect device-level entity IDs from cached NISDs to surface the correct filter ID
+				deviceEntityIDs := make(map[string]bool)
+				for _, partition := range device.Partitions {
+					if nisd, ok := m.nisdCache[partition.NISDUUID]; ok {
+						if len(nisd.FailureDomain) > ctlplfl.DEVICE_IDX && nisd.FailureDomain[ctlplfl.DEVICE_IDX] != "" {
+							deviceEntityIDs[nisd.FailureDomain[ctlplfl.DEVICE_IDX]] = true
+						}
+					}
+				}
+				if len(deviceEntityIDs) > 0 {
+					for id := range deviceEntityIDs {
+						s.WriteString(fmt.Sprintf("    Entity UUID for device filter: %s\n", id))
+					}
+				}
 				for j, partition := range device.Partitions {
 					s.WriteString(fmt.Sprintf("      %d. %s", j+1, partition.NISDUUID))
 					if partition.Size > 0 {
