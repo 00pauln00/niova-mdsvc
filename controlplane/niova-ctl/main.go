@@ -295,6 +295,11 @@ type deviceDiscoveredMsg struct {
 	err     error
 }
 
+type deviceStateRefreshMsg struct {
+	devices []ctlplfl.Device
+	err     error
+}
+
 type userCreatedMsg struct {
 	resp *userlib.UserResp
 	err  error
@@ -968,6 +973,54 @@ func (m model) userToken() string {
 		return m.loggedInUser.AccessToken
 	}
 	return ""
+}
+
+// fetchDeviceStatesFromCP queries the CP for all devices and returns a deviceStateRefreshMsg.
+func (m model) fetchDeviceStatesFromCP() tea.Msg {
+	if m.cpClient == nil || !m.cpConnected {
+		return deviceStateRefreshMsg{err: fmt.Errorf("not connected")}
+	}
+	req := ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()}
+	devices, err := m.cpClient.GetDevices(req)
+	return deviceStateRefreshMsg{devices: devices, err: err}
+}
+
+// syncDeviceStatesFromCP overlays CP device states onto the local config.
+// It matches CP devices to local config devices by ID or Name.
+func (m *model) syncDeviceStatesFromCP(cpDevices []ctlplfl.Device) {
+	stateByID := make(map[string]uint16, len(cpDevices))
+	stateByName := make(map[string]uint16, len(cpDevices))
+	for _, d := range cpDevices {
+		if d.ID != "" {
+			stateByID[d.ID] = d.State
+		}
+		if d.Name != "" {
+			stateByName[d.Name] = d.State
+		}
+	}
+
+	updateDev := func(dev *Device) {
+		if s, ok := stateByID[dev.ID]; ok {
+			dev.State = s
+		} else if s, ok := stateByName[dev.Name]; ok {
+			dev.State = s
+		}
+	}
+
+	for i := range m.config.PDUs {
+		for j := range m.config.PDUs[i].Racks {
+			for k := range m.config.PDUs[i].Racks[j].Hypervisors {
+				for l := range m.config.PDUs[i].Racks[j].Hypervisors[k].Dev {
+					updateDev(&m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[l])
+				}
+			}
+		}
+	}
+	for i := range m.config.Hypervisors {
+		for j := range m.config.Hypervisors[i].Dev {
+			updateDev(&m.config.Hypervisors[i].Dev[j])
+		}
+	}
 }
 
 // ensureUserClient lazily initializes the user client. Returns an error message
@@ -1872,7 +1925,7 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
 				m.message = ""
-				return m, nil
+				return m, m.fetchDeviceStatesFromCP
 			}
 		}
 	}
@@ -1989,6 +2042,11 @@ func (m model) updateDeviceView(msg tea.Msg) (model, tea.Cmd) {
 	})
 
 	switch msg := msg.(type) {
+	case deviceStateRefreshMsg:
+		if msg.err == nil && len(msg.devices) > 0 {
+			m.syncDeviceStatesFromCP(msg.devices)
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
@@ -4220,16 +4278,18 @@ func (m model) viewDeviceView() string {
 			// Detailed view for selected device
 			s.WriteString(fmt.Sprintf("    Hypervisor: %s (UUID: %s)\n", deviceInfo.HvName, deviceInfo.HvUUID))
 			if device.ID != "" {
-				s.WriteString(fmt.Sprintf("    Hardware ID: %s\n", device.ID))
+				s.WriteString(fmt.Sprintf("    Device UUID: %s\n", device.ID))
+			}
+			if device.Name != "" && device.Name != device.ID {
+				s.WriteString(fmt.Sprintf("    Hardware Name: %s\n", device.Name))
+			}
+			if device.SerialNumber != "" {
+				s.WriteString(fmt.Sprintf("    Serial Number: %s\n", device.SerialNumber))
 			}
 			if device.Size != 0 {
 				s.WriteString(fmt.Sprintf("    Size: %s\n", formatBytes(device.Size)))
 			}
-
 			if device.State == ctlplfl.INITIALIZED {
-				if device.ID != "" {
-					s.WriteString(fmt.Sprintf("    Device UUID: %s\n", device.ID))
-				}
 				if device.DevicePath != "" {
 					s.WriteString(fmt.Sprintf("    Device Path: %s\n", device.DevicePath))
 				}
@@ -4248,6 +4308,7 @@ func (m model) viewDeviceView() string {
 					if partition.Size > 0 {
 						s.WriteString(fmt.Sprintf(" (%s)", formatBytes(partition.Size)))
 					}
+					s.WriteString("\n")
 				}
 			}
 		} else {
