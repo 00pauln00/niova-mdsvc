@@ -146,6 +146,7 @@ func TestPutAndGetNisd(t *testing.T) {
 				"87694b06-ea0e-11f0-8fc4-e3e2449638d2",
 				"87694b06-ea0e-11f0-8fc4-e3e2449638d3",
 				"nvme-e3f4123",
+				"pt-nvme-e3f4123-0",
 			},
 			TotalSize:     1_000_000_000_000, // 1 TB
 			AvailableSize: 750_000_000_000,   // 750 GB
@@ -171,6 +172,7 @@ func TestPutAndGetNisd(t *testing.T) {
 				"e80029a8-ea0e-11f0-962b-f3f3668c2242",
 				"e80029a8-ea0e-11f0-962b-f3f3668c2243",
 				"nvme-e3f4125",
+				"pt-nvme-e3f4125-0",
 			},
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
@@ -404,6 +406,7 @@ func TestVdevLifecycle(t *testing.T) {
 			uuid.NewString(),
 			uuid.NewString(),
 			uuid.NewString(),
+			uuid.NewString(),
 		},
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
@@ -533,6 +536,7 @@ func TestVdevNisdChunk(t *testing.T) {
 			"2435b29e-df29-11f0-900b-d3d680074046",
 			"298cedc0-df29-11f0-8c85-e3df2426ed67",
 			"nvme-e3df2426ed67",
+			"pt-nvme-e3df2426ed67-0",
 		},
 		TotalSize:     1_000_000_000_000, // 1 TB
 		AvailableSize: 750_000_000_000,   // 750 GB
@@ -714,6 +718,7 @@ func TestParallelVdevCreation(t *testing.T) {
 								rack,
 								hv,
 								dev,
+								fmt.Sprintf("pt-%s-%d", dev, n),
 							},
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
@@ -820,6 +825,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 				racks[0],
 				hvs[0],
 				devices[0],
+				"pt-" + devices[0] + "-0",
 			},
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
@@ -833,6 +839,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 				racks[0],
 				hvs[0],
 				devices[1],
+				"pt-" + devices[1] + "-0",
 			},
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
@@ -846,6 +853,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 				racks[0],
 				hvs[1],
 				devices[2],
+				"pt-" + devices[2] + "-0",
 			},
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
@@ -859,6 +867,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 				racks[1],
 				hvs[2],
 				devices[3],
+				"pt-" + devices[3] + "-0",
 			},
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
@@ -872,6 +881,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 				racks[1],
 				hvs[3],
 				devices[4],
+				"pt-" + devices[4] + "-0",
 			},
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
@@ -885,6 +895,7 @@ func TestCreateSmallHierarchy(t *testing.T) {
 				racks[1],
 				hvs[4],
 				devices[5],
+				"pt-" + devices[5] + "-0",
 			},
 			TotalSize:     1073741824000,
 			AvailableSize: 1073741824000,
@@ -976,6 +987,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		PeerPort: 8001,
 		ID:       uuid.NewString(),
 		FailureDomain: []string{
+			uuid.NewString(),
 			uuid.NewString(),
 			uuid.NewString(),
 			uuid.NewString(),
@@ -1191,6 +1203,7 @@ func TestNisdAuthorizationWithUsers(t *testing.T) {
 				uuid.NewString(),
 				uuid.NewString(),
 				"nvme-auth-test-device",
+				"pt-nvme-auth-test-device-0",
 			},
 			TotalSize:     1_000_000_000_000,
 			AvailableSize: 1_000_000_000_000,
@@ -1538,7 +1551,7 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 	nisdResp, err := ctlClient.PutNisd(&cpLib.Nisd{
 		PeerPort:      9200,
 		ID:            nisdID,
-		FailureDomain: []string{pduID, rackID, hvID, "nvme-hier-test-device"},
+		FailureDomain: []string{pduID, rackID, hvID, "nvme-hier-test-device", "pt-nvme-hier-test-device-0"},
 		TotalSize:     2_000_000_000_000,
 		AvailableSize: 2_000_000_000_000,
 		SocketPath:    "/tmp/nisd-hier-test.sock",
@@ -1574,7 +1587,7 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 	badNISDResp, err := ctlClient.PutNisd(&cpLib.Nisd{
 		PeerPort:      9999,
 		ID:            uuid.NewString(),
-		FailureDomain: []string{pduID, rackID, hvID, "nvme-user-attempt"},
+		FailureDomain: []string{pduID, rackID, hvID, "nvme-user-attempt", "pt-nvme-user-attempt-0"},
 		TotalSize:     100_000_000_000,
 		AvailableSize: 100_000_000_000,
 		NetInfo:       cpLib.NetInfoList{{IPAddr: "10.0.0.2", Port: 9999}},
@@ -1651,6 +1664,7 @@ func TestABACVdevOwnership(t *testing.T) {
 		PeerPort: 9300,
 		ID:       uuid.NewString(),
 		FailureDomain: []string{
+			uuid.NewString(),
 			uuid.NewString(),
 			uuid.NewString(),
 			uuid.NewString(),

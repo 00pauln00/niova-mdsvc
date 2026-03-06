@@ -56,11 +56,12 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
-	PDU_IDX    = 0
-	RACK_IDX   = 1
-	HV_IDX     = 2
-	DEVICE_IDX = 3
-	FD_MAX     = 4
+	PDU_IDX       = 0
+	RACK_IDX      = 1
+	HV_IDX        = 2
+	DEVICE_IDX    = 3
+	PARTITION_IDX = 4
+	FD_MAX        = 5
 
 	HASH_SIZE = 8
 
@@ -75,6 +76,7 @@ const (
 	FD_RACK
 	FD_HV
 	FD_DEVICE
+	FD_PARTITION
 )
 
 func GetFDIdx(t FD) int {
@@ -87,6 +89,8 @@ func GetFDIdx(t FD) int {
 		return HV_IDX
 	case FD_DEVICE:
 		return DEVICE_IDX
+	case FD_PARTITION:
+		return PARTITION_IDX
 	default:
 		return -1
 	}
@@ -415,7 +419,7 @@ func (n *Nisd) Validate() error {
 }
 
 func NextFailureDomain(fd int) (int, error) {
-	if fd < DEVICE_IDX {
+	if fd < PARTITION_IDX {
 		fd++
 		return fd, nil
 	}
