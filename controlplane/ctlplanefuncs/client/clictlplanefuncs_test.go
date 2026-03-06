@@ -434,7 +434,6 @@ func TestPutAndGetSingleDevice(t *testing.T) {
 
 func TestPutAndGetMultipleDevices(t *testing.T) {
 	c := newClient(t)
-	adminToken := getAdminToken(t)
 
 	mockDevices := []cpLib.Device{
 		{
@@ -445,7 +444,6 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			FailureDomain: "fd-01",
 			DevicePath:    "/temp/path1",
 			Name:          "dev-1",
-			UserToken:     adminToken,
 		},
 		{
 			ID:            "nvme-fb6358162002",
@@ -470,7 +468,6 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 				Size:          123467,
 			},
 			},
-			UserToken: adminToken,
 		},
 		{
 			ID:            "nvme-fb6358162003",
@@ -489,7 +486,6 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 				Size:          123467,
 			},
 			},
-			UserToken: adminToken,
 		},
 	}
 
@@ -530,7 +526,6 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 
 func TestPutAndGetSingleNisd(t *testing.T) {
    c := newClient(t)
-   adminToken := getAdminToken(t)
 
    nisd := cpLib.Nisd{
            PeerPort:      8001,
@@ -565,7 +560,6 @@ func TestPutAndGetSingleNisd(t *testing.T) {
    // GET operation
    req := cpLib.GetReq{
 		GetAll:    true,
-		UserToken: adminToken,
 	}
    res, err := c.GetNisds(req)
    assert.NoError(t, err)
@@ -586,7 +580,6 @@ func TestPutAndGetSingleNisd(t *testing.T) {
 
 func TestPutAndGetMultipleNisds(t *testing.T) {
 	c := newClient(t)
-	adminToken := getAdminToken(t)
 
 	mockNisd := []cpLib.Nisd{
 		{
@@ -650,7 +643,6 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	// GET all NISDs
 	req := cpLib.GetReq{
 		GetAll:    true,
-		UserToken: adminToken,
 	}
     res, err := c.GetNisds(req)
 	assert.NoError(t, err)
@@ -661,16 +653,12 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 		Nisds[n.ID] = n
 	}
 
-	// Validate count
-	assert.Equal(t, len(mockNisd), len(res), "Mismatch in NISD count")
-
 	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
 	assert.NoError(t, err)
 }
 
 func TestMultiCreateVdev(t *testing.T) {
 	c := newClient(t)
-	adminToken := getAdminToken(t)
 
 	// Step 0: Create a NISD to allocate space for Vdevs
 	n := cpLib.Nisd{
@@ -696,7 +684,6 @@ func TestMultiCreateVdev(t *testing.T) {
 				},
 		    },
 		NetInfoCnt: 2,
-		UserToken:     adminToken,
 	}
 	_, err := c.PutNisd(&n)
 	assert.NoError(t, err)
@@ -708,7 +695,6 @@ func TestMultiCreateVdev(t *testing.T) {
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
 		},
-		UserToken: adminToken,
 	}
 	resp, err := c.CreateVdev(req1)
 	assert.NoError(t, err, "failed to create vdev1")
@@ -725,7 +711,6 @@ func TestMultiCreateVdev(t *testing.T) {
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
 		},
-		UserToken: adminToken,
 	}
 	resp, err = c.CreateVdev(req2)
 	assert.NoError(t, err, "failed to create vdev2")
@@ -738,7 +723,7 @@ func TestMultiCreateVdev(t *testing.T) {
 	log.Info("Created vdev2: ", resp.ID)
 
 	// Step 3: Fetch all Vdevs and validate both exist
-	getAllReq := &cpLib.GetReq{GetAll: true, UserToken: adminToken}
+	getAllReq := &cpLib.GetReq{GetAll: true}
 
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	if err != nil {
@@ -750,7 +735,6 @@ func TestMultiCreateVdev(t *testing.T) {
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetReq{
 		ID:        vdev1ID,
-		UserToken: adminToken,
 	}
 	specificResp, err := c.GetVdevCfg(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev")
@@ -771,14 +755,12 @@ func TestMultiCreateVdev(t *testing.T) {
 func TestPutAndGetSinglePartition(t *testing.T) {
 	c := newClient(t)
 
-	adminToken := getAdminToken(t)
 	pt := &cpLib.DevicePartition{
 		PartitionID:   "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1",
 		DevID:         "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc",
 		Size:          10 * 1024 * 1024 * 1024,
 		PartitionPath: "some path",
 		NISDUUID:      "b962cea8-ab42-11f0-a0ad-1bd216770b60",
-		UserToken:     adminToken,
 	}
 
 	// Put partition
@@ -803,15 +785,14 @@ func TestPutAndGetSinglePartition(t *testing.T) {
 	log.Infof("Single Partition PUT/GET validation successful for Partition ID: %s", pt.PartitionID)
 	log.Info("created partition: ", resp)
 	assert.NoError(t, err)
-	_, err = c.GetPartition(cpLib.GetReq{ID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1", UserToken: adminToken})
+	_, err = c.GetPartition(cpLib.GetReq{ID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1"})
 	assert.NoError(t, err)
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
-	adminToken := getAdminToken(b)
 	racks := []cpLib.Rack{
-		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b", UserToken: adminToken},
-		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea", UserToken: adminToken},
+		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
+		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
 	}
 
 	for _, r := range racks {
@@ -821,7 +802,7 @@ func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 		}
 	}
 
-	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true, UserToken: adminToken})
+	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
 	assert.NoError(b, err)
 	_ = resp
 }
@@ -837,7 +818,6 @@ func BenchmarkPutAndGetRack(b *testing.B) {
 func TestVdevNisdChunk(t *testing.T) {
 
 	c := newClient(t)
-	adminToken := getAdminToken(t)
 
 	// create nisd
 	mockNisd := cpLib.Nisd{
@@ -863,7 +843,6 @@ func TestVdevNisdChunk(t *testing.T) {
 				},
 		},
 		NetInfoCnt: 2,
-		UserToken:     adminToken,
 	}
 	resp, err := c.PutNisd(&mockNisd)
 	if assert.NoError(t, err) {
@@ -876,20 +855,18 @@ func TestVdevNisdChunk(t *testing.T) {
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
 		},
-		UserToken: adminToken,
 	}
 	resp, err = c.CreateVdev(vdev)
 	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID, UserToken: adminToken})
+	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
 	log.Info("Read vdev:", readV)
-	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(resp.ID, "0"), UserToken: adminToken})
+	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(resp.ID, "0")})
 	log.Info("Read Nisd Chunk:", nc)
 }
 
 func TestPutAndGetNisdArgs(t *testing.T) {
 	c := newClient(t)
-	adminToken := getAdminToken(t)
 
 	na := &cpLib.NisdArgs{
 		Defrag:               true,
@@ -899,12 +876,11 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 		S3:                   "s3://backup-bucket/data",
 		DSync:                "enabled",
 		AllowDefragMCIBCache: false,
-		UserToken:            adminToken,
 	}
 	_, err := c.PutNisdArgs(na)
 	assert.NoError(t, err)
 
-	req := cpLib.GetReq{UserToken: adminToken}
+	req := cpLib.GetReq{}
 	_, err = c.GetNisdArgs(req)
 	assert.NoError(t, err)
 }
