@@ -4316,21 +4316,13 @@ func (m model) viewDeviceView() string {
 
 			// Show partitions if any
 			if len(device.Partitions) > 0 {
+				// The Device ID is the entity UUID to use when filtering Vdev
+				// allocation at the device level (FD type = device). All partitions
+				// of this device share the same DevID == device.ID.
+				if device.ID != "" {
+					s.WriteString(fmt.Sprintf("    Device Entity UUID (use for FD=device filter): %s\n", device.ID))
+				}
 				s.WriteString(fmt.Sprintf("    Partitions (%d):\n", len(device.Partitions)))
-				// Collect device-level entity IDs from cached NISDs to surface the correct filter ID
-				deviceEntityIDs := make(map[string]bool)
-				for _, partition := range device.Partitions {
-					if nisd, ok := m.nisdCache[partition.NISDUUID]; ok {
-						if len(nisd.FailureDomain) > ctlplfl.DEVICE_IDX && nisd.FailureDomain[ctlplfl.DEVICE_IDX] != "" {
-							deviceEntityIDs[nisd.FailureDomain[ctlplfl.DEVICE_IDX]] = true
-						}
-					}
-				}
-				if len(deviceEntityIDs) > 0 {
-					for id := range deviceEntityIDs {
-						s.WriteString(fmt.Sprintf("    Entity UUID for device filter: %s\n", id))
-					}
-				}
 				for j, partition := range device.Partitions {
 					s.WriteString(fmt.Sprintf("      %d. %s", j+1, partition.NISDUUID))
 					if partition.Size > 0 {
