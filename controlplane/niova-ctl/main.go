@@ -124,6 +124,8 @@ const (
 	// Vdev specific
 	inputVdevCount
 	inputVdevSize
+	inputVdevEntityUUID
+	inputVdevFilterType
 )
 
 type model struct {
@@ -231,6 +233,8 @@ type model struct {
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
 	vdevSizeInput          textinput.Model
 	vdevCountInput         textinput.Model
+	vdevEntityUUIDInput    textinput.Model
+	vdevFilterTypeInput    textinput.Model
 	vdevFormActiveField    inputField        // Track which field is currently active
 	createdVdevs           []ctlplfl.VdevCfg // Store created Vdevs for summary
 	vdevCreationProgress   int               // Track creation progress
@@ -467,6 +471,17 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	vdevCountInput.CharLimit = 10
 	vdevCountInput.SetValue("1")
 
+	// Initialize vdev entity UUID input
+	vdevEntityUUIDInput := textinput.New()
+	vdevEntityUUIDInput.Placeholder = "optional: entity UUID (PDU/Rack/HV UUID)"
+	vdevEntityUUIDInput.CharLimit = 64
+
+	// Initialize vdev filter type input
+	vdevFilterTypeInput := textinput.New()
+	vdevFilterTypeInput.Placeholder = "any|pdu|rack|hv|device (default: any)"
+	vdevFilterTypeInput.CharLimit = 16
+	vdevFilterTypeInput.SetValue("any")
+
 	// Initialize user management text inputs
 	userUsernameInput := textinput.New()
 	userUsernameInput.Placeholder = "Enter username (use 'admin' for admin user)"
@@ -517,6 +532,8 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		deviceFailureDomain:   deviceFailureDomainInput,
 		vdevSizeInput:         vdevSizeInput,
 		vdevCountInput:        vdevCountInput,
+		vdevEntityUUIDInput:   vdevEntityUUIDInput,
+		vdevFilterTypeInput:   vdevFilterTypeInput,
 		vdevFormActiveField:   inputVdevCount,
 		// Control plane configuration
 		cpEnabled:    cpEnabled,
@@ -7976,9 +7993,13 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				// Initialize input fields
 				m.vdevCountInput.SetValue("1")
 				m.vdevSizeInput.SetValue("")
+				m.vdevEntityUUIDInput.SetValue("")
+				m.vdevFilterTypeInput.SetValue("any")
 				m.vdevFormActiveField = inputVdevCount
 				m.vdevCountInput.Focus()
 				m.vdevSizeInput.Blur()
+				m.vdevEntityUUIDInput.Blur()
+				m.vdevFilterTypeInput.Blur()
 				// Reset creation tracking
 				m.createdVdevs = nil
 				m.vdevCreationErrors = nil
@@ -8110,40 +8131,46 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab":
-			// Switch to next field
-			if m.vdevFormActiveField == inputVdevCount {
+		case "tab", "down":
+			// Cycle forward through fields: count → size → entityUUID → filterType → count
+			m.vdevCountInput.Blur()
+			m.vdevSizeInput.Blur()
+			m.vdevEntityUUIDInput.Blur()
+			m.vdevFilterTypeInput.Blur()
+			switch m.vdevFormActiveField {
+			case inputVdevCount:
 				m.vdevFormActiveField = inputVdevSize
-				m.vdevCountInput.Blur()
 				m.vdevSizeInput.Focus()
-			} else {
+			case inputVdevSize:
+				m.vdevFormActiveField = inputVdevEntityUUID
+				m.vdevEntityUUIDInput.Focus()
+			case inputVdevEntityUUID:
+				m.vdevFormActiveField = inputVdevFilterType
+				m.vdevFilterTypeInput.Focus()
+			default:
 				m.vdevFormActiveField = inputVdevCount
-				m.vdevSizeInput.Blur()
 				m.vdevCountInput.Focus()
 			}
 			return m, textinput.Blink
 		case "shift+tab", "up":
-			// Switch to previous field
-			if m.vdevFormActiveField == inputVdevSize {
+			// Cycle backward through fields
+			m.vdevCountInput.Blur()
+			m.vdevSizeInput.Blur()
+			m.vdevEntityUUIDInput.Blur()
+			m.vdevFilterTypeInput.Blur()
+			switch m.vdevFormActiveField {
+			case inputVdevSize:
 				m.vdevFormActiveField = inputVdevCount
-				m.vdevSizeInput.Blur()
 				m.vdevCountInput.Focus()
-			} else {
+			case inputVdevEntityUUID:
 				m.vdevFormActiveField = inputVdevSize
-				m.vdevCountInput.Blur()
 				m.vdevSizeInput.Focus()
-			}
-			return m, textinput.Blink
-		case "down":
-			// Switch to next field (same as tab)
-			if m.vdevFormActiveField == inputVdevCount {
-				m.vdevFormActiveField = inputVdevSize
-				m.vdevCountInput.Blur()
-				m.vdevSizeInput.Focus()
-			} else {
-				m.vdevFormActiveField = inputVdevCount
-				m.vdevSizeInput.Blur()
-				m.vdevCountInput.Focus()
+			case inputVdevFilterType:
+				m.vdevFormActiveField = inputVdevEntityUUID
+				m.vdevEntityUUIDInput.Focus()
+			default:
+				m.vdevFormActiveField = inputVdevFilterType
+				m.vdevFilterTypeInput.Focus()
 			}
 			return m, textinput.Blink
 		case "enter":
@@ -8198,10 +8225,15 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	}
 
 	// Update the active input field
-	if m.vdevFormActiveField == inputVdevCount {
+	switch m.vdevFormActiveField {
+	case inputVdevCount:
 		m.vdevCountInput, cmd = m.vdevCountInput.Update(msg)
-	} else {
+	case inputVdevSize:
 		m.vdevSizeInput, cmd = m.vdevSizeInput.Update(msg)
+	case inputVdevEntityUUID:
+		m.vdevEntityUUIDInput, cmd = m.vdevEntityUUIDInput.Update(msg)
+	case inputVdevFilterType:
+		m.vdevFilterTypeInput, cmd = m.vdevFilterTypeInput.Update(msg)
 	}
 
 	return m, cmd
@@ -8233,9 +8265,19 @@ func (m model) viewVdevForm() string {
 	s.WriteString(m.vdevSizeInput.View())
 	s.WriteString("\n\n")
 
+	// Entity UUID input
+	s.WriteString("Entity UUID (optional): ")
+	s.WriteString(m.vdevEntityUUIDInput.View())
+	s.WriteString("\n\n")
+
+	// Filter type input
+	s.WriteString("Failure Domain Type (optional): ")
+	s.WriteString(m.vdevFilterTypeInput.View())
+	s.WriteString("\n\n")
+
 	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n")
-	s.WriteString("The control plane will automatically allocate\n")
-	s.WriteString("available storage for all Vdevs.\n\n")
+	s.WriteString("Failure domain types: any, pdu, rack, hv, device\n")
+	s.WriteString("The control plane will allocate Vdev chunks to the given entity or failure domain.\n\n")
 
 	// Show summary if both fields have values
 	countStr := m.vdevCountInput.Value()
@@ -8526,6 +8568,8 @@ func (m model) updateShowAddedVdev(msg tea.Msg) (model, tea.Cmd) {
 		m.state = stateVdevManagement
 		m.selectedDevicesForVdev = make(map[int]bool)
 		m.vdevSizeInput.SetValue("")
+		m.vdevEntityUUIDInput.SetValue("")
+		m.vdevFilterTypeInput.SetValue("any")
 		m.message = ""
 		return m, nil
 	}
@@ -8719,13 +8763,34 @@ func (m model) createVdevsCommand(size int64, count int) tea.Cmd {
 	}
 }
 
+// parseFDType converts a filter type string to an FD constant.
+func parseFDType(s string) ctlplfl.FD {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "pdu":
+		return ctlplfl.FD_PDU
+	case "rack":
+		return ctlplfl.FD_RACK
+	case "hv", "hypervisor":
+		return ctlplfl.FD_HV
+	case "device":
+		return ctlplfl.FD_DEVICE
+	default:
+		return ctlplfl.FD_ANY
+	}
+}
+
 // createSingleVdev creates a single Vdev and returns a VdevCreationMsg
 func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
+	filter := ctlplfl.Filter{
+		ID:   strings.TrimSpace(m.vdevEntityUUIDInput.Value()),
+		Type: parseFDType(m.vdevFilterTypeInput.Value()),
+	}
 	vdev := &ctlplfl.VdevReq{
 		Vdev: &ctlplfl.VdevCfg{
 			Size:       size,
 			NumReplica: 1,
 		},
+		Filter:    filter,
 		UserToken: m.userToken(),
 	}
 
