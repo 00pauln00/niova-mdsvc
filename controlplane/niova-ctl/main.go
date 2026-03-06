@@ -8294,6 +8294,15 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Warn if entity UUID is provided with FD_ANY — the ID would be ignored
+			// and could cause a server panic (HR.FD[-1] lookup).
+			fdType := parseFDType(m.vdevFilterTypeInput.Value())
+			entityUUID := strings.TrimSpace(m.vdevEntityUUIDInput.Value())
+			if fdType == ctlplfl.FD_ANY && entityUUID != "" {
+				m.message = "Entity UUID is only valid when a specific failure domain type (pdu/rack/hv/device) is set"
+				return m, nil
+			}
+
 			// Initialize creation tracking
 			m.vdevCreationTotal = count
 			m.vdevCreationProgress = 0
@@ -8871,8 +8880,13 @@ func parseFDType(s string) ctlplfl.FD {
 // createSingleVdev creates a single Vdev and returns a VdevCreationMsg
 func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 	filter := ctlplfl.Filter{
-		ID:   strings.TrimSpace(m.vdevEntityUUIDInput.Value()),
 		Type: parseFDType(m.vdevFilterTypeInput.Value()),
+	}
+	// Entity ID is only meaningful when a specific FD type is requested.
+	// Sending a non-empty ID with FD_ANY would reach GetEntityByID with an
+	// FD_ANY type, causing HR.FD[-1] (index out of bounds) on the server.
+	if filter.Type != ctlplfl.FD_ANY {
+		filter.ID = strings.TrimSpace(m.vdevEntityUUIDInput.Value())
 	}
 	vdev := &ctlplfl.VdevReq{
 		Vdev: &ctlplfl.VdevCfg{
