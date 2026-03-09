@@ -8,9 +8,9 @@ export CGO_CFLAGS
 export LD_LIBRARY_PATH
 export PATH
 
-install_all: compile pmdbserver proxyserver ncpcclient configapp testapp install niova-ctl monitor ccManager
+install_all: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
 
-install_only: compile pmdbserver proxyserver ncpcclient configapp testapp install niova-ctl monitor ccManager
+install_only: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
 
 compile:
 	echo "Compiling controlPlane"
