@@ -960,13 +960,16 @@ func TestDeleteVdev(t *testing.T) {
 		},
 	}
 
-	resp, err := c.CreateVdev(vdev)
+	cvresp, err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
-	log.Infof("vdev response status: %v", resp)
-	assert.NotEmpty(t, resp.ID)
-	resp, err = c.DeleteVdev(&cpLib.DeleteVdevReq{ID: resp.ID})
-	log.Info("delete vdev response: ", resp, err)
+	log.Infof("vdev response status: %v", cvresp)
+	assert.NotEmpty(t, cvresp.ID)
+	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: cvresp.ID})
+	log.Info("delete vdev response: ", dvResp, err)
 	assert.NoError(t, err)
+	gvResp, err := c.GetVdevCfg(&cpLib.GetReq{ID: dvResp.ID})
+	log.Info("get vdev response: ", gvResp, err)
+	assert.Error(t, err)
 }
 
 // newUserClient creates a new user client for authentication operations

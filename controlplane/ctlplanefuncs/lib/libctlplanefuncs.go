@@ -401,6 +401,14 @@ func NisdAllocHash(data []byte) uint64 {
 	return h.Sum64()
 }
 
+func (dv *DeleteVdevReq) Validate() error {
+	if _, err := uuid.Parse(dv.ID); err != nil {
+		return errors.New("invalid ID uuid")
+	}
+
+	return nil
+}
+
 func (n *Nisd) Validate() error {
 	if _, err := uuid.Parse(n.ID); err != nil {
 		return errors.New("invalid ID uuid")

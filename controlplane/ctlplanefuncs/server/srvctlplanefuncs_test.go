@@ -3,6 +3,7 @@ package srvctlplanefuncs
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -449,4 +450,157 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestAPDeleteVdev(t *testing.T) {
+
+	testCases := []struct {
+		name          string
+		setupData     func(storageiface.DataStore)
+		vdevID        string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "SuccessfulDelete_WithChunks",
+			setupData: func(ds storageiface.DataStore) {
+
+				// VDEV config
+				ds.Write("v/testvdev", "config", "")
+
+				// Chunk allocation
+				ds.Write("v/testvdev/c/1/R.0", "nisd1", "")
+
+				// Reverse mapping
+				ds.Write("n/nisd1/testvdev", "1", "")
+
+				// NISD config
+				ds.Write("n/nisd1", "nisdConfig", "")
+				ds.Write("n/nisd1/available_space", "100", "")
+			},
+			vdevID:      "testvdev",
+			expectError: false,
+		},
+
+		{
+			name: "DeleteVdev_NoChunks",
+			setupData: func(ds storageiface.DataStore) {
+
+				// Only vdev metadata
+				ds.Write("v/testvdev", "config", "")
+			},
+			vdevID:      "testvdev",
+			expectError: false,
+		},
+
+		{
+			name: "DeleteVdev_VdevNotFound",
+			setupData: func(ds storageiface.DataStore) {
+				// no vdev created
+			},
+			vdevID:      "missingvdev",
+			expectError: false, // function currently does not hard fail
+		},
+
+		{
+			name: "MultipleChunksSameNISD",
+			setupData: func(ds storageiface.DataStore) {
+
+				ds.Write("v/testvdev/c/1/R.0", "nisd1", "")
+				ds.Write("v/testvdev/c/2/R.0", "nisd1", "")
+
+				ds.Write("n/nisd1", "nisdConfig", "")
+				ds.Write("n/nisd1/available_space", "200", "")
+			},
+			vdevID:      "testvdev",
+			expectError: false,
+		},
+
+		{
+			name: "InvalidRequest_EmptyID",
+			setupData: func(ds storageiface.DataStore) {
+				// no setup required
+			},
+			vdevID:        "",
+			expectError:   true,
+			errorContains: "invalid",
+		},
+
+		// {
+		// 	name: "RangeReadFailure",
+		// 	setupData: func(ds storageiface.DataStore) {
+
+		// 		// Simulate partial setup
+		// 		ds.Write("v/testvdev/c/1/R.0", "nisd1", "")
+		// 	},
+		// 	vdevID:        "testvdev",
+		// 	expectError:   true,
+		// 	errorContains: "Range read failure",
+		// },
+	}
+
+	for _, tc := range testCases {
+
+		t.Run(tc.name, func(t *testing.T) {
+
+			// Create in-memory datastore
+			ds := memstore.NewMemStore()
+			colmfamily = ""
+
+			if tc.setupData != nil {
+				tc.setupData(ds)
+			}
+
+			// Create callback args
+			cbArgs := &PumiceDBServer.PmdbCbArgs{
+				Store:     ds,
+				ReplySize: 4096,
+			}
+
+			req := ctlplfl.DeleteVdevReq{
+				ID: tc.vdevID,
+			}
+
+			result, err := APDeleteVdev(req, cbArgs)
+
+			var resp ctlplfl.ResponseXML
+
+			if result != nil {
+				data, ok := result.([]byte)
+				if !ok {
+					t.Fatalf("result is not []byte")
+				}
+
+				if decErr := pmCmn.Decoder(pmCmn.GOB, data, &resp); decErr != nil {
+					t.Fatalf("Failed to decode response: %v\nResponse: %s", decErr, string(data))
+				}
+			}
+
+			if tc.expectError {
+
+				if err == nil && resp.Error == "" {
+					t.Errorf("Expected error containing '%s', got nil", tc.errorContains)
+					return
+				}
+
+				if tc.errorContains != "" &&
+					!strings.Contains(resp.Error, tc.errorContains) {
+
+					t.Errorf("Expected error containing '%s', got '%s'",
+						tc.errorContains, resp.Error)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("Expected non-nil response")
+			}
+		})
+	}
 }

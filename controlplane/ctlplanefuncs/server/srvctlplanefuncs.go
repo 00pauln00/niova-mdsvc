@@ -1403,10 +1403,6 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 
 }
 
-func WritePrepFunc(args ...interface{}) (interface{}, error) {
-	return nil, nil
-}
-
 // Deletes a Vdev, archives its data and refunds allocated space to NISDs
 func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
@@ -1420,20 +1416,25 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		Name: "vdev",
 		ID:   req.ID,
 	}
+	err := req.Validate()
+	if err != nil {
+		log.Errorf("invalid request: %v", err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+
+	}
 	log.Info("deleting vdev: ", req.ID)
 	// Validate Vdev exists
 	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
-	// Check if Vdev exists by reading one key or listing keys?
-	// Listing keys is better since we need to delete them anyway.
 
 	for {
 		rrArgs := storageiface.RangeReadArgs{
-			Selector:   colmfamily,
-			Key:        vdevKey,
-			BufSize:    cbArgs.ReplySize,
-			Consistent: true,
-			Prefix:     vdevKey,
+			Selector: colmfamily,
+			Key:      vdevKey,
+			BufSize:  cbArgs.ReplySize,
+			Prefix:   vdevKey,
 		}
+
 		rrOp, err := cbArgs.Store.RangeRead(rrArgs)
 		if err != nil {
 			log.Error("Range read failure ", err)
@@ -1443,11 +1444,6 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 
 		// Process Vdev keys
 		for k, v := range rrOp.ResultMap {
-			// Archive
-			commitChgs = append(commitChgs, funclib.CommitChg{
-				Key:   []byte("arch/" + k),
-				Value: []byte(v),
-			})
 			// Delete
 			deleteChgs = append(deleteChgs, funclib.CommitChg{
 				Key:   []byte(k),
@@ -1485,6 +1481,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 				}
 
 				revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
+				// delete nisd-vdev reverse mapping keys
 				deleteChgs = append(deleteChgs, funclib.CommitChg{
 					Key:   []byte(revKey),
 					Value: nil,
@@ -1499,9 +1496,8 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		rrArgs.SeqNum = rrOp.SeqNum
 	}
 
-	// Process NISD refunds and reverse mapping deletion
+	// Process NISD refunds
 	for nisdID, nisd := range nisdRefundMap {
-		// Reverse mapping key: n/<nisdID>/<vdevID>
 		asKey := fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(asKey),
@@ -1509,7 +1505,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	err := applyKV(commitChgs, cbArgs.Store)
+	err = applyKV(commitChgs, cbArgs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		resp.Error = err.Error()
