@@ -1922,7 +1922,7 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					log.Info("Discovered device: ", selDev)
 					selDev.HypervisorID = m.currentHv.ID
 					selDev.State = ctlplfl.UNINITIALIZED
-					selectedDevices = append(selectedDevices, m.discoveredDevs[i])
+					selectedDevices = append(selectedDevices, selDev)
 				}
 			}
 			// Assign selected devices to hypervisor before adding to config/PumiceDB
