@@ -305,9 +305,6 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 }
 
 func ApplyNisd(args ...interface{}) (interface{}, error) {
-
-	log.Debug("ApplyNisd called")
-
 	// Extract callback arguments
 	cbargs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
 	if !ok {
@@ -326,8 +323,6 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	log.Debugf("ApplyNisd: processing NISD ID=%s", nisd.ID)
-
 	// Authorization check
 	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "ApplyNisd"); err != nil {
 		log.Error("ApplyNisd: RBAC authorization failed for NISD:", nisd.ID, " error:", err)
@@ -339,8 +334,6 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 	// Decode intermediate changes received from pmdb
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
-
-	log.Debugf("ApplyNisd: decoding intermediate changes | bufferSize=%d", len(buf))
 
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
 	if err != nil {
@@ -363,11 +356,10 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 	err = HR.AddNisd(&nisd)
 	if err != nil {
 		log.Error("ApplyNisd: AddNisd failed:", err)
-	} else {
-		log.Tracef("ApplyNisd: NISD successfully added to handler registry | ID=%s", nisd.ID)
+		return nil, err
 	}
 
-	log.Infof("ApplyNisd completed successfully for NISD=%s, %s", nisd.ID, string(intrm.Response))
+	log.Debugf("ApplyNisd completed successfully for NISD=%s, %s", nisd.ID, string(intrm.Response))
 
 	// Return previously prepared response
 	return intrm.Response, nil
