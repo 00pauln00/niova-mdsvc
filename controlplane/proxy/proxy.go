@@ -556,15 +556,30 @@ Return(s) : error
 
 Description : Call back for PMDB write func requests to HTTP server.
 */
-func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64, body []byte, response *[]byte, reader *http.Request) error {
-	log.Info("FuncHandlerCB called with name: ", name)
+func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64,
+	body []byte, response *[]byte, reader *http.Request) error {
+
+	log.Tracef("FuncHandlerCB called | name=%s rncui=%s wsn=%d bodySize=%d",
+		name, rncui, wsn, len(body))
+
+	// Detect encoding type used by the client (json/xml/etc)
 	encType := GetEncodingType(reader)
+
+	// Decode incoming request
 	res, err := DecodeRequest(encType, name, body)
 	if err != nil {
-		log.Error("WHCB:failed to decode request: ", err)
+		log.Error("WHCB: failed to decode request:", err)
 		return err
 	}
-	r := &funclib.FuncReq{Name: name, Args: res}
+
+	log.Tracef("Decoded request for %s: %+v", name, res)
+
+	// Build function request
+	r := &funclib.FuncReq{
+		Name: name,
+		Args: res,
+	}
+
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:       rncui,
 		Request:     encode(r),
@@ -573,22 +588,43 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 		WriteSeqNum: wsn,
 		ReqType:     PumiceDBCommon.FUNC_REQ,
 	}
+
+	log.Tracef("Sending request to pmdb | rncui=%s writeSeq=%d", rncui, wsn)
+
+	// Send request to pmdb
 	err = handler.pmdbClientObj.Put(reqArgs)
 	if err != nil {
-		log.Error("Error in WriteEncoded and Response: ", err)
-		// Encode the error into the expected response type so the client
-		// can decode it and display the actual error message.
+		log.Error("Error in WriteEncoded and Response:", err)
+
+		// Encode structured error so client can decode it
 		errBytes := EncodeErrorResponse(name, err.Error())
 		if errBytes == nil {
 			return err
 		}
+
+		log.Tracef("Returning encoded error response | size=%d", len(errBytes))
+
 		*response = errBytes
+		return nil
 	}
+
+	// Validate reply buffer before decoding
+	if reqArgs.Reply == nil {
+		log.Error("pmdb returned nil reply for function:", name)
+		return fmt.Errorf("nil reply received from pmdb")
+	}
+
+	log.Tracef("Reply received from pmdb | size=%d bytes", len(*reqArgs.Reply))
+
+	// Convert GOB response to requested encoding
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
-		log.Error("WHCB:failed to encode response: ", err)
+		log.Error("WHCB: failed to encode response:", err)
 		return err
 	}
+
+	log.Tracef("Response encoded successfully | finalSize=%d", len(*reqArgs.Reply))
+
 	return nil
 }
 
