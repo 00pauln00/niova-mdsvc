@@ -1235,18 +1235,18 @@ func (m *model) syncDeviceStatesFromCP(cpDevices []ctlplfl.Device) {
 		}
 	}
 
-	for i := range m.config.PDUs {
-		for j := range m.config.PDUs[i].Racks {
-			for k := range m.config.PDUs[i].Racks[j].Hypervisors {
-				for l := range m.config.PDUs[i].Racks[j].Hypervisors[k].Dev {
-					updateDev(&m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[l])
+	for i := range m.cpPDUs {
+		for j := range m.cpPDUs[i].Racks {
+			for k := range m.cpPDUs[i].Racks[j].Hypervisors {
+				for l := range m.cpPDUs[i].Racks[j].Hypervisors[k].Dev {
+					updateDev(&m.cpPDUs[i].Racks[j].Hypervisors[k].Dev[l])
 				}
 			}
 		}
 	}
-	for i := range m.config.Hypervisors {
-		for j := range m.config.Hypervisors[i].Dev {
-			updateDev(&m.config.Hypervisors[i].Dev[j])
+	for i := range m.cpHypervisors {
+		for j := range m.cpHypervisors[i].Dev {
+			updateDev(&m.cpHypervisors[i].Dev[j])
 		}
 	}
 }
