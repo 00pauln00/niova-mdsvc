@@ -143,6 +143,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 								rack,
 								hv,
 								dev,
+								fmt.Sprintf("%s-%d", dev, n),
 							},
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
@@ -162,6 +163,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 			assert.True(t, resp.Success)
 		}
 		time.Sleep(10 * time.Millisecond)
+		log.Info("response : ", resp, err)
 	}
 
 }
@@ -200,6 +202,13 @@ func TestCreateVdevWithFilters(t *testing.T) {
 			expectErr:  false,
 		},
 		{
+			// Partition ID synthetically generated for device nvme-fb6358163008, slot 0
+			name:       "Filter Partition",
+			filterType: cpLib.FD_PARTITION,
+			filterID:   "nvme-fb6358163008-0",
+			expectErr:  false,
+		},
+		{
 			name:       "No Filter",
 			filterType: cpLib.FD_ANY,
 			filterID:   "",
@@ -214,8 +223,8 @@ func TestCreateVdevWithFilters(t *testing.T) {
 
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
-					Size:       1 * 1024 * 1024 * 1024,
-					NumReplica: 2,
+					Size:       16 * 1024 * 1024 * 1024,
+					NumReplica: 1,
 				},
 				Filter: cpLib.Filter{
 					Type: tc.filterType,
@@ -321,6 +330,11 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 			name:       "Entity-ID Mismatch - Device ID used with HV filter",
 			filterType: cpLib.FD_HV,
 			filterID:   "nvme-fb6358163008",
+		},
+		{
+			name:       "Invalid Partition Filter - non-existent partition ID",
+			filterType: cpLib.FD_PARTITION,
+			filterID:   "pt-nonexistent-device-99",
 		},
 	}
 

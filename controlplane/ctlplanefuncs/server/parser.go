@@ -200,7 +200,7 @@ type NisdParser struct{}
 func (NisdParser) GetRootKey() string { return NisdCfgKey }
 
 func (NisdParser) NewEntity(id string) Entity {
-	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, 4), NetInfo: make([]ctlplfl.NetworkInfo, 0)}
+	return &ctlplfl.Nisd{ID: id, FailureDomain: make([]string, ctlplfl.FD_MAX), NetInfo: make([]ctlplfl.NetworkInfo, 0)}
 }
 
 func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
@@ -218,6 +218,8 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 			nisd.FailureDomain[ctlplfl.PDU_IDX] = string(value)
 		case rackKey:
 			nisd.FailureDomain[ctlplfl.RACK_IDX] = string(value)
+		case ptKey:
+			nisd.FailureDomain[ctlplfl.PARTITION_IDX] = string(value)
 		case TOTAL_SPACE:
 			ts, _ := strconv.Atoi(string(value))
 			nisd.TotalSize = int64(ts)
