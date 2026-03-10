@@ -309,6 +309,7 @@ type userLoggedInMsg struct {
 	err  error
 }
 
+
 // userClientTeardownFn holds the teardown function for the lazily-initialized
 // user client. It's package-level because Bubbletea copies the model by value,
 // so a teardown set inside Update() wouldn't be visible in main().
@@ -7484,7 +7485,6 @@ func (m model) updateNISDInitialize(msg tea.Msg) (model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter", " ":
-			// Initialize all selected NISDs
 			err := (&m).initializeSelectedNISDs()
 			if err != nil {
 				m.message = fmt.Sprintf("Failed to initialize NISDs: %v", err)
@@ -7643,6 +7643,7 @@ func (m *model) initializeNISD() error {
 			hv.RackID,
 			m.selectedHvForNISD.ID,
 			m.selectedPartitionForNISD.DevID,
+			m.selectedPartitionForNISD.PartitionID,
 		},
 		NetInfoCnt: len(netInfos),
 		UserToken:  m.userToken(),
@@ -7723,6 +7724,7 @@ func (m *model) initializeSelectedNISDs() error {
 				hv.RackID,
 				partitionInfo.HvUUID,
 				partitionInfo.Partition.DevID,
+				partitionInfo.Partition.PartitionID,
 			},
 			NetInfoCnt: len(netInfos),
 			UserToken:  m.userToken(),
