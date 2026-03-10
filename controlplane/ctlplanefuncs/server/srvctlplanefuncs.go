@@ -76,19 +76,19 @@ const (
 	DSYNC                   = "ds"
 	ALLOW_DEFRAG_MCIB_CACHE = "admc"
 
-	cfgkey         = "cfg"
-	NisdCfgKey     = "n_cfg"
-	deviceCfgKey   = "d_cfg"
-	sdeviceKey     = "sd"
-	parentInfo     = "pi"
-	pduKey         = "p"
-	rackKey        = "r"
-	nisdKey        = "n"
-	vdevKey        = "v"
-	chunkKey       = "c"
-	hvKey          = "hv"
-	ptKey          = "pt"
-	argsKey        = "na"
+	cfgkey       = "cfg"
+	NisdCfgKey   = "n_cfg"
+	deviceCfgKey = "d_cfg"
+	sdeviceKey   = "sd"
+	parentInfo   = "pi"
+	pduKey       = "p"
+	rackKey      = "r"
+	nisdKey      = "n"
+	vdevKey      = "v"
+	chunkKey     = "c"
+	hvKey        = "hv"
+	ptKey        = "pt"
+	argsKey      = "na"
 
 	ENC_TYPE = pmCmn.GOB
 )
@@ -305,38 +305,71 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 }
 
 func ApplyNisd(args ...interface{}) (interface{}, error) {
+
+	log.Debug("ApplyNisd called")
+
+	// Extract callback arguments
 	cbargs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
 	if !ok {
 		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
+		log.Error("ApplyNisd: invalid cbargs argument:", err)
 		return nil, err
 	}
+
+	log.Debugf("ApplyNisd: received cbargs | AppDataSize=%d", cbargs.AppDataSize)
+
+	// Extract NISD request
 	nisd, ok := args[0].(ctlplfl.Nisd)
 	if !ok {
 		err := fmt.Errorf("invalid argument: expecting type Nisd")
+		log.Error("ApplyNisd: invalid nisd argument:", err)
 		return nil, err
 	}
+
+	log.Debugf("ApplyNisd: processing NISD ID=%s", nisd.ID)
+
+	// Authorization check
 	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "ApplyNisd"); err != nil {
+		log.Error("ApplyNisd: RBAC authorization failed for NISD:", nisd.ID, " error:", err)
 		return nil, err
 	}
+
+	log.Debugf("ApplyNisd: RBAC authorization successful for NISD=%s", nisd.ID)
+
+	// Decode intermediate changes received from pmdb
 	var intrm funclib.FuncIntrm
 	buf := C.GoBytes(cbargs.AppData, C.int(cbargs.AppDataSize))
+
+	log.Debugf("ApplyNisd: decoding intermediate changes | bufferSize=%d", len(buf))
+
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
 	if err != nil {
-		log.Error("Failed to decode the apply changes: ", err)
+		log.Error("ApplyNisd: failed to decode apply changes:", err)
 		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
 	}
 
+	log.Debugf("ApplyNisd: decoded intermediate changes | numChanges=%d", len(intrm.Changes))
+
+	// Apply KV changes to the store
 	err = applyKV(intrm.Changes, cbargs.Store)
 	if err != nil {
-		log.Error("applyKV(): ", err)
+		log.Error("ApplyNisd: applyKV failed:", err)
 		return nil, err
 	}
 
+	log.Debugf("ApplyNisd: KV changes successfully applied for NISD=%s", nisd.ID)
+
+	// Update in-memory handler/registry
 	err = HR.AddNisd(&nisd)
 	if err != nil {
-		log.Error("AddNisd()", err)
+		log.Error("ApplyNisd: AddNisd failed:", err)
+	} else {
+		log.Tracef("ApplyNisd: NISD successfully added to handler registry | ID=%s", nisd.ID)
 	}
 
+	log.Infof("ApplyNisd completed successfully for NISD=%s, %s", nisd.ID, string(intrm.Response))
+
+	// Return previously prepared response
 	return intrm.Response, nil
 }
 
@@ -408,30 +441,51 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
 	return nisdList, nil
 }
-
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
+	// Extract NISD object from arguments
 	nisd := args[0].(ctlplfl.Nisd)
-	if err := nisd.Validate(); err != nil {
-		log.Error("failed to validate nisd: ", err)
-		return nil, err
-	}
-	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "WPNisdCfg"); err != nil {
-		return nil, err
-	}
-	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
+	log.Debug("WPNisdCfg request received for NISD:", nisd.ID)
 
+	// Validate the NISD configuration before processing
+	if err := nisd.Validate(); err != nil {
+		log.Error("WPNisdCfg validation failed for NISD:", nisd.ID, " error:", err)
+		return ctlplfl.SendErrorResponse(nisd.ID, err)
+	}
+
+	// Perform RBAC authorization for the request
+	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "WPNisdCfg"); err != nil {
+		log.Error("WPNisdCfg RBAC authorization failed for NISD:", nisd.ID, " error:", err)
+		return ctlplfl.SendErrorResponse(nisd.ID, err)
+	}
+
+	log.Debug("WPNisdCfg authorization successful for NISD:", nisd.ID)
+
+	// Populate entities and generate the list of changes that need to be committed
+	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
+	log.Debug("WPNisdCfg populated entities for NISD:", nisd.ID)
+
+	// Prepare success response
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    nisd.ID,
 		Success: true,
 	}
+
+	// Encode the response using GOB
 	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode nisd response: %v", err)
+		log.Error("WPNisdCfg failed to encode response for NISD:", nisd.ID, " error:", err)
+		return ctlplfl.SendErrorResponse(nisd.ID, fmt.Errorf("failed to encode nisd response: %v", err))
 	}
+
+	// Prepare intermediate function structure containing changes and encoded response
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: r,
 	}
+
+	log.Debug("WPNisdCfg successfully prepared response for NISD:", nisd.ID)
+
+	// Encode and return the final function response
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 

@@ -13,6 +13,8 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	"github.com/google/uuid"
 )
 
@@ -399,7 +401,7 @@ func (n *Nisd) Validate() error {
 	}
 
 	if len(n.FailureDomain) != FD_MAX {
-		return errors.New("invalid NISD failure domain info")
+		return fmt.Errorf("invalid NISD failure domain info %d", len(n.FailureDomain))
 	}
 	for i := 0; i < DEVICE_IDX; i++ {
 		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
@@ -481,4 +483,23 @@ func (hv *Hypervisor) ValidateIPs() error {
 		}
 	}
 	return nil
+}
+
+func SendErrorResponse(id string, err error) (interface{}, error) {
+	response := ResponseXML{
+		Name:    id,
+		Success: false,
+		Error:   err.Error(),
+	}
+
+	r, encErr := pmCmn.Encoder(pmCmn.GOB, response)
+	if encErr != nil {
+		return nil, fmt.Errorf("failed to encode nisd error response: %v", encErr)
+	}
+
+	funcIntrm := funclib.FuncIntrm{
+		Response: r,
+	}
+
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }

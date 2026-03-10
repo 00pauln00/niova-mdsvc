@@ -143,7 +143,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 								rack,
 								hv,
 								dev,
-								partitionID,
+								fmt.Sprintf("%s-%d", dev, n),
 							},
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
@@ -163,6 +163,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 			assert.True(t, resp.Success)
 		}
 		time.Sleep(10 * time.Millisecond)
+		log.Info("response : ", resp, err)
 	}
 
 }
@@ -204,7 +205,7 @@ func TestCreateVdevWithFilters(t *testing.T) {
 			// Partition ID synthetically generated for device nvme-fb6358163008, slot 0
 			name:       "Filter Partition",
 			filterType: cpLib.FD_PARTITION,
-			filterID:   "pt-nvme-fb6358163008-0",
+			filterID:   "nvme-fb6358163008-0",
 			expectErr:  false,
 		},
 		{
@@ -222,8 +223,8 @@ func TestCreateVdevWithFilters(t *testing.T) {
 
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
-					Size:       1 * 1024 * 1024 * 1024,
-					NumReplica: 2,
+					Size:       16 * 1024 * 1024 * 1024,
+					NumReplica: 1,
 				},
 				Filter: cpLib.Filter{
 					Type: tc.filterType,

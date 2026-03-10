@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -119,17 +120,39 @@ func EncodeErrorResponse(name string, errMsg string) []byte {
 }
 
 func EncodeResponse(enctype pmLib.Format, name string, resp *[]byte) error {
+
+	if resp == nil {
+		log.Error("EncodeResponse: response pointer is nil")
+		return fmt.Errorf("response pointer is nil")
+	}
+
+	log.Infof("EncodeResponse called | func=%s respSize=%d", name, len(*resp))
+
+	if len(*resp) == 0 {
+		log.Error("EncodeResponse: empty response buffer, cannot decode")
+		return fmt.Errorf("empty response buffer")
+	}
+
 	res := GetRespStruct(name)
+	log.Tracef("Allocated response struct type for %s: %+v", name, res)
+
 	err := pmLib.Decoder(pmLib.GOB, *resp, res)
 	if err != nil {
-		log.Error("gob: failed to decode response: ", err)
+		log.Errorf("gob: failed to decode response | func=%s size=%d err=%v", name, len(*resp), err)
 		return err
 	}
-	log.Tracef("encoding response type %s, with %v encoder", name, enctype)
+
+	log.Tracef("Decoded gob response successfully for %s", name)
+
+	log.Tracef("Encoding response type %s using %v encoder", name, enctype)
+
 	*resp, err = pmLib.Encoder(enctype, res)
 	if err != nil {
-		log.Error("%v: failed to encode response: ", enctype, err)
+		log.Errorf("%v: failed to encode response for %s: %v", enctype, name, err)
 		return err
 	}
+
+	log.Tracef("Response encoded successfully | newSize=%d", len(*resp))
+
 	return nil
 }
