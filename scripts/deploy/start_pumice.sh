@@ -82,7 +82,6 @@ log "Starting CTLPlane_pmdbServer"
     -u "${PEER_UUID}" \
     -g "${CONFIGS_DIR}/gossipNodes" \
     -l "${LOG_DIR}/pmdb_server_${PEER_UUID}.log" \
-    -auth "${BASE_DIR}/ctlauth.yaml" \
     -ll "Trace" \
     -p 1 \
     > "${LOG_DIR}/pmdb_server_${PEER_UUID}_stdouterr" 2>&1 &
