@@ -125,8 +125,8 @@ func main() {
 	naS := nisdArgs.BuildCmdArgs()
 	for i, nisd := range conf.NisdConfig {
 		req := cpLib.GetReq{
-			ID:     nisd.DevID,
-			GetAll: false,
+			ID:        nisd.DevID,
+			GetAll:    false,
 			UserToken: adminToken,
 		}
 		pt, err := c.GetPartition(req)
@@ -146,7 +146,7 @@ func main() {
 		conf.NisdConfig[i].ID = nisdInfo.ID
 		conf.NisdConfig[i].ClientPort = nisdInfo.NetInfo[ZERO_INDEX].Port
 		conf.NisdConfig[i].PeerPort = nisdInfo.PeerPort
-		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.DEVICE_IDX]
+		conf.NisdConfig[i].DevID = nisd.DevID
 		conf.NisdConfig[i].Args = naS
 		log.Info("fetched nisd info from control plane: ", nisdInfo)
 
