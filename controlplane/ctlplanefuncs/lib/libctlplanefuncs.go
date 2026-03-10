@@ -13,6 +13,8 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
+	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	"github.com/google/uuid"
 )
 
@@ -56,11 +58,12 @@ const (
 	FAILED        = 4
 	STOPPED       = 5
 
-	PDU_IDX    = 0
-	RACK_IDX   = 1
-	HV_IDX     = 2
-	DEVICE_IDX = 3
-	FD_MAX     = 4
+	PDU_IDX       = 0
+	RACK_IDX      = 1
+	HV_IDX        = 2
+	DEVICE_IDX    = 3
+	PARTITION_IDX = 4
+	FD_MAX        = 5
 
 	HASH_SIZE = 8
 
@@ -75,6 +78,7 @@ const (
 	FD_RACK
 	FD_HV
 	FD_DEVICE
+	FD_PARTITION
 )
 
 func GetFDIdx(t FD) int {
@@ -87,6 +91,8 @@ func GetFDIdx(t FD) int {
 		return HV_IDX
 	case FD_DEVICE:
 		return DEVICE_IDX
+	case FD_PARTITION:
+		return PARTITION_IDX
 	default:
 		return -1
 	}
@@ -395,7 +401,7 @@ func (n *Nisd) Validate() error {
 	}
 
 	if len(n.FailureDomain) != FD_MAX {
-		return errors.New("invalid NISD failure domain info")
+		return fmt.Errorf("invalid NISD failure domain info %d", len(n.FailureDomain))
 	}
 	for i := 0; i < DEVICE_IDX; i++ {
 		if _, err := uuid.Parse(n.FailureDomain[i]); err != nil {
@@ -415,7 +421,7 @@ func (n *Nisd) Validate() error {
 }
 
 func NextFailureDomain(fd int) (int, error) {
-	if fd < DEVICE_IDX {
+	if fd < PARTITION_IDX {
 		fd++
 		return fd, nil
 	}
@@ -477,4 +483,23 @@ func (hv *Hypervisor) ValidateIPs() error {
 		}
 	}
 	return nil
+}
+
+func SendErrorResponse(id string, err error) (interface{}, error) {
+	response := ResponseXML{
+		Name:    id,
+		Success: false,
+		Error:   err.Error(),
+	}
+
+	r, encErr := pmCmn.Encoder(pmCmn.GOB, response)
+	if encErr != nil {
+		return nil, fmt.Errorf("failed to encode nisd error response: %v", encErr)
+	}
+
+	funcIntrm := funclib.FuncIntrm{
+		Response: r,
+	}
+
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }

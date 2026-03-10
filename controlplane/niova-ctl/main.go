@@ -235,12 +235,12 @@ type model struct {
 	vdevCountInput         textinput.Model
 	vdevEntityUUIDInput    textinput.Model
 	vdevFilterTypeInput    textinput.Model
-	vdevFormActiveField    inputField        // Track which field is currently active
-	createdVdevs           []ctlplfl.VdevCfg // Store created Vdevs for summary
+	vdevFormActiveField    inputField              // Track which field is currently active
+	createdVdevs           []ctlplfl.VdevCfg       // Store created Vdevs for summary
 	nisdCache              map[string]ctlplfl.Nisd // NISD UUID → NISD info, populated on device view entry
-	vdevCreationProgress   int               // Track creation progress
-	vdevCreationTotal      int               // Total Vdevs to create
-	vdevCreationErrors     []string          // Store any creation errors
+	vdevCreationProgress   int                     // Track creation progress
+	vdevCreationTotal      int                     // Total Vdevs to create
+	vdevCreationErrors     []string                // Store any creation errors
 
 	// Control Plane
 	cpClient            *ctlplcl.CliCFuncs
@@ -8368,7 +8368,7 @@ func (m model) viewVdevForm() string {
 	s.WriteString("\n\n")
 
 	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n")
-	s.WriteString("Failure domain types: any, pdu, rack, hv, device\n")
+	s.WriteString("Failure domain types: any, pdu, rack, hv, device, partition\n")
 	s.WriteString("The control plane will allocate Vdev chunks to the given entity or failure domain.\n\n")
 
 	// Show summary if both fields have values
@@ -8866,6 +8866,8 @@ func parseFDType(s string) ctlplfl.FD {
 		return ctlplfl.FD_HV
 	case "device":
 		return ctlplfl.FD_DEVICE
+	case "partition":
+		return ctlplfl.FD_PARTITION
 	default:
 		return ctlplfl.FD_ANY
 	}

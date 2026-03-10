@@ -3,6 +3,7 @@ package clictlplanefuncs
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
@@ -19,16 +20,15 @@ const (
 // Client side interferace for control plane functions
 type CliCFuncs struct {
 	appUUID  string
-	writeSeq uint64
+	writeSeq atomic.Uint64
 	sdObj    *sd.ServiceDiscoveryHandler
 	encType  pmCmn.Format
 }
 
 func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFuncs {
 	ccf := CliCFuncs{
-		appUUID:  appUUID,
-		writeSeq: uint64(0),
-		encType:  pmCmn.JSON, // Default encoding type
+		appUUID: appUUID,
+		encType: pmCmn.JSON, // Default encoding type
 	}
 
 	ccf.sdObj = &sd.ServiceDiscoveryHandler{
@@ -62,11 +62,10 @@ func (ccf *CliCFuncs) request(rqb []byte, urla string, isWrite bool) ([]byte, er
 }
 
 func (ccf *CliCFuncs) _put(urla string, rqb []byte) ([]byte, error) {
-	rncui := fmt.Sprintf("%s:0:0:0:%d", ccf.appUUID, ccf.writeSeq)
-	ccf.writeSeq += 1
+	seq := ccf.writeSeq.Add(1) - 1
+	rncui := fmt.Sprintf("%s:0:0:0:%d", ccf.appUUID, seq)
 	urla += "&rncui=" + rncui
 	rsb, err := ccf.request(rqb, urla, true)
-
 	return rsb, err
 }
 

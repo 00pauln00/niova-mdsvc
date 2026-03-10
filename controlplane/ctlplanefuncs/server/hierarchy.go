@@ -32,6 +32,7 @@ type FailureDomain struct {
 // Index 1 - Rack
 // Index 2 - HyperVisor
 // Index 3 - Device
+// Index 4 - Partition
 type Hierarchy struct {
 	FD []FailureDomain
 }
@@ -44,7 +45,7 @@ func compareNisd(a, b *cpLib.Nisd) bool { return a.ID < b.ID }
 // Initialize the Hierarchy Struct
 func (hr *Hierarchy) Init() {
 	hr.FD = make([]FailureDomain, cpLib.FD_MAX)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < cpLib.FD_MAX; i++ {
 		hr.FD[i] = FailureDomain{
 			Type: uint8(i),
 			Tree: btree.NewBTreeG[*Entities](compareEntity),
