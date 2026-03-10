@@ -71,6 +71,7 @@ func main() {
 	configPath := flag.String("c", "./gossipNodes", "pass the gossip config path")
 	setupConfig := flag.String("sc", "./config.yaml", "pass the gossip config path")
 	logLevel := flag.Int("ll", 4, "set log level (0=panic, 1=fatal, 2=error, 3=warn, 4=info, 5=debug, 6=trace)")
+	// PASS the secret key here
 	adminSecret := flag.String("as", "", "admin secret key for authentication")
 	flag.Parse()
 	log.SetLevel(log.Level(*logLevel))
@@ -126,6 +127,7 @@ func main() {
 		req := cpLib.GetReq{
 			ID:     nisd.DevID,
 			GetAll: false,
+			UserToken: adminToken,
 		}
 		pt, err := c.GetPartition(req)
 		if err != nil {
@@ -144,7 +146,7 @@ func main() {
 		conf.NisdConfig[i].ID = nisdInfo.ID
 		conf.NisdConfig[i].ClientPort = nisdInfo.NetInfo[ZERO_INDEX].Port
 		conf.NisdConfig[i].PeerPort = nisdInfo.PeerPort
-		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.FD_DEVICE]
+		conf.NisdConfig[i].DevID = nisdInfo.FailureDomain[cpLib.DEVICE_IDX]
 		conf.NisdConfig[i].Args = naS
 		log.Info("fetched nisd info from control plane: ", nisdInfo)
 

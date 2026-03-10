@@ -576,7 +576,13 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 	err = handler.pmdbClientObj.Put(reqArgs)
 	if err != nil {
 		log.Error("Error in WriteEncoded and Response: ", err)
-		return err
+		// Encode the error into the expected response type so the client
+		// can decode it and display the actual error message.
+		errBytes := EncodeErrorResponse(name, err.Error())
+		if errBytes == nil {
+			return err
+		}
+		*response = errBytes
 	}
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
