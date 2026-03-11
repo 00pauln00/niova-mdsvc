@@ -1947,8 +1947,9 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				m.message = fmt.Sprintf("Added hypervisor %s with %d devices", m.currentHv.ID, len(selectedDevices))
 			}
-			// Clear discovered devices so unselected devices don't appear in Initialize Devices
-			m.discoveredDevs = nil
+			// Replace discovered devices with only the selected ones so unselected
+			// devices don't appear in Initialize Devices
+			m.discoveredDevs = selectedDevices
 			m.state = stateShowAddedHypervisor
 			return m, nil
 		}
