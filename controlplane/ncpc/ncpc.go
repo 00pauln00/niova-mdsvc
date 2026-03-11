@@ -951,6 +951,9 @@ func main() {
 	flag.StringVar(&nisdDetails, "nd", "", "enter nisd details in json format")
 	flag.Int64Var(&vdevSize, "vds", 100*1024*1024*1024, "enter vdev size in bytes")
 	flag.StringVar(&vdevOutputFile, "vo", "vdev-config.json", "Path to the output JSON file where VDEV configuration will be written")
+	adminSecret := flag.String("as", "", "admin secret key for authentication")
+	vdevID := flag.String("vdev", "", "enter a valid VDEV ID")
+	chunk := flag.String("chunk", "", "enter a valid Chunk Number")
 
 	//Get commandline parameters.
 	clientObj.getCmdParams()
@@ -982,6 +985,28 @@ func main() {
 	}()
 	//Wait till client API Object is ready
 	clientObj.waitServiceInit("")
+
+	userCfg := userClient.Config{
+		AppUUID:          uuid.NewV4().String(),
+		RaftUUID:         clientObj.raftUUID,
+		GossipConfigPath: clientObj.configPath,
+	}
+	authClient, tearDown := userClient.New(userCfg)
+	if authClient == nil {
+		log.Fatal("failed to initialize user client for authentication")
+	}
+	defer tearDown()
+
+	// Login as admin to get UserToken
+	loginResp, err := authClient.Login(userlib.AdminUsername, *adminSecret)
+	if err != nil {
+		log.Fatalf("admin login failed: %v", err)
+	}
+	if !loginResp.Success || loginResp.AccessToken == "" {
+		log.Fatal("admin login failed: no access token received")
+	}
+	adminToken := loginResp.AccessToken
+	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 
 	var passNext bool
 	var rdata []byte
@@ -1114,10 +1139,11 @@ func main() {
 		req := &cpLib.GetReq{}
 		vdevs, err := c.GetVdevCfgs(req)
 		if err != nil {
-			log.Error("failed to get vdev info:", err)
-			os.Exit(-1)
+			log.Errorf("Failed to fetch Vdev configurations: %v", err)
+			os.Exit(1)
 		}
-		log.Info("Vdev info retrieved successfully: count:", len(vdevs))
+
+		log.Infof("Successfully retrieved %d Vdev configurations", len(vdevs))
 		DumpVdevCfgsToJSON(vdevs, vdevOutputFile)
 	case "PopulateTopology":
 		err = clientObj.populateTopology(clientObj.requestValue)
@@ -1176,6 +1202,43 @@ func main() {
 			log.Errorf("CreateAdminUser failed: %s", resp.Error)
 			os.Exit(-1)
 		}
+	case "GetVdev":
+		if *vdevID == "" {
+			log.Error("Missing required flag: -vdev")
+			os.Exit(1)
+		}
+
+		vdev, err := c.GetVdevsWithChunkInfo(&cpLib.GetReq{
+			ID:        *vdevID,
+			UserToken: adminToken,
+		})
+		if err != nil {
+			log.Errorf("Failed to fetch Vdev details for VdevID=%s: %v", *vdevID, err)
+			os.Exit(1)
+		}
+
+		log.Infof("Successfully retrieved Vdev details for VdevID=%s", *vdevID)
+		fmt.Printf("Vdev Details: %+v\n", vdev)
+
+	case "GetChunk":
+		if *vdevID == "" || *chunk == "" {
+			log.Error("Missing required flags: -vdev and -chunk")
+			os.Exit(1)
+		}
+
+		reqID := *vdevID + "/" + *chunk
+
+		vdev, err := c.GetChunkNisd(&cpLib.GetReq{
+			ID:        reqID,
+			UserToken: adminToken,
+		})
+		if err != nil {
+			log.Errorf("Failed to fetch Chunk info for VdevID=%s Chunk=%s: %v", *vdevID, *chunk, err)
+			os.Exit(1)
+		}
+
+		log.Infof("Successfully retrieved Chunk info for VdevID=%s Chunk=%s", *vdevID, *chunk)
+		fmt.Printf("Chunk Details: %+v\n", vdev)
 	}
 
 	if err != nil {
