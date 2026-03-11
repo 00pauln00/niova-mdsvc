@@ -513,9 +513,10 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("missing arguments: expected UserReq and PmdbCbArgs")
 	}
 
-	req, ok1 := args[0].(userlib.UserReq)
+	cpreq, ok1 := args[0].(cpLib.CPReq)
 	cbArgs, ok2 := args[1].(*pumiceserver.PmdbCbArgs)
-	if !ok1 || !ok2 {
+	req, ok3 := cpreq.Payload.(userlib.UserReq)
+	if !ok1 || !ok2 || !ok3 {
 		return nil, fmt.Errorf("type assertion failed: invalid argument types")
 	}
 
@@ -601,7 +602,8 @@ func returnApplyError(errMsg string) (interface{}, error) {
 // Login authenticates a user and returns a JWT token
 func Login(args ...interface{}) (interface{}, error) {
 	callbackArgs := args[0].(*pumiceserver.PmdbCbArgs)
-	req := args[1].(cpLib.GetReq)
+	cpreq := args[1].(cpLib.CPReq)
+	req := cpreq.Payload.(cpLib.GetReq)
 
 	var username, secretKey string
 	// Expected ID as username:secretKey
