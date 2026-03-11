@@ -210,7 +210,8 @@ func PutUser(args ...interface{}) (interface{}, error) {
 	callerIsAdmin := tokenClaims.IsAdmin
 	log.Infof("PutUser called by user %s with role %s", callerUserID, callerRole)
 	// Check authorization
-	if auth := srvctlplanefuncs.GetAuthorizer(); auth != nil {
+	auth := srvctlplanefuncs.GetAuthorizer()
+	if auth != nil && srvctlplanefuncs.IsAuthEnabled() {
 		if !auth.CheckRBAC(authz.PutUser, []string{callerRole}) {
 			log.Errorf("User %s with role %s not authorized for PutUser", callerUserID, callerRole)
 			return returnError("authorization failed: insufficient permissions")
@@ -218,7 +219,7 @@ func PutUser(args ...interface{}) (interface{}, error) {
 	}
 	if !req.IsUpdate {
 		// Only admins can create new users
-		if !callerIsAdmin || callerRole != userlib.AdminUserRole {
+		if srvctlplanefuncs.IsAuthEnabled() && (!callerIsAdmin || callerRole != userlib.AdminUserRole) {
 			log.Errorf("User %s with role %s attempted to create a user - permission denied", callerUserID, callerRole)
 			return returnError("permission denied: only admin users can create new users")
 		}
@@ -245,7 +246,7 @@ func PutUser(args ...interface{}) (interface{}, error) {
 		}
 
 		// Users can only update their own record, unless they are admin
-		if !callerIsAdmin && callerUserID != req.UserID {
+		if srvctlplanefuncs.IsAuthEnabled() && (!callerIsAdmin && callerUserID != req.UserID) {
 			log.Errorf("User %s attempted to update user %s - permission denied", callerUserID, req.UserID)
 			return returnError("permission denied: you can only update your own record")
 		}
@@ -366,7 +367,8 @@ func GetUser(args ...interface{}) (interface{}, error) {
 	log.Infof("GetUser called by user %s with role %s", callerUserID, callerRole)
 
 	// Check authorization
-	if auth := srvctlplanefuncs.GetAuthorizer(); auth != nil {
+	auth := srvctlplanefuncs.GetAuthorizer()
+	if auth != nil && srvctlplanefuncs.IsAuthEnabled() {
 		if !auth.CheckRBAC(authz.GetUser, []string{callerRole}) {
 			log.Errorf("User %s with role %s not authorized for GetUser", callerUserID, callerRole)
 			return cpLib.AuthError(fmt.Errorf("authorization failed: insufficient permissions"))
@@ -400,13 +402,13 @@ func GetUser(args ...interface{}) (interface{}, error) {
 
 	// Regular users can only view their own information
 	// Admins can view any user information (including listing all users)
-	if !callerIsAdmin && targetUserID != "" && targetUserID != callerUserID {
+	if srvctlplanefuncs.IsAuthEnabled() && (!callerIsAdmin && targetUserID != "" && targetUserID != callerUserID) {
 		log.Errorf("User %s attempted to view user %s - permission denied", callerUserID, targetUserID)
 		return cpLib.AuthError(fmt.Errorf("authorization failed: you can only view your own information"))
 	}
 
 	// If querying all users (no specific ID/username), only admin is allowed
-	if !callerIsAdmin && req.UserID == "" && req.Username == "" {
+	if srvctlplanefuncs.IsAuthEnabled() && (!callerIsAdmin && req.UserID == "" && req.Username == "") {
 		log.Errorf("Non-admin user %s attempted to list all users - permission denied", callerUserID)
 		return cpLib.AuthError(fmt.Errorf("authorization failed: only admins can list all users"))
 	}

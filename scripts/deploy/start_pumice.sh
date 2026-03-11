@@ -37,6 +37,7 @@ export LD_LIBRARY_PATH="/lib:${LIB_DIR}"
 export NIOVA_INOTIFY_BASE_PATH="${CTL_DIR}"
 export NIOVA_APPLY_HANDLER_VERSION=0
 export USER_ENCRYPTION_KEY="81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII"
+export AUTH_ENABLED="${AUTH_ENABLED:-true}"
 
 log "Environment variables exported"
 

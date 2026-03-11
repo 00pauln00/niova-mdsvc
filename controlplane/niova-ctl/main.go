@@ -249,6 +249,7 @@ type model struct {
 	cpHypervisorRefresh bool                 // Flag to trigger Hypervisor refresh from CP
 
 	// User Management
+	authEnabled        bool // true when the server has authentication enabled
 	userClient         *usercl.Client
 	userUsernameInput  textinput.Model
 	userSecretKeyInput textinput.Model
@@ -416,21 +417,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 	// Initialize IP address inputs (start with one)
 	ipInputs := []textinput.Model{createIPInput()}
 
-	// Initialize menu items
-	menuItems := []menuItem{
-		{"Login", "Login with username and secret key"},
-		{"Create User", "Create admin or regular users"},
-		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
-		{"Manage Racks", "Add, edit, or delete server racks"},
-		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
-		{"Manage Devices", "Initialize devices on hypervisors"},
-		{"Manage Partitions", "Create, view, and delete NISD partitions"},
-		{"Manage NISDs", "Initialize NISD instances on device partitions"},
-		{"Manage Vdevs", "Create and manage virtual devices"},
-		{"View Configuration", "Display current hierarchical configuration from control plane"},
-		{"Exit", "Exit"},
-	}
-
 	// Initialize device list
 	deviceList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	deviceList.Title = "Storage Devices"
@@ -488,6 +474,34 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 		isConnected = true
 	}
 
+	// Probe the server to determine whether authentication is enabled.
+	// When auth is disabled the server grants admin access for any token
+	var loggedInUser *userlib.LoginResp
+	// Initialize menu items
+	authDetected := cpClient != nil && probeServerAuth(cpClient)
+	if authDetected {
+		log.Info("niova-ctl: server authentication is enabled")
+	} else {
+		log.Warn("niova-ctl: server authentication is disabled")
+	}
+	menuItems := []menuItem{}
+	if authDetected {
+		menuItems = append(menuItems, menuItem{"Login", "Login with username and secret key"})
+		menuItems = append(menuItems, menuItem{"Create User", "Create admin or regular users"})
+	}
+
+	menuItems = append(menuItems, []menuItem{
+		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
+		{"Manage Racks", "Add, edit, or delete server racks"},
+		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
+		{"Manage Devices", "Initialize devices on hypervisors"},
+		{"Manage Partitions", "Create, view, and delete NISD partitions"},
+		{"Manage NISDs", "Initialize NISD instances on device partitions"},
+		{"Manage Vdevs", "Create and manage virtual devices"},
+		{"View Configuration", "Display current hierarchical configuration from control plane"},
+		{"Exit", "Exit"},
+	}...)
+
 	return model{
 		state:            stateMenu,
 		menuCursor:       0,
@@ -528,10 +542,30 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 		cpClient:     cpClient,
 		cpConnected:  isConnected,
 		// User management
+		authEnabled:        authDetected,
 		userUsernameInput:  userUsernameInput,
 		userSecretKeyInput: userSecretKeyInput,
 		userTokenInput:     userTokenInput,
+		loggedInUser:       loggedInUser,
 	}
+}
+
+// probeServerAuth reports whether the server has authentication enabled.
+// It sends a GetPDUs request with an empty token: if the server rejects it
+// with an auth error, auth is enabled (returns true); if the request succeeds,
+// auth is disabled (returns false).
+func probeServerAuth(cpClient *ctlplcl.CliCFuncs) bool {
+	_, err := cpClient.GetNisds(ctlplfl.GetReq{ID: uuid.NewString()})
+	if err == nil {
+		log.Infof("Auth probe: server has authentication disabled error: %v\n", err)
+		return false
+	}
+	if strings.Contains(err.Error(), "Failed to lookup for key") {
+		log.Info("Auth probe: server has authentication disabled (no key lookup)")
+		return false
+	}
+	log.Info("Auth probe: server has authentication enabled (", err, ")")
+	return true
 }
 
 // initControlPlane initializes the control plane client if enabled
@@ -1064,7 +1098,12 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.menuCursor++
 			}
 		case "enter", " ":
-			switch m.menuCursor {
+			// When auth is disabled the Login and Create User items are absent.
+			effectiveCase := m.menuCursor
+			if !m.authEnabled {
+				effectiveCase += 2
+			}
+			switch effectiveCase {
 			case 0: // Login
 				var err error
 				m, err = m.ensureUserClient()
@@ -1096,7 +1135,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.userUsernameInput.Focus()
 				return m, textinput.Blink
 			case 2: // Manage PDUs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1106,7 +1145,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 3: // Manage Racks
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1117,7 +1156,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 4: // Manage Hypervisors
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1128,7 +1167,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 5: // Manage Devices
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1140,7 +1179,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 6: // Manage Partitions
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1151,7 +1190,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 7: // Manage NISDs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1165,7 +1204,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 8: // Manage Vdevs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1175,7 +1214,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = ""
 				return m, nil
 			case 9: // View Configuration
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -3109,19 +3148,21 @@ func (m model) viewMenu() string {
 		s.WriteString(fmt.Sprintf("Control Plane: %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Disabled")))
 	}
 
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+
 	// Login status
-	if m.loggedInUser != nil {
+	if !m.authEnabled {
+		s.WriteString(dimStyle.Render("Authentication: Disabled") + "\n\n")
+	} else if m.loggedInUser != nil {
 		s.WriteString(successStyle.Render(fmt.Sprintf("Logged in as: %s (role: %s)", m.loggedInUser.Username, m.loggedInUser.UserRole)) + "\n\n")
 	} else {
 		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Not logged in") + "\n\n")
 	}
 
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
-
 	s.WriteString("Select an option:\n\n")
 	for i, item := range m.menuItems {
 		// Items 2-9 are locked when not logged in
-		locked := m.loggedInUser == nil && i >= 2 && i <= 9
+		locked := m.authEnabled && m.loggedInUser == nil && i >= 2 && i <= 9
 		cursor := "  "
 		if m.menuCursor == i {
 			cursor = "▶ "

@@ -77,39 +77,47 @@ func main() {
 	log.SetLevel(log.Level(*logLevel))
 	log.Infof("starting config app - raft: %s, config: %s", *raftID, *configPath)
 
-	if *adminSecret == "" {
-		log.Fatal("admin secret key (-as) is required for NISD operations")
+	var adminToken string
+	authEnabled := os.Getenv("AUTH_ENABLED") != "false"
+
+	if authEnabled {
+		log.Info("Starting ccManager with AUTH_ENABLED=true")
+		if *adminSecret == "" {
+			log.Fatal("admin secret key (-as) is required for NISD operations")
+		}
+
+		// Initialize user client for authentication
+		userCfg := userClient.Config{
+			AppUUID:          uuid.New().String(),
+			RaftUUID:         *raftID,
+			GossipConfigPath: *configPath,
+		}
+		authClient, tearDown := userClient.New(userCfg)
+		if authClient == nil {
+			log.Fatal("failed to initialize user client for authentication")
+		}
+		defer tearDown()
+
+		// Login as admin to get UserToken
+		loginResp, err := authClient.Login(userlib.AdminUsername, *adminSecret)
+		if err != nil {
+			log.Fatalf("admin login failed: %v", err)
+		}
+		if !loginResp.Success || loginResp.AccessToken == "" {
+			log.Fatal("admin login failed: no access token received")
+		}
+		adminToken = loginResp.AccessToken
+		log.Info("admin authentication successful")
+	} else {
+		log.Warn("Starting ccManager with AUTH_ENABLED=false")
 	}
 
 	// Initialize control plane client
 	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
 
-	// Initialize user client for authentication
-	userCfg := userClient.Config{
-		AppUUID:          uuid.New().String(),
-		RaftUUID:         *raftID,
-		GossipConfigPath: *configPath,
-	}
-	authClient, tearDown := userClient.New(userCfg)
-	if authClient == nil {
-		log.Fatal("failed to initialize user client for authentication")
-	}
-	defer tearDown()
-
-	// Login as admin to get UserToken
-	loginResp, err := authClient.Login(userlib.AdminUsername, *adminSecret)
-	if err != nil {
-		log.Fatalf("admin login failed: %v", err)
-	}
-	if !loginResp.Success || loginResp.AccessToken == "" {
-		log.Fatal("admin login failed: no access token received")
-	}
-	adminToken := loginResp.AccessToken
-	log.Info("admin authentication successful")
-
 	var conf NisdCntrConfig
 	conf.NisdConfig = make([]Nisd, 0)
-	err = loadConfig(*setupConfig, &conf)
+	err := loadConfig(*setupConfig, &conf)
 	if err != nil {
 		log.Error("failed to load config file: ", err)
 		os.Exit(-1)
