@@ -525,18 +525,6 @@ func TestAPDeleteVdev(t *testing.T) {
 			expectError:   true,
 			errorContains: "invalid",
 		},
-
-		// {
-		// 	name: "RangeReadFailure",
-		// 	setupData: func(ds storageiface.DataStore) {
-
-		// 		// Simulate partial setup
-		// 		ds.Write("v/testvdev/c/1/R.0", "nisd1", "")
-		// 	},
-		// 	vdevID:        "testvdev",
-		// 	expectError:   true,
-		// 	errorContains: "Range read failure",
-		// },
 	}
 
 	for _, tc := range testCases {
