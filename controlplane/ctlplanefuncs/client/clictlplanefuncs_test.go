@@ -969,7 +969,7 @@ func TestDeleteVdev(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, cvresp.ID)
 
-	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: cvresp.ID})
+	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: cvresp.ID, UserToken: adminToken})
 	assert.NoError(t, err)
 	assert.NotNil(t, dvResp)
 

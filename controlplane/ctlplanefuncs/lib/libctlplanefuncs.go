@@ -250,8 +250,12 @@ type VdevReq struct {
 	UserToken string
 }
 
+// DeleteVdevReq is the request structure for deleting a Vdev.
+// UserToken is a JWT token used to authenticate and authorize the caller
+// before the delete operation is allowed to proceed.
 type DeleteVdevReq struct {
-	ID string
+	ID        string
+	UserToken string // Bearer JWT token for authentication and RBAC authorization
 }
 
 type GetReq struct {

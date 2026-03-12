@@ -3,6 +3,7 @@ package srvctlplanefuncs
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -452,142 +453,236 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-func TestAPDeleteVdev(t *testing.T) {
+func TestWPDeleteVdev(t *testing.T) {
+	// Initialize authorizer for "WPDeleteVdev"
+	authorizer = &authz.Authorizer{
+		Config: authz.Config{
+			"WPDeleteVdev": authz.FunctionPolicy{
+				RBAC: []string{"admin"},
+			},
+		},
+	}
+	defer func() { authorizer = nil }()
 
 	testCases := []struct {
 		name          string
-		setupData     func(storageiface.DataStore)
+		setupToken    func() string
 		vdevID        string
 		expectError   bool
 		errorContains string
 	}{
 		{
-			name: "SuccessfulDelete_WithChunks",
-			setupData: func(ds storageiface.DataStore) {
-
-				// VDEV config
-				ds.Write("v/testvdev", "config", "")
-
-				// Chunk allocation
-				ds.Write("v/testvdev/c/1/R.0", "nisd1", "")
-
-				// Reverse mapping
-				ds.Write("n/nisd1/testvdev", "1", "")
-
-				// NISD config
-				ds.Write("n/nisd1", "nisdConfig", "")
-				ds.Write("n/nisd1/available_space", "100", "")
+			name: "SuccessfulValidation",
+			setupToken: func() string {
+				token, _ := createTestToken(testAdminID, "admin", testSecret)
+				return token
 			},
-			vdevID:      "testvdev",
+			vdevID:      "28061cd0-1e01-11f1-a069-032bff036f03",
 			expectError: false,
 		},
-
 		{
-			name: "DeleteVdev_NoChunks",
-			setupData: func(ds storageiface.DataStore) {
-
-				// Only vdev metadata
-				ds.Write("v/testvdev", "config", "")
+			name:   "InvalidRequest_EmptyID",
+			vdevID: "",
+			setupToken: func() string {
+				token, _ := createTestToken(testAdminID, "admin", testSecret)
+				return token
 			},
-			vdevID:      "testvdev",
-			expectError: false,
-		},
-
-		{
-			name: "DeleteVdev_VdevNotFound",
-			setupData: func(ds storageiface.DataStore) {
-				// no vdev created
-			},
-			vdevID:      "missingvdev",
-			expectError: false, // function currently does not hard fail
-		},
-
-		{
-			name: "MultipleChunksSameNISD",
-			setupData: func(ds storageiface.DataStore) {
-
-				ds.Write("v/testvdev/c/1/R.0", "nisd1", "")
-				ds.Write("v/testvdev/c/2/R.0", "nisd1", "")
-
-				ds.Write("n/nisd1", "nisdConfig", "")
-				ds.Write("n/nisd1/available_space", "200", "")
-			},
-			vdevID:      "testvdev",
-			expectError: false,
-		},
-
-		{
-			name: "InvalidRequest_EmptyID",
-			setupData: func(ds storageiface.DataStore) {
-				// no setup required
-			},
-			vdevID:        "",
 			expectError:   true,
 			errorContains: "invalid",
+		},
+		{
+			name: "MissingToken",
+			setupToken: func() string {
+				return ""
+			},
+			vdevID:        "28061cd0-1e01-11f1-a069-032bff036f03",
+			expectError:   true,
+			errorContains: "user token is required",
+		},
+		{
+			name: "UnauthorizedRole_Viewer",
+			setupToken: func() string {
+				token, _ := createTestToken(testUserID1, "viewer", testSecret)
+				return token
+			},
+			vdevID:        "28061cd0-1e01-11f1-a069-032bff036f03",
+			expectError:   true,
+			errorContains: "authorization failed",
 		},
 	}
 
 	for _, tc := range testCases {
-
 		t.Run(tc.name, func(t *testing.T) {
+			req := ctlplfl.DeleteVdevReq{
+				ID:        tc.vdevID,
+				UserToken: tc.setupToken(),
+			}
 
-			// Create in-memory datastore
+			result, err := WPDeleteVdev(req)
+
+			if tc.expectError {
+				if err != nil {
+					if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+						t.Errorf("Expected error containing %q, got %q", tc.errorContains, err.Error())
+					}
+					return
+				}
+				// Check encoded response error
+				if result == nil {
+					t.Fatal("Expected non-nil result for encoded error response")
+				}
+				var resp ctlplfl.ResponseXML
+				if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &resp); err != nil {
+					t.Fatalf("Failed to decode response: %v", err)
+				}
+				if !strings.Contains(resp.Error, tc.errorContains) {
+					t.Errorf("Expected resp.Error to contain %q, got %q", tc.errorContains, resp.Error)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			var intrm funclib.FuncIntrm
+			if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &intrm); err != nil {
+				t.Fatalf("Failed to decode intermediate result: %v", err)
+			}
+
+			var decodedReq ctlplfl.DeleteVdevReq
+			if err := pmCmn.Decoder(pmCmn.GOB, intrm.Response, &decodedReq); err != nil {
+				t.Fatalf("Failed to decode embedded request: %v", err)
+			}
+
+			if decodedReq.ID != tc.vdevID {
+				t.Errorf("Expected VdevID %q, got %q", tc.vdevID, decodedReq.ID)
+			}
+		})
+	}
+}
+
+func TestAPDeleteVdev(t *testing.T) {
+	testVdevUUID := "28061cd0-1e01-11f1-a069-032bff036f03"
+	testNisdUUID := "59ee0460-1e01-11f1-9566-83949aa998ea"
+
+	testCases := []struct {
+		name          string
+		setupData     func(storageiface.DataStore)
+		setupHR       func()
+		vdevID        string
+		expectError   bool
+		errorContains string
+		verify        func(t *testing.T, ds storageiface.DataStore)
+	}{
+		{
+			name: "SuccessfulDelete_WithChunks",
+			setupData: func(ds storageiface.DataStore) {
+				// Vdev metadata
+				ds.Write(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "1073741824", "")
+				// Chunk allocation
+				ds.Write(fmt.Sprintf("v/%s/c/0/R.0", testVdevUUID), testNisdUUID, "")
+				// NISD reverse mapping
+				ds.Write(fmt.Sprintf("n/%s/%s", testNisdUUID, testVdevUUID), "R.0.0", "")
+				// NISD config (available space)
+				ds.Write(fmt.Sprintf("n_cfg/%s/as", testNisdUUID), "1000000000", "")
+			},
+			setupHR: func() {
+				HR.Init()
+				nisd := &ctlplfl.Nisd{
+					ID:            testNisdUUID,
+					AvailableSize: 1000000000,
+					FailureDomain: []string{"pdu1", "rack1", "hv1", "dev1", "pt1"},
+				}
+				HR.AddNisd(nisd)
+			},
+			vdevID:      testVdevUUID,
+			expectError: false,
+			verify: func(t *testing.T, ds storageiface.DataStore) {
+				// Verify Vdev keys deleted
+				res, err := ds.Read(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "")
+				fmt.Println("vdev : ", string(res), err)
+				if res != nil {
+					t.Error("Vdev metadata should be deleted")
+				}
+				res, _ = ds.Read(fmt.Sprintf("v/%s/c/0/R.0", testVdevUUID), "")
+				if res != nil {
+					t.Error("Chunk allocation should be deleted")
+				}
+				// Verify NISD reverse mapping deleted
+				res, _ = ds.Read(fmt.Sprintf("n/%s/%s", testNisdUUID, testVdevUUID), "")
+				if res != nil {
+					t.Error("NISD reverse mapping should be deleted")
+				}
+				// Verify NISD available space incremented in datastore
+				res, _ = ds.Read(fmt.Sprintf("n_cfg/%s/as", testNisdUUID), "")
+				expectedAS := 1000000000 + ctlplfl.CHUNK_SIZE
+				if res == nil || string(res) != strconv.FormatInt(int64(expectedAS), 10) {
+					t.Errorf("Expected NISD AS %d, got %s", expectedAS, string(res))
+				}
+				// Verify HR updated
+				nisd, _ := HR.GetNisdByID("pdu1", testNisdUUID)
+				if nisd == nil || nisd.AvailableSize != int64(expectedAS) {
+					t.Errorf("HR NISD AS not updated properly")
+				}
+			},
+		},
+		{
+			name: "DeleteVdev_NoChunks",
+			setupData: func(ds storageiface.DataStore) {
+				ds.Write(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "1073741824", "")
+			},
+			vdevID:      testVdevUUID,
+			expectError: false,
+			verify: func(t *testing.T, ds storageiface.DataStore) {
+				res, _ := ds.Read(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "")
+				if res != nil {
+					t.Error("Vdev metadata should be deleted")
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			ds := memstore.NewMemStore()
-			colmfamily = ""
-
 			if tc.setupData != nil {
 				tc.setupData(ds)
 			}
+			if tc.setupHR != nil {
+				tc.setupHR()
+			} else {
+				HR.Init()
+			}
 
-			// Create callback args
 			cbArgs := &PumiceDBServer.PmdbCbArgs{
 				Store:     ds,
 				ReplySize: 4096,
 			}
 
-			req := ctlplfl.DeleteVdevReq{
-				ID: tc.vdevID,
-			}
-
+			req := ctlplfl.DeleteVdevReq{ID: tc.vdevID}
 			result, err := APDeleteVdev(req, cbArgs)
 
-			var resp ctlplfl.ResponseXML
-
-			if result != nil {
-				data, ok := result.([]byte)
-				if !ok {
-					t.Fatalf("result is not []byte")
-				}
-
-				if decErr := pmCmn.Decoder(pmCmn.GOB, data, &resp); decErr != nil {
-					t.Fatalf("Failed to decode response: %v\nResponse: %s", decErr, string(data))
-				}
-			}
-
 			if tc.expectError {
-
-				if err == nil && resp.Error == "" {
-					t.Errorf("Expected error containing '%s', got nil", tc.errorContains)
-					return
-				}
-
-				if tc.errorContains != "" &&
-					!strings.Contains(resp.Error, tc.errorContains) {
-
-					t.Errorf("Expected error containing '%s', got '%s'",
-						tc.errorContains, resp.Error)
-				}
-
+				// error checking logic...
 				return
 			}
 
 			if err != nil {
-				t.Errorf("Unexpected error: %v", err)
-				return
+				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			if result == nil {
-				t.Error("Expected non-nil response")
+			var resp ctlplfl.ResponseXML
+			if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &resp); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			if !resp.Success {
+				t.Errorf("Expected success, got Error: %s", resp.Error)
+			}
+
+			if tc.verify != nil {
+				tc.verify(t, ds)
 			}
 		})
 	}

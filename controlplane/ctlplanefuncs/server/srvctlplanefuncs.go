@@ -1403,27 +1403,62 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 
 }
 
-// Deletes a Vdev, archives its data and refunds allocated space to NISDs
+func WPDeleteVdev(args ...interface{}) (interface{}, error) {
+	req := args[0].(ctlplfl.DeleteVdevReq)
+	resp := ctlplfl.ResponseXML{
+		Name: "vdev",
+		ID:   req.ID,
+	}
+	// Step 1: Validate the request fields (e.g. ID must be a valid UUID).
+	err := req.Validate()
+	if err != nil {
+		log.Errorf("WPDeleteVdev: invalid request for vdev %q: %v", req.ID, err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+
+	// Step 2: Authenticate the caller and verify RBAC permissions.
+	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
+	// caller's role is allowed to perform "WPDeleteVdev".
+	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPDeleteVdev")
+	if err != nil {
+		log.Errorf("WPDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+	log.Debugf("WPDeleteVdev: user %q authorized to delete vdev %q", tc.UserID, req.ID)
+
+	r, err := pmCmn.Encoder(pmCmn.GOB, req)
+	if err != nil {
+		log.Errorf("WPDeleteVdev: failed to marshal vdev delete request: %v", err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+
+	funcIntrm := funclib.FuncIntrm{
+		Response: r,
+	}
+
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+}
+
+// Deletes a Vdev, archives its data and refunds allocated space to NISDs.
+// The caller must supply a valid JWT in req.UserToken; the WritePrep stage
+// validates the token and checks RBAC permissions before any data is modified.
 func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
 	req := args[0].(ctlplfl.DeleteVdevReq)
+	resp := ctlplfl.ResponseXML{
+		Name:    "vdev",
+		ID:      req.ID,
+		Success: false,
+	}
 
 	commitChgs := make([]funclib.CommitChg, 0)
 	deleteChgs := make([]funclib.CommitChg, 0)
 	nisdRefundMap := make(map[string]*ctlplfl.Nisd)
 
-	resp := ctlplfl.ResponseXML{
-		Name: "vdev",
-		ID:   req.ID,
-	}
-	err := req.Validate()
-	if err != nil {
-		log.Errorf("invalid request: %v", err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-
-	}
-	log.Info("deleting vdev: ", req.ID)
+	log.Infof("APDeleteVdev: deleting vdev %q", req.ID)
 	// Validate Vdev exists
 	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
 
@@ -1505,7 +1540,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	err = applyKV(commitChgs, cbArgs.Store)
+	err := applyKV(commitChgs, cbArgs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		resp.Error = err.Error()
