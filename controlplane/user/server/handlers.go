@@ -3,6 +3,7 @@ package userserver
 import (
 	"crypto/subtle"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -711,7 +712,10 @@ func returnLoginError(errMsg string) (interface{}, error) {
 	encodedResp, err := pmCommon.Encoder(pmCommon.GOB, resp)
 	if err != nil {
 		log.Error("failed to encode error response: ", err)
-		return nil, err
+		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{
+			Status:   cpLib.StatusFuncError,
+			ErrorMsg: formatError(err),
+		})
 	}
 	return encodedResp, nil
 }
@@ -733,7 +737,10 @@ func returnError(errMsg string) (interface{}, error) {
 	encodedIntermediate, err := pmCommon.Encoder(pmCommon.GOB, funcIntermediate)
 	if err != nil {
 		log.Error("Failed to encode error intermediate: ", err)
-		return nil, err
+		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{
+			Status:   cpLib.StatusFuncError,
+			ErrorMsg: formatError(err),
+		})
 	}
 
 	return encodedIntermediate, nil
@@ -748,7 +755,43 @@ func returnGetUserError(errMsg string) (interface{}, error) {
 	encodedResponse, err := pmCommon.Encoder(pmCommon.GOB, errorResponse)
 	if err != nil {
 		log.Error("Failed to encode error response: ", err)
-		return nil, err
+		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{
+			Status:   cpLib.StatusFuncError,
+			ErrorMsg: formatError(err),
+		})
 	}
 	return encodedResponse, nil
+}
+
+// Helper to format error with caller info
+func formatError(err error) string {
+	if err == nil {
+		return ""
+	}
+	pc, _, line, ok := runtime.Caller(1)
+	if !ok {
+		return err.Error()
+	}
+	fn := runtime.FuncForPC(pc)
+	funcName := "unknown"
+	if fn != nil {
+		parts := strings.Split(fn.Name(), ".")
+		funcName = parts[len(parts)-1]
+	}
+	return fmt.Sprintf("[%s:%d] %s", funcName, line, err.Error())
+}
+
+// Helper to format string message with caller info
+func formatErrMsg(msg string) string {
+	pc, _, line, ok := runtime.Caller(1)
+	if !ok {
+		return msg
+	}
+	fn := runtime.FuncForPC(pc)
+	funcName := "unknown"
+	if fn != nil {
+		parts := strings.Split(fn.Name(), ".")
+		funcName = parts[len(parts)-1]
+	}
+	return fmt.Sprintf("[%s:%d] %s", funcName, line, msg)
 }
