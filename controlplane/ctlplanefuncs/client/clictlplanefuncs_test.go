@@ -953,23 +953,29 @@ func TestGetNisd(t *testing.T) {
 
 func TestDeleteVdev(t *testing.T) {
 	c := newClient(t)
+	adminToken := getAdminToken(t)
 	vdev := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
 			Size:       8 * 1024 * 1024 * 1024,
 			NumReplica: 2,
 		},
+		Filter: cpLib.Filter{
+			Type: cpLib.FD_ANY,
+		},
+		UserToken: adminToken,
 	}
 
 	cvresp, err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
-	log.Infof("vdev response status: %v", cvresp)
 	assert.NotEmpty(t, cvresp.ID)
+
 	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: cvresp.ID})
-	log.Info("delete vdev response: ", dvResp, err)
 	assert.NoError(t, err)
-	gvResp, err := c.GetVdevCfg(&cpLib.GetReq{ID: dvResp.ID})
-	log.Info("get vdev response: ", gvResp, err)
+	assert.NotNil(t, dvResp)
+
+	_, err = c.GetVdevCfg(&cpLib.GetReq{ID: cvresp.ID})
 	assert.Error(t, err)
+
 }
 
 // newUserClient creates a new user client for authentication operations
