@@ -334,15 +334,9 @@ func PutUser(args ...interface{}) (interface{}, error) {
 		authResponse.SecretKey = plainSecretKey
 	}
 
-	encodedResponse, err := pmCommon.Encoder(pmCommon.GOB, authResponse)
-	if err != nil {
-		log.Error("Failed to encode response: ", err)
-		return returnError(fmt.Sprintf("failed to encode response: %v", err))
-	}
-
 	funcIntermediate := pumiceFunc.FuncIntrm{
 		Changes:  commitChanges,
-		Response: encodedResponse,
+		Response: authResponse,
 	}
 
 	encodedIntermediate, err := pmCommon.Encoder(pmCommon.GOB, funcIntermediate)
@@ -473,7 +467,7 @@ func GetUser(args ...interface{}) (interface{}, error) {
 	}
 
 	// Encode response
-	encodedUsers, err := pmCommon.Encoder(pmCommon.GOB, userResps)
+	encodedUsers, err := pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Payload: userResps})
 	if err != nil {
 		log.Error("Failed to encode user auth info: ", err)
 		return returnGetUserError(fmt.Sprintf("failed to encode user auth info: %v", err))
@@ -548,7 +542,7 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 			log.Warnf("Could not decrypt existing admin key: %v", err)
 		}
 
-		return pmCommon.Encoder(pmCommon.GOB, userlib.UserResp{
+		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Payload: userlib.UserResp{
 			UserID:    existing.UserID,
 			Username:  existing.Username,
 			SecretKey: decryptedKey,
@@ -556,7 +550,7 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 			Status:    existing.Status,
 			Success:   true,
 			Error:     "admin user already exists",
-		})
+		}})
 	}
 
 	// Creation & Persistence
@@ -580,14 +574,14 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 
 	log.Infof("Admin user created successfully (ID: %s)", adminID)
 
-	return pmCommon.Encoder(pmCommon.GOB, userlib.UserResp{
+	return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Status: cpLib.StatusOK, Payload: userlib.UserResp{
 		UserID:    newUser.UserID,
 		Username:  newUser.Username,
 		SecretKey: secretKey,
 		UserRole:  newUser.UserRole,
 		Status:    newUser.Status,
 		Success:   true,
-	})
+	}})
 }
 
 // returnApplyError returns an encoded error response for Apply functions
@@ -596,7 +590,7 @@ func returnApplyError(errMsg string) (interface{}, error) {
 		Error:   errMsg,
 		Success: false,
 	}
-	return pmCommon.Encoder(pmCommon.GOB, errorResponse)
+	return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Status: cpLib.StatusOK, Payload: errorResponse})
 }
 
 // Login authenticates a user and returns a JWT token
@@ -698,7 +692,7 @@ func Login(args ...interface{}) (interface{}, error) {
 
 	log.Infof("user '%s' (ID: %s) authenticated successfully", user.Username, user.UserID)
 
-	encodedResp, err := pmCommon.Encoder(pmCommon.GOB, resp)
+	encodedResp, err := pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Status: cpLib.StatusOK, Payload: resp})
 	if err != nil {
 		log.Errorf("failed to encode login response for user '%s' (ID: %s): %v",
 			user.Username, user.UserID, err)
@@ -731,15 +725,9 @@ func returnError(errMsg string) (interface{}, error) {
 		Error: errMsg,
 	}
 
-	encodedResponse, err := pmCommon.Encoder(pmCommon.GOB, errorResponse)
-	if err != nil {
-		log.Error("Failed to encode error response: ", err)
-		return nil, err
-	}
-
 	funcIntermediate := pumiceFunc.FuncIntrm{
 		Changes:  nil,
-		Response: encodedResponse,
+		Response: errorResponse,
 	}
 
 	encodedIntermediate, err := pmCommon.Encoder(pmCommon.GOB, funcIntermediate)

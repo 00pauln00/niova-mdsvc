@@ -186,16 +186,16 @@ func EncodeResponse(enctype pmLib.Format, name string, resp *[]byte) error {
 	}
 
 	res := GetRespStruct(name)
-	cpreq := &cpLib.CPReq{
+	cpresp := &cpLib.CPResp{
 		Payload: res,
 	}
-	err := pmLib.Decoder(pmLib.GOB, *resp, cpreq)
+	err := pmLib.Decoder(pmLib.GOB, *resp, cpresp)
 	if err != nil {
 		log.Errorf("gob: failed to decode response | func=%s size=%d err=%v", name, len(*resp), err)
 		return err
 	}
 	log.Tracef("encoding response type %s, with %v encoder", name, enctype)
-	*resp, err = pmLib.Encoder(enctype, cpreq)
+	*resp, err = pmLib.Encoder(enctype, cpresp)
 	if err != nil {
 		log.Errorf("%v: failed to encode response for %s: %v", enctype, name, err)
 		return err
