@@ -1554,7 +1554,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	for nisdID, nisd := range nisdRefundMap {
-		hrNisd, err := HR.GetNisdByID(nisd.FailureDomain[ctlplfl.PDU_IDX], nisdID)
+		hrNisd, err := HR.GetNisdByPDUID(nisd.FailureDomain[ctlplfl.PDU_IDX], nisdID)
 		if err != nil {
 			resp.Error = err.Error()
 			return pmCmn.Encoder(pmCmn.GOB, resp)

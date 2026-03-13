@@ -663,7 +663,7 @@ func TestAPDeleteVdev(t *testing.T) {
 					t.Errorf("Expected NISD AS %d, got %s", expectedAS, string(res))
 				}
 
-				nisd, _ := HR.GetNisdByID(testPDU, testNisdUUID)
+				nisd, _ := HR.GetNisdByPDUID(testPDU, testNisdUUID)
 
 				if nisd == nil || nisd.AvailableSize != int64(expectedAS) {
 					t.Errorf("HR NISD AS not updated properly")

@@ -249,9 +249,9 @@ func GetEntityByID(ft cpLib.Filter) (*Entities, error) {
 	return ent, nil
 }
 
-func (hr *Hierarchy) GetNisdByID(pduID, nisdID string) (*cpLib.Nisd, error) {
+func (hr *Hierarchy) GetNisdByPDUID(pduID, nisdID string) (*cpLib.Nisd, error) {
 	// FD[0] corresponds to PDU failure domain
-	pduEntity, ok := hr.FD[0].Tree.Get(&Entities{ID: pduID})
+	pduEntity, ok := hr.FD[cpLib.PDU_IDX].Tree.Get(&Entities{ID: pduID})
 	if !ok {
 		return nil, fmt.Errorf("PDU %s not found", pduID)
 	}
