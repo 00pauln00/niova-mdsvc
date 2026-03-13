@@ -108,14 +108,14 @@ func DecodeRequest(enctype pmLib.Format, name string, req []byte) (any, error) {
 // EncodeErrorResponse constructs a GOB-encoded error response matching the
 // expected response type for the given operation. Returns nil if the operation
 // does not have a known error-capable response type.
-func EncodeErrorResponse(name string, errMsg string) []byte {
+func EncodeErrorResponse(enctype pmLib.Format, name string, errMsg string) ([]byte, error) {
 	switch name {
 	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS, cpLib.CREATE_VDEV:
-		return encode(&cpLib.ResponseXML{Success: false, Error: errMsg})
+		return pmLib.Encoder(enctype, &cpLib.ResponseXML{Name: name, Success: false, Error: errMsg})
 	case userlib.PutUserAPI, userlib.AdminUserAPI:
-		return encode(&userlib.UserResp{Success: false, Error: errMsg})
+		return pmLib.Encoder(enctype, &userlib.UserResp{Success: false, Error: errMsg})
 	default:
-		return nil
+		return nil, nil
 	}
 }
 

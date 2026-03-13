@@ -597,8 +597,8 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 		log.Error("Error in WriteEncoded and Response:", err)
 
 		// Encode structured error so client can decode it
-		errBytes := EncodeErrorResponse(name, err.Error())
-		if errBytes == nil {
+		errBytes, err := EncodeErrorResponse(encType, name, err.Error())
+		if err != nil {
 			return err
 		}
 
