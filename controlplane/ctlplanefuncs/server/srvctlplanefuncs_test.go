@@ -3,6 +3,8 @@ package srvctlplanefuncs
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,20 @@ import (
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 	"github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/memstore"
+)
+
+const (
+	testVdevUUID = "28061cd0-1e01-11f1-a069-032bff036f03"
+	testNisdUUID = "59ee0460-1e01-11f1-9566-83949aa998ea"
+
+	testPDU  = "acdef556-1ea3-11f1-848b-9f6e716afc46"
+	testRack = "b1b89a50-1ea3-11f1-b397-d76191bdb3d2"
+	testHV   = "b726b99a-1ea3-11f1-95da-436ff27bf77e"
+	testDev  = "nvme-001"
+	testPT   = "nvme-001-01"
+
+	testNisdAvailableSize = 1000000000
+	testVdevSize          = 1073741824
 )
 
 // TestMain initializes the test environment
@@ -449,4 +465,260 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestWPDeleteVdev(t *testing.T) {
+	// Initialize authorizer for "WPDeleteVdev"
+	authorizer = &authz.Authorizer{
+		Config: authz.Config{
+			"WPDeleteVdev": authz.FunctionPolicy{
+				RBAC: []string{"admin"},
+			},
+		},
+	}
+	defer func() { authorizer = nil }()
+
+	testCases := []struct {
+		name          string
+		setupToken    func() string
+		vdevID        string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "SuccessfulValidation",
+			setupToken: func() string {
+				token, _ := createTestToken(testAdminID, "admin", testSecret)
+				return token
+			},
+			vdevID:      "28061cd0-1e01-11f1-a069-032bff036f03",
+			expectError: false,
+		},
+		{
+			name:   "InvalidRequest_EmptyID",
+			vdevID: "",
+			setupToken: func() string {
+				token, _ := createTestToken(testAdminID, "admin", testSecret)
+				return token
+			},
+			expectError:   true,
+			errorContains: "invalid",
+		},
+		{
+			name: "MissingToken",
+			setupToken: func() string {
+				return ""
+			},
+			vdevID:        "28061cd0-1e01-11f1-a069-032bff036f03",
+			expectError:   true,
+			errorContains: "user token is required",
+		},
+		{
+			name: "UnauthorizedRole_Viewer",
+			setupToken: func() string {
+				token, _ := createTestToken(testUserID1, "viewer", testSecret)
+				return token
+			},
+			vdevID:        "28061cd0-1e01-11f1-a069-032bff036f03",
+			expectError:   true,
+			errorContains: "authorization failed",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := ctlplfl.DeleteVdevReq{
+				ID:        tc.vdevID,
+				UserToken: tc.setupToken(),
+			}
+
+			result, err := WPDeleteVdev(req)
+
+			if tc.expectError {
+				if err != nil {
+					if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+						t.Errorf("Expected error containing %q, got %q", tc.errorContains, err.Error())
+					}
+					return
+				}
+				// Check encoded response error
+				if result == nil {
+					t.Fatal("Expected non-nil result for encoded error response")
+				}
+				var resp ctlplfl.ResponseXML
+				if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &resp); err != nil {
+					t.Fatalf("Failed to decode response: %v", err)
+				}
+				if !strings.Contains(resp.Error, tc.errorContains) {
+					t.Errorf("Expected resp.Error to contain %q, got %q", tc.errorContains, resp.Error)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			var intrm funclib.FuncIntrm
+			if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &intrm); err != nil {
+				t.Fatalf("Failed to decode intermediate result: %v", err)
+			}
+
+			var decodedReq ctlplfl.DeleteVdevReq
+			if err := pmCmn.Decoder(pmCmn.GOB, intrm.Response, &decodedReq); err != nil {
+				t.Fatalf("Failed to decode embedded request: %v", err)
+			}
+
+			if decodedReq.ID != tc.vdevID {
+				t.Errorf("Expected VdevID %q, got %q", tc.vdevID, decodedReq.ID)
+			}
+		})
+	}
+}
+
+func TestAPDeleteVdev(t *testing.T) {
+
+	t.Log("Starting TestAPDeleteVdev")
+
+	testVdevUUID := "28061cd0-1e01-11f1-a069-032bff036f03"
+	testNisdUUID := "59ee0460-1e01-11f1-9566-83949aa998ea"
+
+	testCases := []struct {
+		name          string
+		setupData     func(storageiface.DataStore)
+		setupHR       func()
+		vdevID        string
+		expectError   bool
+		errorContains string
+		verify        func(t *testing.T, ds storageiface.DataStore)
+	}{
+		{
+			name: "SuccessfulDelete_WithChunks",
+
+			setupData: func(ds storageiface.DataStore) {
+				t.Log("Setting up datastore for SuccessfulDelete_WithChunks")
+
+				ds.Write(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "8589934592", "")
+				ds.Write(fmt.Sprintf("v/%s/c/0/R.0", testVdevUUID), testNisdUUID, "")
+				ds.Write(fmt.Sprintf("n/%s/%s", testNisdUUID, testVdevUUID), "R.0.0", "")
+
+				// n_cfg entries similar to logs
+				ds.Write(fmt.Sprintf("n_cfg/%s/d", testNisdUUID), testDev, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/pp", testNisdUUID), "8160", "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/hv", testNisdUUID), testHV, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/ts", testNisdUUID), "1000000000000", "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/as", testNisdUUID), "1000000000000", "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/p", testNisdUUID), testPDU, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/r", testNisdUUID), testRack, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/pt", testNisdUUID), testPT, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/nic", testNisdUUID), "0", "")
+			},
+
+			setupHR: func() {
+				t.Log("Initializing HR")
+
+				HR.Init()
+
+				nisd := &ctlplfl.Nisd{
+					ID:            testNisdUUID,
+					AvailableSize: 1073741824,
+					FailureDomain: []string{testPDU, testRack, testHV, testDev, testPT},
+				}
+
+				HR.AddNisd(nisd)
+
+				t.Log("Added NISD to HR:", nisd.ID)
+			},
+
+			vdevID:      testVdevUUID,
+			expectError: false,
+
+			verify: func(t *testing.T, ds storageiface.DataStore) {
+
+				t.Log("Starting verification")
+
+				_, err := ds.Read(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "")
+
+				if err == nil {
+					t.Error("Vdev metadata should be deleted")
+				}
+
+				_, err = ds.Read(fmt.Sprintf("v/%s/c/0/R.0", testVdevUUID), "")
+
+				if err == nil {
+					t.Error("Chunk allocation should be deleted")
+				}
+
+				_, err = ds.Read(fmt.Sprintf("n/%s/%s", testNisdUUID, testVdevUUID), "")
+
+				if err == nil {
+					t.Error("NISD reverse mapping should be deleted")
+				}
+
+				res, err := ds.Read(fmt.Sprintf("n_cfg/%s/as", testNisdUUID), "")
+
+				expectedAS := 1000000000000 + 8589934592
+
+				if err != nil || string(res) != strconv.FormatInt(int64(expectedAS), 10) {
+					t.Errorf("Expected NISD AS %d, got %s", expectedAS, string(res))
+				}
+
+				nisd, _ := HR.GetNisdByPDUID(testPDU, testNisdUUID)
+
+				if nisd == nil || nisd.AvailableSize != int64(expectedAS) {
+					t.Errorf("HR NISD AS not updated properly")
+				}
+
+				t.Log("Verification completed")
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+
+		t.Run(tc.name, func(t *testing.T) {
+
+			t.Log("Running test case:", tc.name)
+
+			ds := memstore.NewMemStore()
+			if tc.setupData != nil {
+				tc.setupData(ds)
+			}
+			if tc.setupHR != nil {
+				tc.setupHR()
+			}
+
+			cbArgs := &PumiceDBServer.PmdbCbArgs{
+				Store:     ds,
+				ReplySize: 4096,
+			}
+
+			req := ctlplfl.DeleteVdevReq{ID: tc.vdevID}
+
+			result, err := APDeleteVdev(req, cbArgs)
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			var resp ctlplfl.ResponseXML
+
+			if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &resp); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			t.Log("Decoded response:", resp)
+
+			if !resp.Success {
+				t.Errorf("Expected success, got Error: %s", resp.Error)
+			}
+
+			if tc.verify != nil {
+				t.Log("Running verify")
+				tc.verify(t, ds)
+			}
+
+			t.Log("Test case finished:", tc.name)
+		})
+	}
 }

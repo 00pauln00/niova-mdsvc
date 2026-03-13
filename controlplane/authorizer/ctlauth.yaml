@@ -6,6 +6,9 @@ WPCreateVdev:
   RBAC:
     - admin
     - user
+WPDeleteVdev:
+  RBAC:
+    - admin
 WPNisdCfg:
   RBAC:
     - admin

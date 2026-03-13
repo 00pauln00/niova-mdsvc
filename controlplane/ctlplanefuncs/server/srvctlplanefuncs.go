@@ -67,6 +67,7 @@ const (
 	NETWORK_INFO_CNT = "nic"
 	SOCKET_PATH      = "sck"
 	ENABLE_RDMA      = "rdma"
+	ARCHIVE          = "arch"
 
 	DEFRAG                  = "dfg"
 	MBCCnt                  = "mbc"
@@ -267,10 +268,10 @@ func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 		var err error
 		switch chg.Op {
 		case funclib.OpApply:
-			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+			log.Debug("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
 			err = ds.Write(string(chg.Key), string(chg.Value), colmfamily)
 		case funclib.OpDelete:
-			log.Info("Deleting key: ", string(chg.Key))
+			log.Debug("Deleting key: ", string(chg.Key))
 			err = ds.Delete(string(chg.Key), colmfamily)
 		default:
 			log.Error("Unknown operation type: ", chg.Op, " for key: ", string(chg.Key))
@@ -279,6 +280,18 @@ func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 		if err != nil {
 			log.Error("Failed to apply changes for key: ", string(chg.Key), " err: ", err)
 			return fmt.Errorf("failed to apply changes for key: %s", string(chg.Key))
+		}
+	}
+	return nil
+}
+
+func deleteKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
+	for _, chg := range chgs {
+		log.Debug("Deleting key: ", string(chg.Key))
+		err := ds.Delete(string(chg.Key), colmfamily)
+		if err != nil {
+			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
+			return fmt.Errorf("failed to delete key: %s, err: %v", string(chg.Key), err)
 		}
 	}
 	return nil
@@ -715,11 +728,7 @@ func allocateNisdPerVdev(req *ctlplfl.VdevReq, fd int, nisdMap *btree.Map[string
 	return commitCh, nil
 }
 
-func AllocNISDs(
-	req *ctlplfl.VdevReq,
-	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
-	txn *funclib.FuncIntrm,
-) error {
+func AllocNISDs(req *ctlplfl.VdevReq, allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc], txn *funclib.FuncIntrm) error {
 
 	if req.Filter.Type != ctlplfl.FD_ANY {
 		return allocateNisdsAtFailureDomain(req, ctlplfl.GetFDIdx(req.Filter.Type), allocMap, txn)
@@ -742,12 +751,8 @@ func AllocNISDs(
 	return fmt.Errorf("unable to allocate NISDs for vdev %s", req.Vdev.ID)
 }
 
-func allocateNisdsAtFailureDomain(
-	req *ctlplfl.VdevReq,
-	fd int,
-	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
-	txn *funclib.FuncIntrm,
-) error {
+func allocateNisdsAtFailureDomain(req *ctlplfl.VdevReq, fd int,
+	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc], txn *funclib.FuncIntrm) error {
 
 	log.Debugf("selected fd %d for vdev ID: %s", fd, req.Vdev.ID)
 
@@ -760,11 +765,9 @@ func allocateNisdsAtFailureDomain(
 	return nil
 }
 
-func commitAllocChgs(
-	txn *funclib.FuncIntrm,
+func commitAllocChgs(txn *funclib.FuncIntrm,
 	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
-	cbArgs *PumiceDBServer.PmdbCbArgs,
-) error {
+	cbArgs *PumiceDBServer.PmdbCbArgs) error {
 
 	allocMap.Ascend("", func(_ string, alloc *ctlplfl.NisdVdevAlloc) bool {
 		txn.Changes = append(txn.Changes, funclib.CommitChg{
@@ -777,9 +780,7 @@ func commitAllocChgs(
 	return applyKV(txn.Changes, cbArgs.Store)
 }
 
-func applyNISDAlloc(
-	allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc],
-) {
+func applyNISDAlloc(allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) {
 	allocMap.Ascend("", func(_ string, alloc *ctlplfl.NisdVdevAlloc) bool {
 		alloc.Ptr.AvailableSize = alloc.AvailableSize
 		if alloc.Ptr.AvailableSize < ctlplfl.CHUNK_SIZE {
@@ -1400,4 +1401,166 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	}
 	return pmCmn.Encoder(ENC_TYPE, nisdArgs)
 
+}
+
+func WPDeleteVdev(args ...interface{}) (interface{}, error) {
+	req := args[0].(ctlplfl.DeleteVdevReq)
+	resp := ctlplfl.ResponseXML{
+		Name: "vdev",
+		ID:   req.ID,
+	}
+	// Step 1: Validate the request fields (e.g. ID must be a valid UUID).
+	err := req.Validate()
+	if err != nil {
+		log.Errorf("WPDeleteVdev: invalid request for vdev %q: %v", req.ID, err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+
+	// Step 2: Authenticate the caller and verify RBAC permissions.
+	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
+	// caller's role is allowed to perform "WPDeleteVdev".
+	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPDeleteVdev")
+	if err != nil {
+		log.Errorf("WPDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+	log.Debugf("WPDeleteVdev: user %q authorized to delete vdev %q", tc.UserID, req.ID)
+
+	r, err := pmCmn.Encoder(pmCmn.GOB, req)
+	if err != nil {
+		log.Errorf("WPDeleteVdev: failed to marshal vdev delete request: %v", err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+
+	funcIntrm := funclib.FuncIntrm{
+		Response: r,
+	}
+
+	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
+}
+
+// Deletes a Vdev, archives its data and refunds allocated space to NISDs.
+// The caller must supply a valid JWT in req.UserToken; the WritePrep stage
+// validates the token and checks RBAC permissions before any data is modified.
+func APDeleteVdev(args ...interface{}) (interface{}, error) {
+	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
+	req := args[0].(ctlplfl.DeleteVdevReq)
+	resp := ctlplfl.ResponseXML{
+		Name:    "vdev",
+		ID:      req.ID,
+		Success: false,
+	}
+
+	commitChgs := make([]funclib.CommitChg, 0)
+	deleteChgs := make([]funclib.CommitChg, 0)
+	nisdRefundMap := make(map[string]*ctlplfl.Nisd)
+
+	log.Infof("APDeleteVdev: deleting vdev %q", req.ID)
+	// Validate Vdev exists
+	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
+
+	for {
+		rrArgs := storageiface.RangeReadArgs{
+			Selector: colmfamily,
+			Key:      vdevKey,
+			BufSize:  cbArgs.ReplySize,
+			Prefix:   vdevKey,
+		}
+
+		rrOp, err := cbArgs.Store.RangeRead(rrArgs)
+		if err != nil {
+			log.Error("Range read failure ", err)
+			resp.Error = err.Error()
+			return pmCmn.Encoder(pmCmn.GOB, resp)
+		}
+
+		// Process Vdev keys
+		for k, v := range rrOp.ResultMap {
+			// Delete
+			deleteChgs = append(deleteChgs, funclib.CommitChg{
+				Key:   []byte(k),
+				Value: nil,
+			})
+
+			// Check if it's a chunk allocation key
+			// Key format: v/<ID>/c/<chunk>/R.<Replica> -> <NISD_ID>
+			if strings.Contains(k, "/c/") && strings.Contains(k, "/R.") {
+				nisdID := string(v)
+
+				if _, ok := nisdRefundMap[nisdID]; !ok {
+					key := getConfKey(NisdCfgKey, nisdID)
+					rrargs := storageiface.RangeReadArgs{
+						Selector:   colmfamily,
+						Key:        key,
+						BufSize:    cbArgs.ReplySize,
+						Consistent: false,
+						Prefix:     key,
+					}
+					nisdRR, err := cbArgs.Store.RangeRead(rrargs)
+					if err != nil {
+						log.Error("Range read failure ", err)
+						resp.Error = err.Error()
+						return pmCmn.Encoder(pmCmn.GOB, resp)
+					}
+					nisdList := ParseEntities[ctlplfl.Nisd](nisdRR.ResultMap, NisdParser{})
+					if len(nisdList) > 0 {
+						nisdRefundMap[nisdID] = &nisdList[0]
+					}
+				}
+
+				if nisd, ok := nisdRefundMap[nisdID]; ok {
+					nisd.AvailableSize += ctlplfl.CHUNK_SIZE
+				}
+
+				revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
+				// delete nisd-vdev reverse mapping keys
+				deleteChgs = append(deleteChgs, funclib.CommitChg{
+					Key:   []byte(revKey),
+					Value: nil,
+				})
+			}
+		}
+		if rrOp.LastKey == "" {
+			break
+		}
+		rrArgs.Key = rrOp.LastKey
+		rrArgs.Prefix = vdevKey
+		rrArgs.SeqNum = rrOp.SeqNum
+	}
+
+	// Process NISD refunds
+	for nisdID, nisd := range nisdRefundMap {
+		asKey := fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(asKey),
+			Value: []byte(strconv.FormatInt(nisd.AvailableSize, 10)),
+		})
+	}
+
+	err := applyKV(commitChgs, cbArgs.Store)
+	if err != nil {
+		log.Error("applyKV(): ", err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+
+	err = deleteKV(deleteChgs, cbArgs.Store)
+	if err != nil {
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+
+	for nisdID, nisd := range nisdRefundMap {
+		hrNisd, err := HR.GetNisdByPDUID(nisd.FailureDomain[ctlplfl.PDU_IDX], nisdID)
+		if err != nil {
+			resp.Error = err.Error()
+			return pmCmn.Encoder(pmCmn.GOB, resp)
+		}
+		hrNisd.AvailableSize = nisd.AvailableSize
+	}
+	resp.Success = true
+	return pmCmn.Encoder(pmCmn.GOB, resp)
 }

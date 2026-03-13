@@ -25,6 +25,7 @@ const (
 	GET_NISD            = "GetNisd"
 	GET_NISD_LIST       = "GetAllNisd"
 	CREATE_VDEV         = "CreateVdev"
+	DELETE_VDEV         = "DeleteVdev"
 	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
 	GET_VDEV            = "GetVdevs"
 	CREATE_SNAP         = "CreateSnap"
@@ -249,6 +250,14 @@ type VdevReq struct {
 	UserToken string
 }
 
+// DeleteVdevReq is the request structure for deleting a Vdev.
+// UserToken is a JWT token used to authenticate and authorize the caller
+// before the delete operation is allowed to proceed.
+type DeleteVdevReq struct {
+	ID        string
+	UserToken string // Bearer JWT token for authentication and RBAC authorization
+}
+
 type GetReq struct {
 	ID        string
 	GetAll    bool
@@ -345,6 +354,7 @@ func RegisterGOBStructs() {
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
+	gob.Register(DeleteVdevReq{})
 	gob.Register(FD(0))
 	gob.Register(userlib.GetReq{})
 	gob.Register(userlib.UserReq{})
@@ -393,6 +403,14 @@ func NisdAllocHash(data []byte) uint64 {
 	h := fnv.New64a()
 	h.Write(data)
 	return h.Sum64()
+}
+
+func (dv *DeleteVdevReq) Validate() error {
+	if _, err := uuid.Parse(dv.ID); err != nil {
+		return errors.New("invalid ID uuid")
+	}
+
+	return nil
 }
 
 func (n *Nisd) Validate() error {
