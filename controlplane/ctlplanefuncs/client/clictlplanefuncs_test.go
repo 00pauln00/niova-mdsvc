@@ -973,8 +973,9 @@ func TestDeleteVdev(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, dvResp)
 
-	_, err = c.GetVdevCfg(&cpLib.GetReq{ID: cvresp.ID})
+	vdevResp, err := c.GetVdevCfg(&cpLib.GetReq{ID: cvresp.ID})
 	assert.Error(t, err)
+	assert.Empty(t, vdevResp.ID)
 
 }
 

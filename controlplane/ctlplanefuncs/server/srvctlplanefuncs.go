@@ -268,10 +268,10 @@ func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 		var err error
 		switch chg.Op {
 		case funclib.OpApply:
-			log.Info("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
+			log.Debug("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
 			err = ds.Write(string(chg.Key), string(chg.Value), colmfamily)
 		case funclib.OpDelete:
-			log.Info("Deleting key: ", string(chg.Key))
+			log.Debug("Deleting key: ", string(chg.Key))
 			err = ds.Delete(string(chg.Key), colmfamily)
 		default:
 			log.Error("Unknown operation type: ", chg.Op, " for key: ", string(chg.Key))
@@ -287,7 +287,7 @@ func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 
 func deleteKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 	for _, chg := range chgs {
-		log.Info("Deleting key: ", string(chg.Key))
+		log.Debug("Deleting key: ", string(chg.Key))
 		err := ds.Delete(string(chg.Key), colmfamily)
 		if err != nil {
 			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
