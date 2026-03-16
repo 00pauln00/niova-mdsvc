@@ -1594,7 +1594,14 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 }
 
 func WPDeleteVdev(args ...interface{}) (interface{}, error) {
-	req := args[0].(ctlplfl.DeleteVdevReq)
+	cpreq, ok1 := args[0].(*ctlplfl.CPReq)
+	if !ok1 {
+		return nil, fmt.Errorf("invalid request type")
+	}
+	req, ok2 := cpreq.Payload.(ctlplfl.DeleteVdevReq)
+	if !ok2 {
+		return nil, fmt.Errorf("invalid request type")
+	}
 	resp := ctlplfl.ResponseXML{
 		Name: "vdev",
 		ID:   req.ID,
@@ -1637,7 +1644,14 @@ func WPDeleteVdev(args ...interface{}) (interface{}, error) {
 // validates the token and checks RBAC permissions before any data is modified.
 func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	req := args[0].(ctlplfl.DeleteVdevReq)
+	cpreq, ok1 := args[0].(*ctlplfl.CPReq)
+	if !ok1 {
+		return nil, fmt.Errorf("invalid request type")
+	}
+	req, ok2 := cpreq.Payload.(ctlplfl.DeleteVdevReq)
+	if !ok2 {
+		return nil, fmt.Errorf("invalid request type")
+	}
 	resp := ctlplfl.ResponseXML{
 		Name:    "vdev",
 		ID:      req.ID,
@@ -1756,7 +1770,14 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 }
 
 func WPDeleteVdev(args ...interface{}) (interface{}, error) {
-	req := args[0].(ctlplfl.DeleteVdevReq)
+	cpreq, ok1 := args[0].(*ctlplfl.CPReq)
+	if !ok1 {
+		return nil, fmt.Errorf("invalid request type")
+	}
+	req, ok2 := cpreq.Payload.(ctlplfl.DeleteVdevReq)
+	if !ok2 {
+		return nil, fmt.Errorf("invalid request type")
+	}
 	resp := ctlplfl.ResponseXML{
 		Name: "vdev",
 		ID:   req.ID,
