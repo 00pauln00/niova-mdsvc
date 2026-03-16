@@ -42,6 +42,8 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var limiter chan int
+
 // Structure for proxy
 type proxyHandler struct {
 	//Other
@@ -516,6 +518,10 @@ Return(s) : error
 Description : Call back for PMDB read func requests to HTTP server.
 */
 func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
+	limiter <- 1
+	defer func(){
+		<-limiter
+	}()
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
 	encType := GetEncodingType(reader)
 	var res any = nil
@@ -558,7 +564,10 @@ Description : Call back for PMDB write func requests to HTTP server.
 */
 func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64,
 	body []byte, response *[]byte, reader *http.Request) error {
-
+	limiter <- 1
+	defer func(){
+		<-limiter
+	}()
 	log.Tracef("FuncHandlerCB called | name=%s rncui=%s wsn=%d bodySize=%d",
 		name, rncui, wsn, len(body))
 
@@ -743,6 +752,7 @@ func main() {
 
 	var err error
 	var i int
+	limiter = make(chan int, 10)
 	cpLib.RegisterGOBStructs()
 	proxyObj := proxyHandler{}
 	//Get commandline paraameters.
