@@ -192,7 +192,8 @@ func handleUpdateUser(req *userlib.UserReq, existing *userlib.User) (string, err
 // UserID (UUID) is always generated server-side for create operations.
 // Only admin users can create new users.
 func PutUser(args ...interface{}) (interface{}, error) {
-	req := args[0].(userlib.UserReq)
+	cpReq := args[0].(cpLib.CPReq)
+	req := cpReq.Payload.(userlib.UserReq)
 	callbackArgs := args[1].(*pumiceserver.PmdbCbArgs)
 
 	var err error
@@ -200,7 +201,7 @@ func PutUser(args ...interface{}) (interface{}, error) {
 	var oldUsername string // Track old username for index deletion on update
 	user := &userlib.User{}
 
-	tokenClaims, err := srvctlplanefuncs.ValidateToken(req.UserToken)
+	tokenClaims, err := srvctlplanefuncs.ValidateToken(cpReq.Token)
 	if err != nil {
 		return returnError(err.Error())
 	}
@@ -358,9 +359,10 @@ func PutUser(args ...interface{}) (interface{}, error) {
 // Users can only view their own information unless they are admin.
 func GetUser(args ...interface{}) (interface{}, error) {
 	callbackArgs := args[0].(*pumiceserver.PmdbCbArgs)
-	req := args[1].(userlib.GetReq)
+	cpReq := args[1].(cpLib.CPReq)
+	req := cpReq.Payload.(userlib.GetReq)
 
-	tokenClaims, err := srvctlplanefuncs.ValidateToken(req.UserToken)
+	tokenClaims, err := srvctlplanefuncs.ValidateToken(cpReq.Token)
 	if err != nil {
 		return returnGetUserError(err.Error())
 	}

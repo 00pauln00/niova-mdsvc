@@ -132,9 +132,9 @@ type Device struct {
 	Name         string `xml:"Name" json:"Name"` // For display purposes
 	DevicePath   string `xml:"device_path,omitempty" json:"DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
-	UserToken    string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
-	State        uint16 `xml:"State" json:"State"`
-	Size         int64  `xml:"Size" json:"Size"`
+
+	State uint16 `xml:"State" json:"State"`
+	Size  int64  `xml:"Size" json:"Size"`
 	//Parent info
 	HypervisorID  string `xml:"HyperVisorID" json:"HyperVisorID"`
 	FailureDomain string `xml:"FailureDomain" json:"FailureDomain"`
@@ -146,20 +146,20 @@ type DevicePartition struct {
 	PartitionID   string `json:"partition_id"`
 	PartitionPath string `json:"partition_path"`
 	NISDUUID      string `json:"nisd_uuid"`
-	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
-	DevID         string `json:"Dev_Id"`
-	Size          int64  `json:"size,omitempty"`
+
+	DevID string `json:"Dev_Id"`
+	Size  int64  `json:"size,omitempty"`
 }
 
 type NisdArgs struct {
-	Defrag               bool   // -g Defrag
-	MBCCnt               int    // -m
-	MergeHCnt            int    // -M
-	MCIBReadCache        int    // -r
-	S3                   string // -s
-	DSync                string // -D
-	UserToken            string // User authentication token
-	AllowDefragMCIBCache bool   // -x
+	Defrag        bool   // -g Defrag
+	MBCCnt        int    // -m
+	MergeHCnt     int    // -M
+	MCIBReadCache int    // -r
+	S3            string // -s
+	DSync         string // -D
+
+	AllowDefragMCIBCache bool // -x
 }
 
 type NetworkInfo struct {
@@ -168,16 +168,16 @@ type NetworkInfo struct {
 }
 
 type Nisd struct {
-	XMLName       xml.Name    `xml:"NisdInfo"`
-	PeerPort      uint16      `xml:"PeerPort" json:"PeerPort"`
-	ID            string      `xml:"ID" json:"ID"`
-	FailureDomain []string    `xml:"FailureDomain"`
-	TotalSize     int64       `xml:"TotalSize"`
-	AvailableSize int64       `xml:"AvailableSize"`
-	SocketPath    string      `xml:"SocketPath"`
-	UserToken     string      `xml:"UserToken,omitempty" json:"userToken,omitempty"`
-	NetInfo       NetInfoList `xml:"NetInfo"`
-	NetInfoCnt    int         `xml:"NetInfoCnt"`
+	XMLName       xml.Name `xml:"NisdInfo"`
+	PeerPort      uint16   `xml:"PeerPort" json:"PeerPort"`
+	ID            string   `xml:"ID" json:"ID"`
+	FailureDomain []string `xml:"FailureDomain"`
+	TotalSize     int64    `xml:"TotalSize"`
+	AvailableSize int64    `xml:"AvailableSize"`
+	SocketPath    string   `xml:"SocketPath"`
+
+	NetInfo    NetInfoList `xml:"NetInfo"`
+	NetInfoCnt int         `xml:"NetInfoCnt"`
 }
 
 type PDU struct {
@@ -186,8 +186,8 @@ type PDU struct {
 	Location      string `xml:"Location" json:"Location" yaml:"location"`
 	PowerCapacity string `xml:"PowerCap" json:"PowerCapacity" yaml:"powercap"`
 	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
-	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
-	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
+
+	Racks []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
 }
 
 type Rack struct {
@@ -196,18 +196,18 @@ type Rack struct {
 	PDUID         string // Foreign key to PDU
 	Location      string
 	Specification string
-	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
-	Hypervisors   []Hypervisor
+
+	Hypervisors []Hypervisor
 }
 
 type Hypervisor struct {
-	ID          string // Unique hypervisor identifier
-	RackID      string
-	Name        string
-	IPAddrs     []string
-	PortRange   string
-	SSHPort     string // SSH port for connection
-	UserToken   string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
+	ID        string // Unique hypervisor identifier
+	RackID    string
+	Name      string
+	IPAddrs   []string
+	PortRange string
+	SSHPort   string // SSH port for connection
+
 	Dev         []Device
 	RDMAEnabled bool
 }
@@ -236,7 +236,6 @@ type VdevCfg struct {
 type Vdev struct {
 	Cfg          VdevCfg
 	NisdToChkMap []NisdChunk
-	UserToken    string
 }
 
 type Filter struct {
@@ -245,9 +244,8 @@ type Filter struct {
 }
 
 type VdevReq struct {
-	Vdev      *VdevCfg
-	Filter    Filter
-	UserToken string
+	Vdev   *VdevCfg
+	Filter Filter
 }
 
 // DeleteVdevReq is the request structure for deleting a Vdev.
@@ -259,9 +257,8 @@ type DeleteVdevReq struct {
 }
 
 type GetReq struct {
-	ID        string
-	GetAll    bool
-	UserToken string
+	ID     string
+	GetAll bool
 }
 
 func (vdev *VdevCfg) Init() error {
@@ -355,6 +352,10 @@ func RegisterGOBStructs() {
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
 	gob.Register(DeleteVdevReq{})
+	gob.Register(CPReq{})
+	gob.Register(CPResp{})
+	gob.Register(Pagination{})
+	gob.Register(CPStatus(0))
 	gob.Register(FD(0))
 	gob.Register(userlib.GetReq{})
 	gob.Register(userlib.UserReq{})

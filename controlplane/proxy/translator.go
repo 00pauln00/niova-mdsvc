@@ -98,15 +98,63 @@ func GetRespStruct(name string) any {
 	return nil
 }
 
-func DecodeRequest(enctype pmLib.Format, name string, req []byte) (any, error) {
-	res := GetReqStruct(name)
-	log.Tracef("decoding request type %s, with %v decoder", name, enctype)
-	err := pmLib.Decoder(enctype, req, res)
+// DecodeCPReq decodes the incoming request body into a CPReq envelope.
+// It pre-populates the Payload field to guide the decoder, allowing it
+// to fill the correct struct in a single pass.
+func DecodeCPReq(enctype pmLib.Format, name string, req []byte) (*cpLib.CPReq, error) {
+	// Pre-populate payload to guide the decoder in a single pass
+	typedPayload := GetReqStruct(name)
+	cpReq := &cpLib.CPReq{
+		Payload: typedPayload,
+	}
+
+	log.Tracef("decoding CPReq for %s with %v decoder", name, enctype)
+	err := pmLib.Decoder(enctype, req, cpReq)
 	if err != nil {
-		log.Error("%v: failed to decode request: ", enctype, err)
+		log.Error("failed to decode CPReq: ", err)
 		return nil, err
 	}
-	return res, nil
+
+	// For downstream compatibility (e.g., GOB encoding of the envelope),
+	// we ensure the value type (not pointer) is stored in the interface.
+	if cpReq.Payload != nil {
+		cpReq.Payload = derefPtr(cpReq.Payload)
+	}
+
+	return cpReq, nil
+}
+
+// derefPtr dereferences a pointer to return the underlying value.
+// This ensures GOB can encode the Payload correctly as a concrete type.
+func derefPtr(v any) any {
+	switch p := v.(type) {
+	case *cpLib.GetReq:
+		return *p
+	case *cpLib.Rack:
+		return *p
+	case *cpLib.Device:
+		return *p
+	case *cpLib.Hypervisor:
+		return *p
+	case *cpLib.Nisd:
+		return *p
+	case *cpLib.PDU:
+		return *p
+	case *cpLib.DevicePartition:
+		return *p
+	case *cpLib.NisdArgs:
+		return *p
+	case *cpLib.SnapXML:
+		return *p
+	case *cpLib.VdevReq:
+		return *p
+	case *userlib.UserReq:
+		return *p
+	case *userlib.GetReq:
+		return *p
+	default:
+		return v
+	}
 }
 
 // EncodeErrorResponse constructs a GOB-encoded error response matching the

@@ -90,11 +90,10 @@ func TestCreateUser(t *testing.T) {
 	username := "testuser_" + uuid.New().String()[:8]
 
 	user := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	resp, err := c.CreateUser(user)
+	resp, err := c.CreateUser(adminToken, user)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.True(t, resp.Success)
@@ -117,11 +116,10 @@ func TestCreateUserWithRole(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	user := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	resp, err := c.CreateUser(user)
+	resp, err := c.CreateUser(adminToken, user)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.True(t, resp.Success)
@@ -142,11 +140,10 @@ func TestListUsers(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	user := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	resp, err := c.CreateUser(user)
+	resp, err := c.CreateUser(adminToken, user)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
@@ -156,10 +153,9 @@ func TestListUsers(t *testing.T) {
 	assert.NotEmpty(t, userResp.AccessToken, "User access token can not be empty")
 
 	req := userlib.GetReq{
-		UserID:    resp.UserID,
-		UserToken: userResp.AccessToken,
+		UserID: resp.UserID,
 	}
-	users, err := c.ListUsers(req)
+	users, err := c.ListUsers(userResp.AccessToken, req)
 	assert.NoError(t, err)
 	assert.NotNil(t, users)
 	require.Greater(t, len(users), 0)
@@ -177,17 +173,16 @@ func TestGetUserByID(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	createUser := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	createResp, err := c.CreateUser(createUser)
+	createResp, err := c.CreateUser(adminToken, createUser)
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
 	assert.Equal(t, userlib.DefaultUserRole, createResp.UserRole)
 
-	req := userlib.GetReq{UserID: createResp.UserID, UserToken: adminToken}
-	users, err := c.ListUsers(req)
+	req := userlib.GetReq{UserID: createResp.UserID}
+	users, err := c.ListUsers(adminToken, req)
 	assert.NoError(t, err)
 	require.Len(t, users, 1)
 
@@ -208,23 +203,21 @@ func TestUpdateUser(t *testing.T) {
 
 	originalUsername := "original_" + uuid.New().String()[:8]
 	createUser := &userlib.UserReq{
-		Username:  originalUsername,
-		UserToken: adminToken,
+		Username: originalUsername,
 	}
 
-	createResp, err := c.CreateUser(createUser)
+	createResp, err := c.CreateUser(adminToken, createUser)
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
 	assert.NotEmpty(t, createResp.UserID)
 
 	newUsername := "updated_" + uuid.New().String()[:8]
 	updateUser := &userlib.UserReq{
-		UserID:    createResp.UserID,
-		Username:  newUsername,
-		UserToken: adminToken,
+		UserID:   createResp.UserID,
+		Username: newUsername,
 	}
 
-	updateResp, err := c.UpdateUser(updateUser)
+	updateResp, err := c.UpdateUser(adminToken, updateUser)
 	assert.NoError(t, err)
 	assert.NotNil(t, updateResp)
 	assert.True(t, updateResp.Success)
@@ -245,11 +238,10 @@ func TestUserRoleDerivedFromIsAdmin(t *testing.T) {
 
 	username := "roletest_" + uuid.New().String()[:8]
 	createUser := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	createResp, err := c.CreateUser(createUser)
+	createResp, err := c.CreateUser(adminToken, createUser)
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
 	assert.Equal(t, userlib.DefaultUserRole, createResp.UserRole)
@@ -267,12 +259,11 @@ func TestUpdateUserNotFound(t *testing.T) {
 
 	nonExistentID := uuid.New().String()
 	updateUser := &userlib.UserReq{
-		UserID:    nonExistentID,
-		Username:  "newname",
-		UserToken: adminToken,
+		UserID:   nonExistentID,
+		Username: "newname",
 	}
 
-	resp, err := c.UpdateUser(updateUser)
+	resp, err := c.UpdateUser(adminToken, updateUser)
 
 	failed := err != nil || (resp != nil && !resp.Success)
 	assert.True(t, failed, "expected update of non-existent user to fail")
@@ -290,11 +281,10 @@ func TestGetUserReturnsDecryptedSecretKey(t *testing.T) {
 	username := "secrettest_" + uuid.New().String()[:8]
 
 	createUser := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	createResp, err := c.CreateUser(createUser)
+	createResp, err := c.CreateUser(adminToken, createUser)
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
 	assert.NotEmpty(t, createResp.SecretKey, "CreateUser should return secret key")
@@ -316,7 +306,8 @@ func TestGetUser(t *testing.T) {
 	c, tearDown := newClient(t)
 	defer tearDown()
 
-	users, err := c.ListUsers(userlib.GetReq{})
+	adminToken := setupAdmin(t, c)
+	users, err := c.ListUsers(adminToken, userlib.GetReq{})
 	assert.NoError(t, err, "error not expect")
 
 	t.Logf("Verified user get call, got: %v users", len(users))
@@ -417,9 +408,8 @@ func TestUpdateSecretKeyNonAdminFails(t *testing.T) {
 
 	// Create a regular (non-admin) user — must pass adminToken to authorize creation
 	username := "regularuser_" + uuid.New().String()[:8]
-	createResp, err := c.CreateUser(&userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+	createResp, err := c.CreateUser(adminToken, &userlib.UserReq{
+		Username: username,
 	})
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
@@ -443,11 +433,10 @@ func TestGetUserByUsername(t *testing.T) {
 
 	username := "byname_" + uuid.New().String()[:8]
 	createUser := &userlib.UserReq{
-		Username:  username,
-		UserToken: adminToken,
+		Username: username,
 	}
 
-	createResp, err := c.CreateUser(createUser)
+	createResp, err := c.CreateUser(adminToken, createUser)
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
 	assert.NotEmpty(t, createResp.UserID)
@@ -488,30 +477,27 @@ func TestUpdateUserUsernameAlreadyTaken(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	username1 := "user1_" + uuid.New().String()[:8]
-	createResp1, err := c.CreateUser(&userlib.UserReq{
-		Username:  username1,
-		UserToken: adminToken,
+	createResp1, err := c.CreateUser(adminToken, &userlib.UserReq{
+		Username: username1,
 	})
 	assert.NoError(t, err)
 	assert.True(t, createResp1.Success)
 	assert.NotEmpty(t, createResp1.UserID)
 
 	username2 := "user2_" + uuid.New().String()[:8]
-	createResp2, err := c.CreateUser(&userlib.UserReq{
-		Username:  username2,
-		UserToken: adminToken,
+	createResp2, err := c.CreateUser(adminToken, &userlib.UserReq{
+		Username: username2,
 	})
 	assert.NoError(t, err)
 	assert.True(t, createResp2.Success)
 	assert.NotEmpty(t, createResp2.UserID)
 
 	updateUser := &userlib.UserReq{
-		UserID:    createResp1.UserID,
-		Username:  username2,
-		UserToken: adminToken,
+		UserID:   createResp1.UserID,
+		Username: username2,
 	}
 
-	updateResp, err := c.UpdateUser(updateUser)
+	updateResp, err := c.UpdateUser(adminToken, updateUser)
 
 	failed := err != nil || (updateResp != nil && !updateResp.Success)
 	assert.True(t, failed, "expected update to fail when username is already taken")
@@ -537,9 +523,8 @@ func TestUpdateUserUsernameIndexDeleted(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	oldUsername := "oldname_" + uuid.New().String()[:8]
-	createResp, err := c.CreateUser(&userlib.UserReq{
-		Username:  oldUsername,
-		UserToken: adminToken,
+	createResp, err := c.CreateUser(adminToken, &userlib.UserReq{
+		Username: oldUsername,
 	})
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
@@ -551,10 +536,9 @@ func TestUpdateUserUsernameIndexDeleted(t *testing.T) {
 	assert.Equal(t, createResp.UserID, getByOldName.UserID)
 
 	newUsername := "newname_" + uuid.New().String()[:8]
-	updateResp, err := c.UpdateUser(&userlib.UserReq{
-		UserID:    createResp.UserID,
-		Username:  newUsername,
-		UserToken: adminToken,
+	updateResp, err := c.UpdateUser(adminToken, &userlib.UserReq{
+		UserID:   createResp.UserID,
+		Username: newUsername,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, updateResp)
@@ -583,25 +567,22 @@ func TestUpdateUserUsernameIndexDeletedCanBeReused(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	usernameA := "reusable_" + uuid.New().String()[:8]
-	createResp1, err := c.CreateUser(&userlib.UserReq{
-		Username:  usernameA,
-		UserToken: adminToken,
+	createResp1, err := c.CreateUser(adminToken, &userlib.UserReq{
+		Username: usernameA,
 	})
 	assert.NoError(t, err)
 	assert.True(t, createResp1.Success)
 
 	usernameB := "changed_" + uuid.New().String()[:8]
-	updateResp1, err := c.UpdateUser(&userlib.UserReq{
-		UserID:    createResp1.UserID,
-		Username:  usernameB,
-		UserToken: adminToken,
+	updateResp1, err := c.UpdateUser(adminToken, &userlib.UserReq{
+		UserID:   createResp1.UserID,
+		Username: usernameB,
 	})
 	assert.NoError(t, err)
 	assert.True(t, updateResp1.Success)
 
-	createResp2, err := c.CreateUser(&userlib.UserReq{
-		Username:  usernameA,
-		UserToken: adminToken,
+	createResp2, err := c.CreateUser(adminToken, &userlib.UserReq{
+		Username: usernameA,
 	})
 	assert.NoError(t, err, "should be able to create user with previously used username")
 	assert.NotNil(t, createResp2)
@@ -625,10 +606,9 @@ func TestLoginUser(t *testing.T) {
 	adminToken := setupAdmin(t, c)
 
 	loginUser := &userlib.UserReq{
-		Username:  "loginUser" + uuid.New().String()[:8],
-		UserToken: adminToken,
+		Username: "loginUser" + uuid.New().String()[:8],
 	}
-	createResp, err := c.CreateUser(loginUser)
+	createResp, err := c.CreateUser(adminToken, loginUser)
 	assert.NoError(t, err)
 	assert.True(t, createResp.Success)
 

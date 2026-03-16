@@ -519,22 +519,25 @@ Description : Call back for PMDB read func requests to HTTP server.
 */
 func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
 	limiter <- 1
-	defer func(){
+	defer func() {
 		<-limiter
 	}()
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
 	encType := GetEncodingType(reader)
-	var res any = nil
+	var cpReq *cpLib.CPReq
 	var err error
 	if len(body) > 0 {
-		res, err = DecodeRequest(encType, name, body)
+		cpReq, err = DecodeCPReq(encType, name, body)
 		if err != nil {
-			log.Error("RHCB:failed to decode request: ", err)
+			log.Error("RHCB:failed to decode CPReq: ", err)
 			return err
 		}
+	} else {
+		log.Error("RHCB:empty body")
+		return fmt.Errorf("empty body")
 	}
 
-	r := &funclib.FuncReq{Name: name, Args: res}
+	r := &funclib.FuncReq{Name: name, Args: *cpReq}
 	reqArgs := &pmdbClient.PmdbReq{
 		Request:  encode(r),
 		ReqType:  PumiceDBCommon.FUNC_REQ,
@@ -565,7 +568,7 @@ Description : Call back for PMDB write func requests to HTTP server.
 func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64,
 	body []byte, response *[]byte, reader *http.Request) error {
 	limiter <- 1
-	defer func(){
+	defer func() {
 		<-limiter
 	}()
 	log.Tracef("FuncHandlerCB called | name=%s rncui=%s wsn=%d bodySize=%d",
@@ -573,22 +576,12 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 
 	// Detect encoding type used by the client (json/xml/etc)
 	encType := GetEncodingType(reader)
-
-	// Decode incoming request
-	res, err := DecodeRequest(encType, name, body)
+	cpReq, err := DecodeCPReq(encType, name, body)
 	if err != nil {
-		log.Error("WHCB: failed to decode request:", err)
+		log.Error("WHCB:failed to decode CPReq: ", err)
 		return err
 	}
-
-	log.Tracef("Decoded request for %s: %+v", name, res)
-
-	// Build function request
-	r := &funclib.FuncReq{
-		Name: name,
-		Args: res,
-	}
-
+	r := &funclib.FuncReq{Name: name, Args: *cpReq}
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:       rncui,
 		Request:     encode(r),

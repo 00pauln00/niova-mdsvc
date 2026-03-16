@@ -325,20 +325,17 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		log.Error("ApplyNisd: invalid cbargs argument:", err)
 		return nil, err
 	}
-
-	log.Debugf("ApplyNisd: received cbargs | AppDataSize=%d", cbargs.AppDataSize)
-
-	// Extract NISD request
-	nisd, ok := args[0].(ctlplfl.Nisd)
+	cpReq, ok := args[0].(ctlplfl.CPReq)
 	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type Nisd")
-		log.Error("ApplyNisd: invalid nisd argument:", err)
+		err := fmt.Errorf("invalid argument: expecting type CPReq")
 		return nil, err
 	}
-
-	// Authorization check
-	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "ApplyNisd"); err != nil {
-		log.Error("ApplyNisd: RBAC authorization failed for NISD:", nisd.ID, " error:", err)
+	nisd, ok := cpReq.Payload.(ctlplfl.Nisd)
+	if !ok {
+		err := fmt.Errorf("invalid payload: expecting type Nisd")
+		return nil, err
+	}
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ApplyNisd"); err != nil {
 		return nil, err
 	}
 
@@ -381,9 +378,9 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
 
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadAllNisdConfigs"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadAllNisdConfigs"); err != nil {
 		return nil, err
 	}
 	log.Trace("fetching nisd details for key : ", NisdCfgKey)
@@ -406,11 +403,12 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	if err := req.ValidateRequest(); err != nil {
 		return nil, err
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadNisdConfig"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadNisdConfig"); err != nil {
 		return nil, err
 	}
 	key := getConfKey(NisdCfgKey, req.ID)
@@ -447,9 +445,16 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 	return nisdList, nil
 }
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
-	// Extract NISD object from arguments
-	nisd := args[0].(ctlplfl.Nisd)
-	log.Debug("WPNisdCfg request received for NISD:", nisd.ID)
+	cpReq := args[0].(ctlplfl.CPReq)
+	nisd := cpReq.Payload.(ctlplfl.Nisd)
+	if err := nisd.Validate(); err != nil {
+		log.Error("failed to validate nisd: ", err)
+		return nil, err
+	}
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPNisdCfg"); err != nil {
+		return nil, err
+	}
+	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
 
 	// Validate the NISD configuration before processing
 	if err := nisd.Validate(); err != nil {
@@ -496,8 +501,9 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 
 func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdDeviceInfo"); err != nil {
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "RdDeviceInfo"); err != nil {
 		return nil, err
 	}
 	key := getConfKey(deviceCfgKey, req.ID)
@@ -517,8 +523,9 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 }
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-	dev := args[0].(ctlplfl.Device)
-	if _, err := validateAndAuthorizeRBAC(dev.UserToken, "WPDeviceInfo"); err != nil {
+	cpReq := args[0].(ctlplfl.CPReq)
+	dev := cpReq.Payload.(ctlplfl.Device)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPDeviceInfo"); err != nil {
 		return nil, err
 	}
 	nisdResponse := ctlplfl.ResponseXML{
@@ -568,12 +575,17 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commi
 func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	req, ok := args[0].(ctlplfl.VdevReq)
+	cpReq, ok := args[0].(ctlplfl.CPReq)
 	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type vdev")
+		err := fmt.Errorf("invalid argument: expecting type CPReq")
 		return nil, err
 	}
-	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPCreateVdev")
+	req, ok := cpReq.Payload.(ctlplfl.VdevReq)
+	if !ok {
+		err := fmt.Errorf("invalid payload: expecting type VdevReq")
+		return nil, err
+	}
+	tc, err := validateAndAuthorizeRBAC(cpReq.Token, "WPCreateVdev")
 	if err != nil {
 		return nil, err
 	}
@@ -838,8 +850,9 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 }
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
-	pt := args[0].(ctlplfl.DevicePartition)
-	if _, err := validateAndAuthorizeRBAC(pt.UserToken, "WPCreatePartition"); err != nil {
+	cpReq := args[0].(ctlplfl.CPReq)
+	pt := cpReq.Payload.(ctlplfl.DevicePartition)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPCreatePartition"); err != nil {
 		return nil, err
 	}
 	resp := &ctlplfl.ResponseXML{
@@ -862,12 +875,13 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 
 func ReadPartition(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	key := ptKey
 	if !req.GetAll {
 		key = getConfKey(ptKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPartition"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadPartition"); err != nil {
 		return nil, err
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -885,8 +899,9 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
-	pdu := args[0].(ctlplfl.PDU)
-	if _, err := validateAndAuthorizeRBAC(pdu.UserToken, "WPPDUCfg"); err != nil {
+	cpReq := args[0].(ctlplfl.CPReq)
+	pdu := cpReq.Payload.(ctlplfl.PDU)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPPDUCfg"); err != nil {
 		return nil, err
 	}
 	resp := &ctlplfl.ResponseXML{
@@ -908,12 +923,13 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 
 func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	key := pduKey
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPDUCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadPDUCfg"); err != nil {
 		return nil, err
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -933,8 +949,9 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
-	rack := args[0].(ctlplfl.Rack)
-	if _, err := validateAndAuthorizeRBAC(rack.UserToken, "WPRackCfg"); err != nil {
+	cpReq := args[0].(ctlplfl.CPReq)
+	rack := cpReq.Payload.(ctlplfl.Rack)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPRackCfg"); err != nil {
 		return nil, err
 	}
 	resp := &ctlplfl.ResponseXML{
@@ -957,12 +974,13 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
 
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	key := rackKey
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadRackCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadRackCfg"); err != nil {
 		return nil, err
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -985,8 +1003,9 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 }
 
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	hv := args[0].(ctlplfl.Hypervisor)
-	if _, err := validateAndAuthorizeRBAC(hv.UserToken, "WPHyperVisorCfg"); err != nil {
+	cpReq := args[0].(ctlplfl.CPReq)
+	hv := cpReq.Payload.(ctlplfl.Hypervisor)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPHyperVisorCfg"); err != nil {
 		return nil, err
 	}
 	resp := &ctlplfl.ResponseXML{
@@ -1010,13 +1029,14 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 
 func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 
 	key := hvKey
 	if !req.GetAll {
 		key = getConfKey(hvKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadHyperVisorCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadHyperVisorCfg"); err != nil {
 		return nil, err
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -1037,8 +1057,9 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 
 func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
-	tc, err := ValidateToken(req.UserToken)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
+	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -1181,7 +1202,8 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 
 func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 
 	err := req.ValidateRequest()
 	if err != nil {
@@ -1189,7 +1211,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	tc, err := ValidateToken(req.UserToken)
+	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -1283,13 +1305,14 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 
 func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 
 	if err := req.ValidateRequest(); err != nil {
 		log.Error("failed to validate request:", err)
 		return nil, err
 	}
-	tc, err := ValidateToken(req.UserToken)
+	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -1338,8 +1361,9 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 }
 
 func WPNisdArgs(args ...interface{}) (interface{}, error) {
-	nArgs := args[0].(ctlplfl.NisdArgs)
-	if _, err := validateAndAuthorizeRBAC(nArgs.UserToken, "WPNisdArgs"); err != nil {
+	cpReq := args[0].(ctlplfl.CPReq)
+	nArgs := cpReq.Payload.(ctlplfl.NisdArgs)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPNisdArgs"); err != nil {
 		return nil, err
 	}
 	resp := &ctlplfl.ResponseXML{
@@ -1362,8 +1386,8 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 
 func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdNisdArgs"); err != nil {
+	cpReq := args[1].(ctlplfl.CPReq)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "RdNisdArgs"); err != nil {
 		return nil, err
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{

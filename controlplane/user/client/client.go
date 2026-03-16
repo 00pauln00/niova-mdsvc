@@ -101,10 +101,16 @@ func (c *Client) executePut(url string, data []byte) ([]byte, error) {
 type requestFunc func(url string, data []byte) ([]byte, error)
 
 // doRequest performs the common logic for get/put operations
-func (c *Client) doRequest(data, resp interface{}, operation string, reqFunc requestFunc) error {
+func (c *Client) doRequest(token string, data, resp interface{}, operation string, reqFunc requestFunc) error {
 	url := "name=" + operation
 
-	encoded, err := pmCmn.Encoder(c.encType, data)
+	// Wrap in CPReq
+	cpReq := cpLib.CPReq{
+		Token:   token,
+		Payload: data,
+	}
+
+	encoded, err := pmCmn.Encoder(c.encType, cpReq)
 	if err != nil {
 		return fmt.Errorf("failed to encode request data: %w", err)
 	}
@@ -117,30 +123,37 @@ func (c *Client) doRequest(data, resp interface{}, operation string, reqFunc req
 		return fmt.Errorf("received empty response from server")
 	}
 
-	if err := pmCmn.Decoder(c.encType, respData, resp); err != nil {
+	// Prepare CPResp for single-pass decoding
+	cpResp := cpLib.CPResp{
+		Payload: resp,
+	}
+
+	if err := pmCmn.Decoder(c.encType, respData, &cpResp); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if cpResp.Status != cpLib.StatusOK {
+		return fmt.Errorf("server error: %s (status: %v)", cpResp.ErrorMsg, cpResp.Status)
 	}
 
 	return nil
 }
 
-func (c *Client) put(data, resp interface{}, operation string) error {
-	return c.doRequest(data, resp, operation, c.executePut)
+func (c *Client) put(token string, data, resp interface{}, operation string) error {
+	return c.doRequest(token, data, resp, operation, c.executePut)
 }
 
-func (c *Client) get(data, resp interface{}, operation string) error {
-	return c.doRequest(data, resp, operation, func(url string, data []byte) ([]byte, error) {
+func (c *Client) get(token string, data, resp interface{}, operation string) error {
+	return c.doRequest(token, data, resp, operation, func(url string, data []byte) ([]byte, error) {
 		return c.request(data, url, false)
 	})
 }
-
-func (c *Client) CreateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
-	// UserToken must be set in the UserReq (must be admin token)
-	if user.UserToken == "" {
-		return nil, fmt.Errorf("userToken is required for creating users")
+func (c *Client) CreateUser(token string, user *userlib.UserReq) (*userlib.UserResp, error) {
+	if token == "" {
+		return nil, fmt.Errorf("token is required for creating users")
 	}
 	resp := &userlib.UserResp{}
-	if err := c.put(user, resp, userlib.PutUserAPI); err != nil {
+	if err := c.put(token, user, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 	return resp, nil
@@ -149,25 +162,25 @@ func (c *Client) CreateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
 // UpdateUser updates an existing user's username and/or capabilities.
 // UserID (UUID string) is required and user must exist.
 // Users can only update their own record unless they are admin.
-func (c *Client) UpdateUser(user *userlib.UserReq) (*userlib.UserResp, error) {
+func (c *Client) UpdateUser(token string, user *userlib.UserReq) (*userlib.UserResp, error) {
 	if user.UserID == "" {
 		return nil, fmt.Errorf("userID is required for update operation")
 	}
-	if user.UserToken == "" {
-		return nil, fmt.Errorf("userToken is required for updating users")
+	if token == "" {
+		return nil, fmt.Errorf("token is required for updating users")
 	}
 
 	user.IsUpdate = true
 	resp := &userlib.UserResp{}
-	if err := c.put(user, resp, userlib.PutUserAPI); err != nil {
+	if err := c.put(token, user, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 	return resp, nil
 }
 
-func (c *Client) ListUsers(req userlib.GetReq) ([]userlib.UserResp, error) {
+func (c *Client) ListUsers(token string, req userlib.GetReq) ([]userlib.UserResp, error) {
 	var users []userlib.UserResp
-	if err := c.get(req, &users, userlib.GetUserAPI); err != nil {
+	if err := c.get(token, req, &users, userlib.GetUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
 	return users, nil
@@ -175,10 +188,9 @@ func (c *Client) ListUsers(req userlib.GetReq) ([]userlib.UserResp, error) {
 
 func (c *Client) GetUser(userID string, userToken string) (*userlib.UserResp, error) {
 	req := userlib.GetReq{
-		UserID:    userID,
-		UserToken: userToken,
+		UserID: userID,
 	}
-	users, err := c.ListUsers(req)
+	users, err := c.ListUsers(userToken, req)
 	if err != nil {
 		return nil, err
 	}
@@ -191,10 +203,9 @@ func (c *Client) GetUser(userID string, userToken string) (*userlib.UserResp, er
 // GetUserByUsername retrieves a user by username using the secondary index.
 func (c *Client) GetUserByUsername(username string, userToken string) (*userlib.UserResp, error) {
 	req := userlib.GetReq{
-		Username:  username,
-		UserToken: userToken,
+		Username: username,
 	}
-	users, err := c.ListUsers(req)
+	users, err := c.ListUsers(userToken, req)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +225,7 @@ func (c *Client) CreateAdminUser(req *userlib.UserReq) (*userlib.UserResp, error
 	}
 
 	resp := &userlib.UserResp{}
-	if err := c.put(req, resp, userlib.AdminUserAPI); err != nil {
+	if err := c.put("", req, resp, userlib.AdminUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to create admin user: %w", err)
 	}
 	return resp, nil
@@ -233,11 +244,10 @@ func (c *Client) UpdateAdminSecretKey(userID, newSecretKey, userToken string) (*
 		UserID:       userID,
 		IsUpdate:     true,
 		NewSecretKey: newSecretKey,
-		UserToken:    userToken,
 	}
 
 	resp := &userlib.UserResp{}
-	if err := c.put(req, resp, userlib.PutUserAPI); err != nil {
+	if err := c.put(userToken, req, resp, userlib.PutUserAPI); err != nil {
 		return nil, fmt.Errorf("failed to update admin secret key: %w", err)
 	}
 	return resp, nil
@@ -250,7 +260,7 @@ func (c *Client) Login(username, secretKey string) (*userlib.LoginResp, error) {
 	}
 
 	resp := &userlib.LoginResp{}
-	if err := c.get(req, resp, userlib.LoginAPI); err != nil {
+	if err := c.get("", req, resp, userlib.LoginAPI); err != nil {
 		return nil, fmt.Errorf("login failed: %w", err)
 	}
 	if !resp.Success {
