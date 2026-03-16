@@ -593,34 +593,35 @@ func (m *model) refreshCPData() {
 	token := m.userToken()
 
 	// Fetch flat lists from CP
-	pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	m.cpClient.SetToken(token)
+	pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetPDUs failed: ", err)
 		pdus = []ctlplfl.PDU{}
 	}
 
-	racks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	racks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetRacks failed: ", err)
 		racks = []ctlplfl.Rack{}
 	}
 	m.cpRacks = racks
 
-	hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetHypervisor failed: ", err)
 		hvs = []ctlplfl.Hypervisor{}
 	}
 
 	// Fetch devices and stitch into Hypervisors
-	devices, err := m.cpClient.GetDevices(ctlplfl.GetReq{GetAll: true, UserToken: token})
+	devices, err := m.cpClient.GetDevices(ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetDevices failed: ", err)
 		devices = []ctlplfl.Device{}
 	}
 
 	// Fetch partitions and stitch into Devices
-	partitions, err := m.cpClient.GetPartition(ctlplfl.GetReq{GetAll: true, UserToken: token})
+	partitions, err := m.cpClient.GetPartition(ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetPartition failed: ", err)
 		partitions = []ctlplfl.DevicePartition{}
@@ -2288,7 +2289,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 					SerialNumber:  device.SerialNumber,
 					State:         ctlplfl.INITIALIZED,
 					HypervisorID:  hv.ID,
-					FailureDomain: updatedDevice.FailureDomain,
+					FailureDomain: failureDomain,
 				}
 				log.Info("Put device info: ", deviceInfo)
 

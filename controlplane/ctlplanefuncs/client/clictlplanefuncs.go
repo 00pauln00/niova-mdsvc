@@ -583,9 +583,18 @@ func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, erro
 
 func (ccf *CliCFuncs) DeleteVdev(req *ctlplfl.DeleteVdevReq) (*ctlplfl.ResponseXML, error) {
 	resp := &ctlplfl.ResponseXML{}
-	err := ccf.put(req, resp, ctlplfl.DELETE_VDEV)
+	cpreq := &ctlplfl.CPReq{
+		Token:   ccf.token,
+		Payload: req,
+	}
+	cpResp, err := ccf.put(cpreq, ctlplfl.DELETE_VDEV, resp)
 	if err != nil {
 		return nil, err
 	}
+
+	if cpResp.Status != ctlplfl.StatusOK {
+		return nil, errors.New(cpResp.ErrorMsg)
+	}
+
 	return resp, nil
 }
