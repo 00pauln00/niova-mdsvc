@@ -1592,52 +1592,6 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 
 }
 
-func WPDeleteVdev(args ...interface{}) (interface{}, error) {
-	cpreq, ok1 := args[0].(*ctlplfl.CPReq)
-	if !ok1 {
-		return nil, fmt.Errorf("invalid request type")
-	}
-	req, ok2 := cpreq.Payload.(ctlplfl.DeleteVdevReq)
-	if !ok2 {
-		return nil, fmt.Errorf("invalid request type")
-	}
-	resp := ctlplfl.ResponseXML{
-		Name: "vdev",
-		ID:   req.ID,
-	}
-	// Step 1: Validate the request fields (e.g. ID must be a valid UUID).
-	err := req.Validate()
-	if err != nil {
-		log.Errorf("WPDeleteVdev: invalid request for vdev %q: %v", req.ID, err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-
-	// Step 2: Authenticate the caller and verify RBAC permissions.
-	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
-	// caller's role is allowed to perform "WPDeleteVdev".
-	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPDeleteVdev")
-	if err != nil {
-		log.Errorf("WPDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-	log.Debugf("WPDeleteVdev: user %q authorized to delete vdev %q", tc.UserID, req.ID)
-
-	r, err := pmCmn.Encoder(pmCmn.GOB, req)
-	if err != nil {
-		log.Errorf("WPDeleteVdev: failed to marshal vdev delete request: %v", err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-
-	funcIntrm := funclib.FuncIntrm{
-		Response: r,
-	}
-
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
-}
-
 // Deletes a Vdev, archives its data and refunds allocated space to NISDs.
 // The caller must supply a valid JWT in req.UserToken; the WritePrep stage
 // validates the token and checks RBAC permissions before any data is modified.
@@ -1651,6 +1605,28 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	if !ok2 {
 		return nil, fmt.Errorf("invalid request type")
 	}
+
+	err := req.Validate()
+	if err != nil {
+		log.Errorf("APDeleteVdev: invalid request for vdev %q: %v", req.ID, err)
+		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{
+			Status:   ctlplfl.StatusFuncError,
+			ErrorMsg: formatError(err),
+		})
+	}
+
+	// Step 2: Authenticate the caller and verify RBAC permissions.
+	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
+	// caller's role is allowed to perform "APDeleteVdev".
+	_, err = validateAndAuthorizeRBAC(req.UserToken, "APDeleteVdev")
+	if err != nil {
+		log.Errorf("APDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
+		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{
+			Status:   ctlplfl.StatusAuthError,
+			ErrorMsg: formatError(err),
+		})
+	}
+
 	resp := ctlplfl.ResponseXML{
 		Name:    "vdev",
 		ID:      req.ID,
@@ -1705,8 +1681,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 					nisdRR, err := cbArgs.Store.RangeRead(rrargs)
 					if err != nil {
 						log.Error("Range read failure ", err)
-						resp.Error = err.Error()
-						return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error(), Payload: resp})
+						return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error()})
 					}
 					nisdList := ParseEntities[ctlplfl.Nisd](nisdRR.ResultMap, NisdParser{})
 					if len(nisdList) > 0 {
@@ -1743,23 +1718,20 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	err := applyKV(commitChgs, cbArgs.Store)
+	err = applyKV(commitChgs, cbArgs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error(), Payload: resp})
+		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error()})
 	}
 
 	err = deleteKV(deleteChgs, cbArgs.Store)
 	if err != nil {
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error(), Payload: resp})
+		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error()})
 	}
 
 	for nisdID, nisd := range nisdRefundMap {
 		hrNisd, err := HR.GetNisdByPDUID(nisd.FailureDomain[ctlplfl.PDU_IDX], nisdID)
 		if err != nil {
-			resp.Error = err.Error()
 			return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{Status: ctlplfl.StatusFuncError, ErrorMsg: err.Error(), Payload: resp})
 		}
 		hrNisd.AvailableSize = nisd.AvailableSize

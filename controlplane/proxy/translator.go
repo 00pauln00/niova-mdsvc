@@ -152,6 +152,8 @@ func derefPtr(v any) any {
 		return *p
 	case *userlib.GetReq:
 		return *p
+	case *cpLib.DeleteVdevReq:
+		return *p
 	default:
 		return v
 	}
