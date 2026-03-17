@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/tidwall/btree"
 
@@ -22,7 +23,7 @@ import (
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 )
 
-var colmfamily string
+var Colmfamily string
 
 var (
 	authorizer  *authz.Authorizer
@@ -89,19 +90,17 @@ const (
 	DSYNC                   = "ds"
 	ALLOW_DEFRAG_MCIB_CACHE = "admc"
 
-	cfgkey       = "cfg"
+	CfgKey       = "cfg"
 	NisdCfgKey   = "n_cfg"
-	deviceCfgKey = "d_cfg"
-	sdeviceKey   = "sd"
-	parentInfo   = "pi"
-	pduKey       = "p"
-	rackKey      = "r"
-	nisdKey      = "n"
-	vdevKey      = "v"
-	chunkKey     = "c"
-	hvKey        = "hv"
-	ptKey        = "pt"
-	argsKey      = "na"
+	DeviceCfgKey = "d_cfg"
+	PduKey       = "p"
+	RackKey      = "r"
+	NisdKey      = "n"
+	VdevKey      = "v"
+	ChunkKey     = "c"
+	HvKey        = "hv"
+	PtKey        = "pt"
+	ArgsKey      = "na"
 )
 
 // TokenClaims holds user identity extracted from a verified JWT.
@@ -170,15 +169,15 @@ func validateAndAuthorizeRBAC(token string, fn authz.FunctionName) (*TokenClaims
 }
 
 func SetClmFamily(cf string) {
-	colmfamily = cf
+	Colmfamily = cf
 }
 
-func getConfKey(cfgType, id string) string {
+func GetConfKey(cfgType, id string) string {
 	return fmt.Sprintf("%s/%s", cfgType, id)
 }
 
 func getVdevChunkKey(vdevID string) string {
-	return fmt.Sprintf("%s/%s/%s", vdevKey, vdevID, chunkKey)
+	return fmt.Sprintf("%s/%s/%s", VdevKey, vdevID, ChunkKey)
 }
 
 func ReadSnapByName(args ...interface{}) (interface{}, error) {
@@ -189,7 +188,7 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	//FIX: Arbitrary read size
 	key := fmt.Sprintf("snap/%s", Snap.SnapName)
 	log.Info("Key to be read : ", key)
-	readResult, err := cbargs.Store.Read(key, colmfamily)
+	readResult, err := cbargs.Store.Read(key, Colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
@@ -206,7 +205,7 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 
 	key := fmt.Sprintf("%s/snap", Snap.Vdev)
 	rrargs := storageiface.RangeReadArgs{
-		Selector:   colmfamily,
+		Selector:   Colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -252,7 +251,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 		// Schema: {vdev}/snap/{chunk}/{Seq} : {Ref count}
 		// TODO: Change the dummy ref count
 		chg := funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/snap/%d/%d", Snap.Vdev, chunk.Idx, chunk.Seq)),
+			Key:   fmt.Appendf(nil, "%s/snap/%d/%d", Snap.Vdev, chunk.Idx, chunk.Seq),
 			Value: []byte{uint8(1)},
 		}
 		commitChgs = append(commitChgs, chg)
@@ -260,7 +259,7 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 
 	// Schema: snap/{name}:{blob}
 	chg := funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("snap/%s", Snap.SnapName)),
+		Key:   fmt.Appendf(nil, "snap/%s", Snap.SnapName),
 		Value: args[0].([]byte),
 	}
 
@@ -288,10 +287,10 @@ func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 		switch chg.Op {
 		case funclib.OpApply:
 			log.Debug("Applying change: ", string(chg.Key), " -> ", string(chg.Value))
-			err = ds.Write(string(chg.Key), string(chg.Value), colmfamily)
+			err = ds.Write(string(chg.Key), string(chg.Value), Colmfamily)
 		case funclib.OpDelete:
 			log.Debug("Deleting key: ", string(chg.Key))
-			err = ds.Delete(string(chg.Key), colmfamily)
+			err = ds.Delete(string(chg.Key), Colmfamily)
 		default:
 			log.Error("Unknown operation type: ", chg.Op, " for key: ", string(chg.Key))
 			return fmt.Errorf("unknown operation type %d for key %s", chg.Op, string(chg.Key))
@@ -307,7 +306,7 @@ func applyKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 func deleteKV(chgs []funclib.CommitChg, ds storageiface.DataStore) error {
 	for _, chg := range chgs {
 		log.Debug("Deleting key: ", string(chg.Key))
-		err := ds.Delete(string(chg.Key), colmfamily)
+		err := ds.Delete(string(chg.Key), Colmfamily)
 		if err != nil {
 			log.Fatal("Failed to apply changes for key: ", string(chg.Key))
 			return fmt.Errorf("failed to delete key: %s, err: %v", string(chg.Key), err)
@@ -411,6 +410,19 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 	return resp, nil
 }
 
+func DecodeFuncIntrm(appData unsafe.Pointer, appDataSize uint32) (funclib.FuncIntrm, error) {
+	var intrm funclib.FuncIntrm
+	buf := C.GoBytes(appData, C.int(appDataSize))
+
+	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
+	if err != nil {
+		log.Error("DecodeFuncIntrm: failed to decode apply changes:", err)
+		return intrm, fmt.Errorf("failed to decode apply changes: %v", err)
+	}
+
+	return intrm, nil
+}
+
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
@@ -421,7 +433,7 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	}
 	log.Trace("fetching nisd details for key : ", NisdCfgKey)
 	rrargs := storageiface.RangeReadArgs{
-		Selector:   colmfamily,
+		Selector:   Colmfamily,
 		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -450,10 +462,10 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadNisdConfig: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	key := getConfKey(NisdCfgKey, req.ID)
+	key := GetConfKey(NisdCfgKey, req.ID)
 	log.Trace("fetching nisd details for key : ", key)
 	rrargs := storageiface.RangeReadArgs{
-		Selector:   colmfamily,
+		Selector:   Colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -467,22 +479,6 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
 	log.Debugf("ReadNisdConfig: returning nisd config for key %s", key)
 	return ctlplfl.EncodeResponse(nisdList[0])
-}
-
-func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector:   colmfamily,
-		Key:        NisdCfgKey,
-		BufSize:    cbArgs.ReplySize,
-		Consistent: false,
-		Prefix:     NisdCfgKey,
-	})
-	if err != nil {
-		log.Error("Range read failure ", err)
-		return nil, err
-	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
-	return nisdList, nil
 }
 
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
@@ -501,7 +497,7 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 	log.Debug("WPNisdCfg authorization successful for NISD:", nisd.ID)
 
 	// Populate entities and generate the list of changes that need to be committed
-	commitChgs := PopulateEntities[*ctlplfl.Nisd](&nisd, nisdPopulator{}, NisdCfgKey)
+	commitChgs := PopulateEntities(&nisd, NisdPopulator{}, NisdCfgKey)
 	log.Debug("WPNisdCfg populated entities for NISD:", nisd.ID)
 
 	// Prepare success response
@@ -529,9 +525,9 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Errorf("RdDeviceInfo: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	key := getConfKey(deviceCfgKey, req.ID)
+	key := GetConfKey(DeviceCfgKey, req.ID)
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector:   colmfamily,
+		Selector:   Colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
@@ -541,7 +537,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
 	}
-	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceWithPartitionParser{})
+	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, DeviceWithPartitionParser{})
 	log.Debugf("RdDeviceInfo: returning device info for key %s", key)
 	return ctlplfl.EncodeResponse(deviceList)
 }
@@ -558,9 +554,9 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 		Success: true,
 	}
 
-	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{}, deviceCfgKey)
+	commitChgs := PopulateEntities(&dev, DevicePopulator{}, DeviceCfgKey)
 	for _, pt := range dev.Partitions {
-		ptCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, dev.ID, ptKey))
+		ptCommits := PopulateEntities(&pt, PartitionPopulator{}, fmt.Sprintf("%s/%s/%s", DeviceCfgKey, dev.ID, PtKey))
 		commitChgs = append(commitChgs, ptCommits...)
 	}
 
@@ -575,16 +571,16 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 // Generates all the Keys and Values that needs to be inserted into VDEV key space on vdev generation
 func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commitChgs *[]funclib.CommitChg) {
 	vcKey := getVdevChunkKey(ID)
-	nKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisd.Ptr.ID, ID)
+	nKey := fmt.Sprintf("%s/%s/%s", NisdKey, nisd.Ptr.ID, ID)
 
 	// TODO: handle EC blocks
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
-		Key:   []byte(fmt.Sprintf("%s/%s/R.%d", vcKey, chunk, i)),
+		Key:   fmt.Appendf(nil, "%s/%s/R.%d", vcKey, chunk, i),
 		Value: []byte(nisd.Ptr.ID),
 	})
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key:   []byte(nKey),
-		Value: []byte(fmt.Sprintf("R.%d.%s", i, chunk)),
+		Value: fmt.Appendf(nil, "R.%d.%s", i, chunk),
 	})
 	log.Debugf("generated kv updates for chunk %s/R.%d", chunk, i)
 }
@@ -619,7 +615,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		return ctlplfl.WPFuncError(err)
 	}
 	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, tc.UserID)
-	key := getConfKey(vdevKey, req.Vdev.ID)
+	key := GetConfKey(VdevKey, req.Vdev.ID)
 	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
 		var value string
 		switch field {
@@ -633,7 +629,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", key, cfgkey, field)),
+			Key:   fmt.Appendf(nil, "%s/%s/%s", key, CfgKey, field),
 			Value: []byte(value),
 		})
 	}
@@ -803,7 +799,7 @@ func commitAllocChgs(txn *funclib.FuncIntrm,
 
 	allocMap.Ascend("", func(_ string, alloc *ctlplfl.NisdVdevAlloc) bool {
 		txn.Changes = append(txn.Changes, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, alloc.Ptr.ID), AVAIL_SPACE)),
+			Key:   fmt.Appendf(nil, "%s/%s", GetConfKey(NisdCfgKey, alloc.Ptr.ID), AVAIL_SPACE),
 			Value: []byte(strconv.Itoa(int(alloc.AvailableSize))),
 		})
 		return true
@@ -893,8 +889,8 @@ func WPCreatePartition(args ...interface{}) (interface{}, error) {
 		Name:    pt.PartitionID,
 		Success: true,
 	}
-	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, ptKey)
-	devPTCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, pt.DevID, ptKey))
+	commitChgs := PopulateEntities(&pt, PartitionPopulator{}, PtKey)
+	devPTCommits := PopulateEntities(&pt, PartitionPopulator{}, fmt.Sprintf("%s/%s/%s", DeviceCfgKey, pt.DevID, PtKey))
 	commitChgs = append(commitChgs, devPTCommits...)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
@@ -907,16 +903,16 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
-	key := ptKey
+	key := PtKey
 	if !req.GetAll {
-		key = getConfKey(ptKey, req.ID)
+		key = GetConfKey(PtKey, req.ID)
 	}
 	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadPartition); err != nil {
 		log.Errorf("ReadPartition: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
@@ -925,7 +921,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
 	}
-	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
+	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, PtParser{})
 	log.Debugf("ReadPartition: returning %d partition(s) for key %s", len(pt), key)
 	return ctlplfl.EncodeResponse(pt)
 }
@@ -941,7 +937,7 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 		Name:    pdu.ID,
 		Success: true,
 	}
-	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{}, pduKey)
+	commitChgs := PopulateEntities(&pdu, PduPopulator{}, PduKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: resp,
@@ -954,16 +950,16 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
-	key := pduKey
+	key := PduKey
 	if !req.GetAll {
-		key = getConfKey(pduKey, req.ID)
+		key = GetConfKey(PduKey, req.ID)
 	}
 	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadPDUCfg); err != nil {
 		log.Errorf("ReadPDUCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
@@ -972,7 +968,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure: ", err)
 		return ctlplfl.FuncError(err)
 	}
-	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
+	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, PduParser{})
 
 	log.Debugf("ReadPDUCfg: returning %d PDU config(s) for key %s", len(pduList), key)
 	return ctlplfl.EncodeResponse(pduList)
@@ -990,7 +986,7 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 		Name:    rack.ID,
 		Success: true,
 	}
-	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
+	commitChgs := PopulateEntities(&rack, RackPopulator{}, RackKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: resp,
@@ -1003,16 +999,16 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
-	key := rackKey
+	key := RackKey
 	if !req.GetAll {
-		key = getConfKey(rackKey, req.ID)
+		key = GetConfKey(RackKey, req.ID)
 	}
 	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadRackCfg); err != nil {
 		log.Errorf("ReadRackCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
@@ -1021,7 +1017,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
 	}
-	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
+	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, RackParser{})
 	log.Debugf("ReadRackCfg: returning %d rack config(s) for key %s", len(rackList), key)
 	return ctlplfl.EncodeResponse(rackList)
 }
@@ -1037,7 +1033,7 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		Name:    hv.ID,
 		Success: true,
 	}
-	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{}, hvKey)
+	commitChgs := PopulateEntities(&hv, HvPopulator{}, HvKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: resp,
@@ -1052,16 +1048,16 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
 
-	key := hvKey
+	key := HvKey
 	if !req.GetAll {
-		key = getConfKey(hvKey, req.ID)
+		key = GetConfKey(HvKey, req.ID)
 	}
 	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadHyperVisorCfg); err != nil {
 		log.Errorf("ReadHyperVisorCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
@@ -1071,7 +1067,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		return ctlplfl.FuncError(err)
 	}
 
-	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
+	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, HvParser{})
 
 	log.Debugf("ReadHyperVisorCfg: returning %d hypervisor config(s) for key %s", len(hvList), key)
 	return ctlplfl.EncodeResponse(hvList)
@@ -1096,20 +1092,20 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		} else {
 			// Specific vdev: verify RBAC + ABAC ownership
 			attributes := map[string]string{"vdev": req.ID}
-			if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+			if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, Colmfamily) {
 				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.ID)
 				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 			}
 		}
 	}
 
-	key := vdevKey
+	key := VdevKey
 	if !req.GetAll {
-		key = getConfKey(vdevKey, req.ID)
+		key = GetConfKey(VdevKey, req.ID)
 	}
 
 	nisdResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      NisdCfgKey,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   NisdCfgKey,
@@ -1122,7 +1118,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, NisdParser{})
 
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
@@ -1145,7 +1141,8 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 				ID: vdevID}}
 		}
 		vdev := vdevMap[vdevID]
-		if parts[VDEV_CFG_C_KEY] == cfgkey {
+		switch parts[VDEV_CFG_C_KEY] {
+		case CfgKey:
 			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
 				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
@@ -1162,7 +1159,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 
 			}
 
-		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
+		case ChunkKey:
 
 			nisdID := string(value)
 
@@ -1242,16 +1239,16 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": req.ID}
-		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, Colmfamily) {
 			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
 			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 		}
 	}
 	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.ID)
-	vKey := getConfKey(vdevKey, req.ID)
+	vKey := GetConfKey(VdevKey, req.ID)
 	var rqResult *storageiface.RangeReadResult
 	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      vKey,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   vKey,
@@ -1289,7 +1286,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 			continue
 		}
 		switch parts[VDEV_CFG_C_KEY] {
-		case cfgkey:
+		case CfgKey:
 			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
 				if sz, err := strconv.ParseInt(string(v), 10, 64); err == nil {
@@ -1314,10 +1311,10 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	rqResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
-		Key:      vdevKey,
+		Selector: Colmfamily,
+		Key:      VdevKey,
 		BufSize:  cbArgs.ReplySize,
-		Prefix:   vdevKey,
+		Prefix:   VdevKey,
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
@@ -1325,7 +1322,7 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	// TODO: move this to parsing file
-	vdevList := ParseEntities[ctlplfl.VdevCfg](rqResult.ResultMap, vdevParser{})
+	vdevList := ParseEntities[ctlplfl.VdevCfg](rqResult.ResultMap, VdevParser{})
 	log.Debugf("ReadAllVdevInfo: returning %d vdev(s)", len(vdevList))
 	return ctlplfl.EncodeResponse(vdevList)
 }
@@ -1354,18 +1351,18 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	// Check authorization: ownership of the vdev implies access to its chunks
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": vdevID}
-		if !authorizer.Authorize(authz.ReadChunkNisd, tc.UserID, []string{tc.Role}, attributes, cbargs.Store, colmfamily) {
+		if !authorizer.Authorize(authz.ReadChunkNisd, tc.UserID, []string{tc.Role}, attributes, cbargs.Store, Colmfamily) {
 			log.Errorf("user %s with role %s not authorized to read chunk nisd for vdev %s", tc.UserID, tc.Role, vdevID)
 			return ctlplfl.AuthError(fmt.Errorf("authorization failed"))
 		}
 	}
 
-	vcKey := path.Clean(getConfKey(vdevKey, path.Join(vdevID, chunkKey, chunk))) + "/"
+	vcKey := path.Clean(GetConfKey(VdevKey, path.Join(vdevID, ChunkKey, chunk))) + "/"
 
 	log.Info("searching for key:", vcKey)
 
 	rqResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
+		Selector: Colmfamily,
 		Key:      vcKey,
 		BufSize:  cbargs.ReplySize,
 		Prefix:   vcKey,
@@ -1400,7 +1397,7 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 		Name:    "nisd-args",
 		Success: true,
 	}
-	commitChgs := PopulateEntities[*ctlplfl.NisdArgs](&nArgs, nisdArgsPopulator{}, argsKey)
+	commitChgs := PopulateEntities(&nArgs, NisdArgsPopulator{}, ArgsKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
 		Response: resp,
@@ -1417,10 +1414,10 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 		return ctlplfl.FuncError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
-		Selector: colmfamily,
-		Key:      argsKey,
+		Selector: Colmfamily,
+		Key:      ArgsKey,
 		BufSize:  cbArgs.ReplySize,
-		Prefix:   argsKey,
+		Prefix:   ArgsKey,
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
@@ -1495,11 +1492,11 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 
 	log.Infof("APDeleteVdev: deleting vdev %q", req.ID)
 	// Validate Vdev exists
-	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
+	vdevKey := GetConfKey(VdevKey, req.ID) // "v/<ID>"
 
 	for {
 		rrArgs := storageiface.RangeReadArgs{
-			Selector: colmfamily,
+			Selector: Colmfamily,
 			Key:      vdevKey,
 			BufSize:  cbArgs.ReplySize,
 			Prefix:   vdevKey,
@@ -1526,9 +1523,9 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 				nisdID := string(v)
 
 				if _, ok := nisdRefundMap[nisdID]; !ok {
-					key := getConfKey(NisdCfgKey, nisdID)
+					key := GetConfKey(NisdCfgKey, nisdID)
 					rrargs := storageiface.RangeReadArgs{
-						Selector:   colmfamily,
+						Selector:   Colmfamily,
 						Key:        key,
 						BufSize:    cbArgs.ReplySize,
 						Consistent: false,
@@ -1549,7 +1546,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 					nisd.AvailableSize += ctlplfl.CHUNK_SIZE
 				}
 
-				revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
+				revKey := fmt.Sprintf("%s/%s/%s", NisdKey, nisdID, req.ID)
 				// delete nisd-vdev reverse mapping keys
 				deleteChgs = append(deleteChgs, funclib.CommitChg{
 					Key:   []byte(revKey),
@@ -1571,7 +1568,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 
 	// Process NISD refunds
 	for nisdID, nisd := range nisdRefundMap {
-		asKey := fmt.Sprintf("%s/%s", getConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
+		asKey := fmt.Sprintf("%s/%s", GetConfKey(NisdCfgKey, nisdID), AVAIL_SPACE)
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(asKey),
 			Value: []byte(strconv.FormatInt(nisd.AvailableSize, 10)),

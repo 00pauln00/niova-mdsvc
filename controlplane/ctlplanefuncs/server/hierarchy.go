@@ -240,12 +240,14 @@ func GetIdxForNisdAlloc(hash uint64, size int) (int, error) {
 }
 
 func GetEntityByID(ft cpLib.Filter) (*Entities, error) {
-	if ft.Type == -1 {
-		return nil, fmt.Errorf("invalid fd level")
+	fdIdx := cpLib.GetFDIdx(ft.Type)
+	if fdIdx < 0 || fdIdx >= len(HR.FD) {
+		return nil, fmt.Errorf("invalid fd level: %v", ft.Type)
 	}
-	ent, ok := HR.FD[cpLib.GetFDIdx(ft.Type)].Tree.Get(&Entities{ID: ft.ID})
+
+	ent, ok := HR.FD[fdIdx].Tree.Get(&Entities{ID: ft.ID})
 	if !ok || ent == nil {
-		return nil, fmt.Errorf("entityID %s not found in fd %d", ft.ID, cpLib.GetFDIdx(ft.Type))
+		return nil, fmt.Errorf("entityID %s not found in fd %d", ft.ID, fdIdx)
 	}
 
 	return ent, nil

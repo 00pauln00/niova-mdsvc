@@ -173,7 +173,7 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 }
 
 func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
-	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.READ_SNAP_NAME)
+	urla := fmt.Sprintf("name=%s", ctlplfl.READ_SNAP_NAME)
 
 	var snap ctlplfl.SnapXML
 	snap.SnapName = name
@@ -186,7 +186,7 @@ func (ccf *CliCFuncs) ReadSnapByName(name string) ([]byte, error) {
 }
 
 func (ccf *CliCFuncs) ReadSnapForVdev(vdev string) ([]byte, error) {
-	urla := fmt.Sprintf("%s=%s", ctlplfl.NAME, ctlplfl.READ_SNAP_VDEV)
+	urla := fmt.Sprintf("name=%s", ctlplfl.READ_SNAP_VDEV)
 
 	var snap ctlplfl.SnapXML
 	snap.Vdev = vdev

@@ -104,20 +104,20 @@ func ParseEntitiesMap(readResult map[string][]byte, pe ParseEntity) map[string]E
 }
 
 // Rack parser
-type rackParser struct{}
+type RackParser struct{}
 
-func (rackParser) GetRootKey() string { return rackKey }
-func (rackParser) NewEntity(id string) Entity {
+func (RackParser) GetRootKey() string { return RackKey }
+func (RackParser) NewEntity(id string) Entity {
 	return &ctlplfl.Rack{ID: id}
 }
-func (rackParser) ParseField(entity Entity, parts []string, value []byte) {
+func (RackParser) ParseField(entity Entity, parts []string, value []byte) {
 	r := entity.(*ctlplfl.Rack)
 
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
 		case LOCATION:
 			r.Location = string(value)
-		case pduKey:
+		case PduKey:
 			r.PDUID = string(value)
 		case SPEC:
 			r.Specification = string(value)
@@ -128,20 +128,20 @@ func (rackParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 
-func (rackParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Rack) }
+func (RackParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Rack) }
 
 // Hypervisor parser
-type hvParser struct{}
+type HvParser struct{}
 
-func (hvParser) GetRootKey() string { return hvKey }
-func (hvParser) NewEntity(id string) Entity {
+func (HvParser) GetRootKey() string { return HvKey }
+func (HvParser) NewEntity(id string) Entity {
 	return &ctlplfl.Hypervisor{ID: id}
 }
-func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
+func (HvParser) ParseField(entity Entity, parts []string, value []byte) {
 	hv := entity.(*ctlplfl.Hypervisor)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
-		case rackKey:
+		case RackKey:
 			hv.RackID = string(value)
 		case PORT_RANGE:
 			hv.PortRange = string(value)
@@ -161,13 +161,13 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 
-func (hvParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Hypervisor) }
+func (HvParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Hypervisor) }
 
 /*
 // Device parser
 type deviceParser struct{}
 
-func (deviceParser) GetRootKey() string { return deviceCfgKey }
+func (deviceParser) GetRootKey() string { return DeviceCfgKey }
 func (deviceParser) NewEntity(id string) Entity {
 	return &ctlplfl.Device{ID: id}
 }
@@ -175,7 +175,7 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 	dev := entity.(*ctlplfl.Device)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
-		case hvKey:
+		case HvKey:
 			dev.HypervisorID = string(value)
 		case SERIAL_NUM:
 			dev.SerialNumber = string(value)
@@ -214,13 +214,13 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 		case PEER_PORT:
 			p, _ := strconv.Atoi(string(value))
 			nisd.PeerPort = uint16(p)
-		case hvKey:
+		case HvKey:
 			nisd.FailureDomain[ctlplfl.HV_IDX] = string(value)
-		case pduKey:
+		case PduKey:
 			nisd.FailureDomain[ctlplfl.PDU_IDX] = string(value)
-		case rackKey:
+		case RackKey:
 			nisd.FailureDomain[ctlplfl.RACK_IDX] = string(value)
-		case ptKey:
+		case PtKey:
 			nisd.FailureDomain[ctlplfl.PARTITION_IDX] = string(value)
 		case TOTAL_SPACE:
 			ts, _ := strconv.Atoi(string(value))
@@ -253,13 +253,13 @@ func (NisdParser) ParseField(entity Entity, parts []string, value []byte) {
 
 func (NisdParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Nisd) }
 
-type pduParser struct{}
+type PduParser struct{}
 
-func (pduParser) GetRootKey() string { return pduKey }
-func (pduParser) NewEntity(id string) Entity {
+func (PduParser) GetRootKey() string { return PduKey }
+func (PduParser) NewEntity(id string) Entity {
 	return &ctlplfl.PDU{ID: id}
 }
-func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
+func (PduParser) ParseField(entity Entity, parts []string, value []byte) {
 	pdu := entity.(*ctlplfl.PDU)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
@@ -275,15 +275,15 @@ func (pduParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 
-func (pduParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.PDU) }
+func (PduParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.PDU) }
 
-type ptParser struct{}
+type PtParser struct{}
 
-func (ptParser) GetRootKey() string { return ptKey }
-func (ptParser) NewEntity(id string) Entity {
+func (PtParser) GetRootKey() string { return PtKey }
+func (PtParser) NewEntity(id string) Entity {
 	return &ctlplfl.DevicePartition{PartitionID: id}
 }
-func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
+func (PtParser) ParseField(entity Entity, parts []string, value []byte) {
 	pt := entity.(*ctlplfl.DevicePartition)
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
@@ -294,30 +294,30 @@ func (ptParser) ParseField(entity Entity, parts []string, value []byte) {
 			pt.Size = int64(s)
 		case PARTITION_PATH:
 			pt.PartitionPath = string(value)
-		case nisdKey:
+		case NisdKey:
 			pt.NISDUUID = string(value)
 
 		}
 	}
 }
 
-func (ptParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
+func (PtParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.DevicePartition) }
 
-type deviceWithPartitionParser struct{}
+type DeviceWithPartitionParser struct{}
 
-func (deviceWithPartitionParser) GetRootKey() string { return deviceCfgKey }
+func (DeviceWithPartitionParser) GetRootKey() string { return DeviceCfgKey }
 
-func (deviceWithPartitionParser) NewEntity(id string) Entity {
+func (DeviceWithPartitionParser) NewEntity(id string) Entity {
 	return &ctlplfl.Device{ID: id, Partitions: make([]ctlplfl.DevicePartition, 0)}
 }
 
-func (deviceWithPartitionParser) ParseField(entity Entity, parts []string, value []byte) {
+func (DeviceWithPartitionParser) ParseField(entity Entity, parts []string, value []byte) {
 	dev := entity.(*ctlplfl.Device)
 
 	// d_cfg/<dev-id>/field
 	if len(parts) == KEY_LEN {
 		switch parts[ELEMENT_KEY] {
-		case hvKey:
+		case HvKey:
 			dev.HypervisorID = string(value)
 		case SERIAL_NUM:
 			dev.SerialNumber = string(value)
@@ -338,7 +338,7 @@ func (deviceWithPartitionParser) ParseField(entity Entity, parts []string, value
 	}
 
 	// d_cfg/<dev-id>/pt/<pt-id>/<pt-field>
-	if len(parts) > ELEMENT_KEY && parts[ELEMENT_KEY] == ptKey && len(parts) >= (ELEMENT_KEY+2) {
+	if len(parts) > ELEMENT_KEY && parts[ELEMENT_KEY] == PtKey && len(parts) >= (ELEMENT_KEY+2) {
 		ptID := parts[ELEMENT_KEY+1]
 
 		// find or create partition
@@ -364,24 +364,24 @@ func (deviceWithPartitionParser) ParseField(entity Entity, parts []string, value
 			pt.Size = int64(s)
 		case PARTITION_PATH:
 			pt.PartitionPath = string(value)
-		case nisdKey:
+		case NisdKey:
 			pt.NISDUUID = string(value)
 		}
 	}
 }
 
-func (deviceWithPartitionParser) GetEntity(entity Entity) Entity {
+func (DeviceWithPartitionParser) GetEntity(entity Entity) Entity {
 	return *entity.(*ctlplfl.Device)
 }
 
 // TODO: Make chages to parse a single Vdev
-type vdevParser struct{}
+type VdevParser struct{}
 
-func (vdevParser) GetRootKey() string { return vdevKey }
-func (vdevParser) NewEntity(id string) Entity {
+func (VdevParser) GetRootKey() string { return VdevKey }
+func (VdevParser) NewEntity(id string) Entity {
 	return &ctlplfl.VdevCfg{ID: id}
 }
-func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
+func (VdevParser) ParseField(entity Entity, parts []string, value []byte) {
 	vdev := entity.(*ctlplfl.VdevCfg)
 	if len(parts) > KEY_LEN {
 		switch parts[VDEV_ELEMENT_KEY] {
@@ -401,4 +401,4 @@ func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 
-func (vdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.VdevCfg) }
+func (VdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.VdevCfg) }

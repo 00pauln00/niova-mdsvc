@@ -468,7 +468,7 @@ func TestReadVdevInfo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create memstore and setup test data
 			ds := memstore.NewMemStore()
-			colmfamily = "" // Use default column family
+			Colmfamily = "" // Use default column family
 
 			if tc.setupData != nil {
 				tc.setupData(ds)
