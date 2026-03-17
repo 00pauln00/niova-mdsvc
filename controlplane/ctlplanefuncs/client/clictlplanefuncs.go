@@ -14,7 +14,6 @@ import (
 
 const (
 	LOG_LEVEL = "Info"
-	LOG_FILE  = "client.log"
 )
 
 // Client side interface for control plane functions
@@ -26,7 +25,7 @@ type CliCFuncs struct {
 	token    string // Auth JWT token for CPReq
 }
 
-func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFuncs {
+func InitCliCFuncs(appUUID string, key string, gossipConfigPath string, logPath string) *CliCFuncs {
 	ccf := CliCFuncs{
 		appUUID: appUUID,
 		encType: pmCmn.JSON, // Default encoding type
@@ -39,7 +38,10 @@ func InitCliCFuncs(appUUID string, key string, gossipConfigPath string) *CliCFun
 	}
 	stop := make(chan int)
 	logL := LOG_LEVEL
-	log.InitXlog(LOG_FILE, &logL)
+	if logPath == "" {
+		logPath = ctlplfl.DefaultLogPath()
+	}
+	log.InitXlog(logPath, &logL)
 	log.Info("Staring Client API using gossip path: ", gossipConfigPath)
 	go func() {
 		err := ccf.sdObj.StartClientAPI(stop, gossipConfigPath)

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -81,6 +83,28 @@ const (
 	FD_DEVICE
 	FD_PARTITION
 )
+
+const logFileName = "client.log"
+
+// DefaultLogPath returns an absolute path for the application log file:
+//   - root:         /var/log/niova/client.log
+//   - regular user: ~/.niova/client.log
+func DefaultLogPath() string {
+	var dir string
+	if os.Getuid() == 0 {
+		dir = "/var/log/niova"
+	} else {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = "/tmp"
+		}
+		dir = filepath.Join(homeDir, ".niova")
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return logFileName
+	}
+	return filepath.Join(dir, logFileName)
+}
 
 func GetFDIdx(t FD) int {
 	switch t {
@@ -182,7 +206,7 @@ type PDU struct {
 	Location      string `xml:"Location" json:"Location" yaml:"location"`
 	PowerCapacity string `xml:"PowerCap" json:"PowerCapacity" yaml:"powercap"`
 	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
-	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
+	Racks         []Rack `xml:"Racks>rack" json:"Racks" yaml:"racks"`
 }
 
 type Rack struct {

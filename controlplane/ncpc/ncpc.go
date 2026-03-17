@@ -20,6 +20,8 @@ import (
 	ctlplcl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+	userClient "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	leaseClientLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/client"
 	leaseLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/common"
@@ -36,26 +38,30 @@ type clientReq struct {
 }
 
 type clientHandler struct {
-	requestKey         string
-	requestValue       string
-	clientReqArr       []clientReq
-	raftUUID           string
-	addr               string
-	port               string
-	operation          string
-	configPath         string
-	logPath            string
-	resultFile         string
-	lookoutID          string
-	rangeQuery         bool
-	relaxedConsistency bool
-	count              int
-	seed               int
-	lastKey            string
-	clientAPIObj       serviceDiscovery.ServiceDiscoveryHandler
-	seqNum             uint64
-	valSize            int
-	serviceRetry       int
+	requestKey          string
+	requestValue        string
+	clientReqArr        []clientReq
+	raftUUID            string
+	addr                string
+	port                string
+	operation           string
+	configPath          string
+	logPath             string
+	resultFile          string
+	lookoutID           string
+	rangeQuery          bool
+	relaxedConsistency  bool
+	count               int
+	seed                int
+	lastKey             string
+	clientAPIObj        serviceDiscovery.ServiceDiscoveryHandler
+	seqNum              uint64
+	valSize             int
+	serviceRetry        int
+	userToken           string
+	username            string
+	password            string
+	regenerateNISDUUIDs bool
 }
 
 type request struct {
@@ -69,7 +75,7 @@ type response struct {
 	Status         int         `json:"Status"`
 	ResponseValue  interface{} `json:"Response"`
 	SequenceNumber uint64      `json:"Sequence_number"`
-	validate       bool        `json:"validate"`
+	Validate       bool        `json:"validate"`
 	Timestamp      time.Time   `json:"Response_timestamp"`
 }
 
@@ -205,9 +211,10 @@ func (handler *clientHandler) getCmdParams() {
 	flag.StringVar(&handler.requestValue, "v", "", "Value")
 	flag.StringVar(&handler.raftUUID, "ru", "", "RaftUUID of the cluster to be queried")
 	flag.StringVar(&handler.configPath, "c", "./gossipNodes", "gossip nodes config file path")
-	flag.StringVar(&handler.logPath, "l", "/tmp/temp.log", "Log path")
+	flag.StringVar(&handler.logPath, "l", cpLib.DefaultLogPath(), "Log path")
 	flag.StringVar(&handler.operation, "o", "rw", "Specify the opeation to perform")
 	flag.StringVar(&handler.resultFile, "j", "json_output", "Path along with file name for the resultant json file")
+	flag.BoolVar(&handler.regenerateNISDUUIDs, "rnu", false, "Regenerate new UUIDs for all NISDs using the topology JSON as structure reference")
 	flag.StringVar(&handler.lookoutID, "u", "", "Lookout uuid")
 	flag.IntVar(&handler.count, "n", 1, "Write number of key/value pairs per key type (Default 1 will write the passed key/value)")
 	flag.BoolVar(&handler.relaxedConsistency, "r", false, "Set this flag if range could be performed with relaxed consistency")
@@ -215,6 +222,9 @@ func (handler *clientHandler) getCmdParams() {
 	flag.IntVar(&handler.valSize, "vs", 512, "Random value generation size")
 	flag.Uint64Var(&handler.seqNum, "S", math.MaxUint64, "Sequence Number for read")
 	flag.IntVar(&handler.serviceRetry, "sr", 1, "how many times you want to retry to pick the server if proxy is not available")
+	flag.StringVar(&handler.userToken, "ut", "", "User authentication token")
+	flag.StringVar(&handler.username, "user", "", "Username for authentication")
+	flag.StringVar(&handler.password, "pass", "", "Password/SecretKey for authentication")
 	flag.Parse()
 }
 
@@ -761,6 +771,185 @@ func DumpVdevCfgsToJSON(vdevs []cpLib.VdevCfg, filePath string) error {
 	return os.Rename(tmpFile.Name(), filePath)
 }
 
+// ensureUserToken resolves the user token before any authenticated operation.
+func (clientObj *clientHandler) ensureUserToken() error {
+	if clientObj.userToken != "" {
+		return nil
+	}
+	if clientObj.username == "" || clientObj.password == "" {
+		return fmt.Errorf("authentication required: provide -ut <token> or both -user and -pass")
+	}
+	authClient, _ := userClient.New(userClient.Config{
+		AppUUID:          uuid.NewV4().String(),
+		RaftUUID:         clientObj.raftUUID,
+		GossipConfigPath: clientObj.configPath,
+		LogLevel:         "Error",
+		LogFile:          clientObj.logPath,
+	})
+	resp, err := authClient.Login(clientObj.username, clientObj.password)
+	if err != nil {
+		return fmt.Errorf("login failed: %v", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("login failed: %s", resp.Error)
+	}
+	log.Infof("Login successful, using token for operation")
+	clientObj.userToken = resp.AccessToken
+	return nil
+}
+
+// regenerateNISDUUIDs generates a fresh UUID for every NISD in pdus and calls PutNisd.
+// The topology JSON is used only as a structural reference.
+func regenerateNISDUUIDs(pdus []cpLib.PDU, c *ctlplcl.CliCFuncs, userToken string) error {
+	port := 13000
+	for i := range pdus {
+		for j := range pdus[i].Racks {
+			for k := range pdus[i].Racks[j].Hypervisors {
+				hv := &pdus[i].Racks[j].Hypervisors[k]
+				for l := range hv.Dev {
+					dev := &hv.Dev[l]
+					for m := range dev.Partitions {
+						p := &dev.Partitions[m]
+						p.NISDUUID = uuid.NewV4().String()
+						nisd := cpLib.Nisd{
+							ID:            p.NISDUUID,
+							PeerPort:      uint16(port),
+							FailureDomain: []string{pdus[i].ID, pdus[i].Racks[j].ID, hv.ID, dev.ID, p.PartitionID},
+							TotalSize:     p.Size,
+							AvailableSize: p.Size,
+							UserToken:     userToken,
+							NetInfo: cpLib.NetInfoList{
+								{IPAddr: hv.IPAddrs[0], Port: uint16(port)},
+								{IPAddr: hv.IPAddrs[1], Port: uint16(port)},
+							},
+							NetInfoCnt: 2,
+						}
+						resp, err := c.PutNisd(&nisd)
+						if err != nil || resp == nil || !resp.Success {
+							log.Errorf("Failed to update NISD %s (port %d): %v", nisd.ID, port, err)
+						} else {
+							log.Infof("Updated NISD %s (port %d)", nisd.ID, port)
+						}
+						port += 2
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (clientObj *clientHandler) populateTopology(jsonPath string) error {
+	if jsonPath == "" {
+		return fmt.Errorf("topology JSON file path is required (-v <path>)")
+	}
+	if err := clientObj.ensureUserToken(); err != nil {
+		return err
+	}
+
+	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath, clientObj.logPath)
+	var pdus []cpLib.PDU
+
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return fmt.Errorf("failed to read topology JSON: %v", err)
+	}
+	if err := json.Unmarshal(data, &pdus); err != nil {
+		var single cpLib.PDU
+		if json.Unmarshal(data, &single) == nil {
+			pdus = []cpLib.PDU{single}
+		} else {
+			return fmt.Errorf("invalid topology JSON: %v", err)
+		}
+	}
+	log.Info("Loaded topology JSON from ", jsonPath)
+
+	if clientObj.regenerateNISDUUIDs {
+		if err := regenerateNISDUUIDs(pdus, c, clientObj.userToken); err != nil {
+			return fmt.Errorf("failed to regenerate NISD UUIDs: %v", err)
+		}
+	} else {
+		port := 13000
+		for _, pdu := range pdus {
+			pdu.UserToken = clientObj.userToken
+			resp, err := c.PutPDU(&pdu)
+			if err != nil || resp == nil || !resp.Success {
+				log.Errorf("Failed to insert PDU %s: %v", pdu.ID, err)
+				continue
+			}
+			log.Infof("Inserted PDU %s", pdu.Name)
+
+			for _, rack := range pdu.Racks {
+				rack.UserToken = clientObj.userToken
+				resp, err := c.PutRack(&rack)
+				if err != nil || resp == nil || !resp.Success {
+					log.Errorf("Failed to insert Rack %s: %v", rack.ID, err)
+					continue
+				}
+				log.Infof("Inserted Rack %s, under PDU %s", rack.Name, pdu.Name)
+
+				for _, hv := range rack.Hypervisors {
+					hv.UserToken = clientObj.userToken
+					resp, err := c.PutHypervisor(&hv)
+					if err != nil || resp == nil || !resp.Success {
+						log.Errorf("Failed to insert Hypervisor %s: %v", hv.ID, err)
+						continue
+					}
+					log.Infof("Inserted Hypervisor %s, under Rack %s", hv.Name, rack.Name)
+
+					for _, dev := range hv.Dev {
+						dev.UserToken = clientObj.userToken
+						resp, err := c.PutDevice(&dev)
+						if err != nil || resp == nil || !resp.Success {
+							log.Errorf("Failed to insert Device %s: %v", dev.ID, err)
+							continue
+						}
+						log.Infof("Inserted Device %s, under Hypervisor %s", dev.Name, hv.Name)
+
+						for _, part := range dev.Partitions {
+							nisd := cpLib.Nisd{
+								ID:            part.NISDUUID,
+								PeerPort:      uint16(port),
+								FailureDomain: []string{pdu.ID, rack.ID, hv.ID, dev.ID, part.PartitionID},
+								TotalSize:     part.Size,
+								AvailableSize: part.Size,
+								// SocketPath: ,
+								UserToken: clientObj.userToken,
+								NetInfo: cpLib.NetInfoList{
+									{IPAddr: hv.IPAddrs[0], Port: uint16(port)},
+									{IPAddr: hv.IPAddrs[1], Port: uint16(port)},
+								},
+								NetInfoCnt: 2,
+							}
+
+							resp, err := c.PutNisd(&nisd)
+							if err != nil || resp == nil || !resp.Success {
+								log.Errorf("Failed to insert NISD %s (port %d): %v", nisd.ID, port, err)
+							} else {
+								log.Infof("Inserted NISD %s (port %d) under HV %s", nisd.ID, port, hv.Name)
+							}
+							port += 2
+						}
+					}
+				}
+			}
+		}
+	}
+	log.Info("Topology population completed successfully")
+
+	const topoOutputFile = "topology-output.json"
+	out, err := json.MarshalIndent(pdus, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal topology output: %v", err)
+	}
+	log.Info("Topology JSON:\n", string(out))
+	if err := os.WriteFile(topoOutputFile, out, 0644); err != nil {
+		return fmt.Errorf("failed to write topology output to %s: %v", topoOutputFile, err)
+	}
+	log.Info("Topology JSON written to ", topoOutputFile)
+	return nil
+}
+
 func main() {
 	//Intialize client object
 	clientObj := clientHandler{}
@@ -803,6 +992,8 @@ func main() {
 
 	var passNext bool
 	var rdata []byte
+
+	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath, clientObj.logPath)
 
 	switch clientObj.operation {
 	case "rw":
@@ -865,7 +1056,6 @@ func main() {
 		rdata, err = clientObj.performLeaseReq(clientObj.requestKey, clientObj.requestValue)
 		break
 	case "CreateSnap":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		chkSeq := []uint64{200, 100}
 		err := c.CreateSnap("ebd099a1-b123-4473-b6c9-580e37f70677", chkSeq, "sample1")
 		if err != nil {
@@ -873,7 +1063,6 @@ func main() {
 		}
 
 	case "ReadSnapByName":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		ret, err := c.ReadSnapByName("sample1")
 		if err != nil {
 			log.Error(err)
@@ -881,7 +1070,6 @@ func main() {
 		fmt.Println(string(ret))
 
 	case "ReadSnapForVdev":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		ret, err := c.ReadSnapForVdev("ebd099a1-b123-4473-b6c9-580e37f70677")
 		if err != nil {
 			log.Error(err)
@@ -889,12 +1077,12 @@ func main() {
 		fmt.Println(string(ret))
 
 	case "WriteNisd":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		var nisd cpLib.Nisd
 		if err := json.Unmarshal([]byte(nisdDetails), &nisd); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
 			os.Exit(-1)
 		}
+		nisd.UserToken = clientObj.userToken
 		log.Debug("writing nisd details to pmdb: ", nisd)
 		resp, err := c.PutNisd(&nisd)
 		if err != nil {
@@ -903,13 +1091,13 @@ func main() {
 		}
 		log.Debug("WriteNisd response: ", resp)
 	case "WriteDevice":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		var dev cpLib.Device
 		log.Debug("nisd details: ", nisdDetails)
 		if err := json.Unmarshal([]byte(nisdDetails), &dev); err != nil {
 			log.Error("failed to unmarshal nisd json string:", err)
 			os.Exit(-1)
 		}
+		dev.UserToken = clientObj.userToken
 		log.Debug("writing device info into pmdb", dev)
 		resp, err := c.PutDevice(&dev)
 		if err != nil {
@@ -918,13 +1106,13 @@ func main() {
 		}
 		log.Debug("WriteDevice successful", resp)
 	case "CreateVdev":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 		// Step 1: Create first Vdev
 		vdev := cpLib.Vdev{Cfg: cpLib.VdevCfg{
 			Size: vdevSize,
 		}}
 		req := &cpLib.VdevReq{
-			Vdev: &vdev.Cfg,
+			Vdev:      &vdev.Cfg,
+			UserToken: clientObj.userToken,
 		}
 		resp, err := c.CreateVdev(req)
 		if err != nil {
@@ -933,15 +1121,73 @@ func main() {
 		}
 		log.Info("Vdev created successfully with UUID:", resp)
 	case "GetVdevs":
-		c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
-		vdevs, err := c.GetVdevCfgs(nil)
+		req := &cpLib.GetReq{
+			UserToken: clientObj.userToken,
+		}
+		vdevs, err := c.GetVdevCfgs(req)
 		if err != nil {
 			log.Error("failed to get vdev info:", err)
 			os.Exit(-1)
 		}
 		log.Info("Vdev info retrieved successfully: count:", len(vdevs))
 		DumpVdevCfgsToJSON(vdevs, vdevOutputFile)
-
+	case "PopulateTopology":
+		err = clientObj.populateTopology(clientObj.requestValue)
+		if err != nil {
+			log.Errorf("Failed to populate topology: %v", err)
+			os.Exit(-1)
+		}
+	case "Login":
+		if clientObj.username == "" || clientObj.password == "" {
+			log.Error("login requires both -user and -pass flags")
+			os.Exit(-1)
+		}
+		authClient, _ := userClient.New(userClient.Config{
+			AppUUID:          uuid.NewV4().String(),
+			RaftUUID:         clientObj.raftUUID,
+			GossipConfigPath: clientObj.configPath,
+			LogLevel:         "Error",
+			LogFile:          clientObj.logPath,
+		})
+		resp, err := authClient.Login(clientObj.username, clientObj.password)
+		if err != nil {
+			log.Errorf("Login failed: %v", err)
+			os.Exit(-1)
+		}
+		if resp.Success {
+			log.Infof("Login successful. Token: %s", resp.AccessToken)
+		} else {
+			log.Errorf("Login failed: %s", resp.Error)
+			os.Exit(-1)
+		}
+	case "CreateAdminUser":
+		if clientObj.username == "" || clientObj.password == "" {
+			log.Error("CreateAdminUser requires both -user and -pass flags")
+			os.Exit(-1)
+		}
+		authClient, _ := userClient.New(userClient.Config{
+			AppUUID:          uuid.NewV4().String(),
+			RaftUUID:         clientObj.raftUUID,
+			GossipConfigPath: clientObj.configPath,
+			LogLevel:         "Error",
+			LogFile:          clientObj.logPath,
+		})
+		req := &userlib.UserReq{
+			Username:     clientObj.username,
+			NewSecretKey: clientObj.password,
+			IsAdmin:      true,
+		}
+		resp, err := authClient.CreateAdminUser(req)
+		if err != nil {
+			log.Errorf("CreateAdminUser failed: %v", err)
+			os.Exit(-1)
+		}
+		if resp.Success {
+			log.Infof("Admin user created successfully. UserID: %s", resp.UserID)
+		} else {
+			log.Errorf("CreateAdminUser failed: %s", resp.Error)
+			os.Exit(-1)
+		}
 	}
 
 	if err != nil {
