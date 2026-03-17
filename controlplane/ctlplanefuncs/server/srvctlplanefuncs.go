@@ -16,6 +16,7 @@ import (
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
+
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 	"github.com/tidwall/btree"
 )
@@ -193,14 +194,16 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 		Consistent: false,
 		Prefix:     key,
 	}
-	readResult, err := cbArgs.Store.RangeRead(rrargs)
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
+	defer itr.Close()
 
-	log.Info("Read result by Vdev", readResult)
-	for key, _ := range readResult.ResultMap {
+	log.Info("Read result by Vdev", itr)
+	for itr.Valid() {
+		key, _ := itr.GetKV()
 		c := strings.Split(key, "/")
 
 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
@@ -213,6 +216,7 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 			Idx: uint32(idx),
 			Seq: seq,
 		})
+		itr.Next()
 	}
 
 	return pmCmn.Encoder(pmCmn.GOB, Snap)
@@ -394,12 +398,14 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 		Consistent: false,
 		Prefix:     NisdCfgKey,
 	}
-	readResult, err := cbArgs.Store.RangeRead(rrargs)
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
+	defer itr.Close()
+
+	nisdList := ParseEntities[ctlplfl.Nisd](itr, NisdParser{})
 	return pmCmn.Encoder(pmCmn.GOB, nisdList)
 }
 
@@ -422,17 +428,19 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 		Consistent: false,
 		Prefix:     key,
 	}
-	readResult, err := cbArgs.Store.RangeRead(rrargs)
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
+	defer itr.Close()
+
+	nisdList := ParseEntities[ctlplfl.Nisd](itr, NisdParser{})
 	return pmCmn.Encoder(pmCmn.GOB, nisdList[0])
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector:   colmfamily,
 		Key:        NisdCfgKey,
 		BufSize:    cbArgs.ReplySize,
@@ -443,7 +451,9 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
+	defer itr.Close()
+
+	nisdList := ParseEntities[ctlplfl.Nisd](itr, NisdParser{})
 	return nisdList, nil
 }
 func WPNisdCfg(args ...interface{}) (interface{}, error) {
@@ -501,18 +511,19 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 	key := getConfKey(deviceCfgKey, req.ID)
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector:   colmfamily,
 		Key:        key,
 		BufSize:    cbArgs.ReplySize,
 		Consistent: false,
 		Prefix:     key,
 	})
+	defer itr.Close()
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceWithPartitionParser{})
+	deviceList := ParseEntities[ctlplfl.Device](itr, deviceWithPartitionParser{})
 	return pmCmn.Encoder(pmCmn.GOB, deviceList)
 }
 
@@ -870,7 +881,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPartition"); err != nil {
 		return nil, err
 	}
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
@@ -880,7 +891,9 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
+	defer itr.Close()
+
+	pt := ParseEntities[ctlplfl.DevicePartition](itr, ptParser{})
 	return pmCmn.Encoder(pmCmn.GOB, pt)
 }
 
@@ -916,7 +929,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPDUCfg"); err != nil {
 		return nil, err
 	}
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
@@ -926,7 +939,9 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure: ", err)
 		return nil, err
 	}
-	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
+	defer itr.Close()
+
+	pduList := ParseEntities[ctlplfl.PDU](itr, pduParser{})
 
 	return pmCmn.Encoder(pmCmn.GOB, pduList)
 
@@ -965,7 +980,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadRackCfg"); err != nil {
 		return nil, err
 	}
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
@@ -975,7 +990,9 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
-	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
+	defer itr.Close()
+
+	rackList := ParseEntities[ctlplfl.Rack](itr, rackParser{})
 	response, err := pmCmn.Encoder(pmCmn.GOB, rackList)
 	if err != nil {
 		log.Error("failed to encode rack info:", err)
@@ -1019,18 +1036,19 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadHyperVisorCfg"); err != nil {
 		return nil, err
 	}
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
 	})
+	defer itr.Close()
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return nil, err
 	}
 
-	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
+	hvList := ParseEntities[ctlplfl.Hypervisor](itr, hvParser{})
 
 	return pmCmn.Encoder(pmCmn.GOB, hvList)
 }
@@ -1064,7 +1082,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		key = getConfKey(vdevKey, req.ID)
 	}
 
-	nisdResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	nisdItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      NisdCfgKey,
 		BufSize:  cbArgs.ReplySize,
@@ -1074,10 +1092,12 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure: ", err)
 		return nil, err
 	}
-	// ParseEntitiesMap now returns map[string]Entity
-	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, NisdParser{})
+	defer nisdItr.Close()
 
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	// ParseEntitiesMap now returns map[string]Entity
+	nisdEntityMap := ParseEntitiesMap(nisdItr, NisdParser{})
+
+	vdevItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
@@ -1087,12 +1107,14 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure: ", err)
 		return nil, err
 	}
+	defer vdevItr.Close()
 
 	vdevMap := make(map[string]*ctlplfl.Vdev)
 	// top-level map: vdevID -> (nisdID -> *NisdChunk)
 	vdevNisdChunkMap := make(map[string]map[string]*ctlplfl.NisdChunk)
 
-	for k, value := range readResult.ResultMap {
+	for vdevItr.Valid() {
+		k, value := vdevItr.GetKV()
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		vdevID := parts[BASE_UUID_PREFIX]
 		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
@@ -1104,15 +1126,15 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		if parts[VDEV_CFG_C_KEY] == cfgkey {
 			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
-				if sz, err := strconv.ParseInt(string(value), 10, 64); err == nil {
+				if sz, err := strconv.ParseInt(value, 10, 64); err == nil {
 					vdev.Cfg.Size = sz
 				}
 			case NUM_CHUNKS:
-				if nc, err := strconv.ParseUint(string(value), 10, 32); err == nil {
+				if nc, err := strconv.ParseUint(value, 10, 32); err == nil {
 					vdev.Cfg.NumChunks = uint32(nc)
 				}
 			case NUM_REPLICAS:
-				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
+				if nr, err := strconv.ParseUint(value, 10, 8); err == nil {
 					vdev.Cfg.NumReplica = uint8(nr)
 				}
 
@@ -1120,7 +1142,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 
 		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
 
-			nisdID := string(value)
+			nisdID := value
 
 			// ensure per-vdev map exists
 			if _, ok := vdevNisdChunkMap[vdevID]; !ok {
@@ -1163,6 +1185,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 				perVdevMap[nisdID].Chunk = append(perVdevMap[nisdID].Chunk, chunkIdx)
 			}
 		}
+		vdevItr.Next()
 	}
 
 	vdevList := make([]*ctlplfl.Vdev, 0, len(vdevMap))
@@ -1200,10 +1223,8 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 			return nil, fmt.Errorf("authorization failed")
 		}
 	}
-	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.ID)
 	vKey := getConfKey(vdevKey, req.ID)
-	var rqResult *storageiface.RangeReadResult
-	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	vdevItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vKey,
 		BufSize:  cbArgs.ReplySize,
@@ -1213,6 +1234,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
+	defer vdevItr.Close()
 
 	authtc := &auth.Token{
 		Secret: []byte(ctlplfl.NISD_SECRET),
@@ -1236,7 +1258,8 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	// TODO: move this to parsing file
-	for k, v := range rqResult.ResultMap {
+	for vdevItr.Valid() {
+		k, v := vdevItr.GetKV()
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		if parts[BASE_UUID_PREFIX] != vdevInfo.ID {
 			continue
@@ -1245,27 +1268,27 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		case cfgkey:
 			switch parts[VDEV_ELEMENT_KEY] {
 			case SIZE:
-				if sz, err := strconv.ParseInt(string(v), 10, 64); err == nil {
+				if sz, err := strconv.ParseInt(v, 10, 64); err == nil {
 					vdevInfo.Size = sz
 				}
 			case NUM_CHUNKS:
-				if nc, err := strconv.ParseUint(string(v), 10, 32); err == nil {
+				if nc, err := strconv.ParseUint(v, 10, 32); err == nil {
 					vdevInfo.NumChunks = uint32(nc)
 				}
 			case NUM_REPLICAS:
-				if nr, err := strconv.ParseUint(string(v), 10, 8); err == nil {
+				if nr, err := strconv.ParseUint(v, 10, 8); err == nil {
 					vdevInfo.NumReplica = uint8(nr)
 				}
 			}
 		}
-
+		vdevItr.Next()
 	}
 	return pmCmn.Encoder(ENC_TYPE, vdevInfo)
 }
 
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	rqResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	vdevItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vdevKey,
 		BufSize:  cbArgs.ReplySize,
@@ -1275,9 +1298,10 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
+	defer vdevItr.Close()
 
 	// TODO: move this to parsing file
-	vdevList := ParseEntities[ctlplfl.VdevCfg](rqResult.ResultMap, vdevParser{})
+	vdevList := ParseEntities[ctlplfl.VdevCfg](vdevItr, vdevParser{})
 	return pmCmn.Encoder(ENC_TYPE, vdevList)
 }
 
@@ -1313,7 +1337,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 
 	log.Info("searching for key:", vcKey)
 
-	rqResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
+	itr, err := cbargs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vcKey,
 		BufSize:  cbargs.ReplySize,
@@ -1323,14 +1347,16 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 		log.Error("RangeReadKV failure: ", err)
 		return nil, err
 	}
+	defer itr.Close()
 
 	var ids []string
-	for _, v := range rqResult.ResultMap {
-		ids = append(ids, string(v))
+	for itr.Valid() {
+		ids = append(ids, string(itr.Value()))
+		itr.Next()
 	}
 	chunkInfo := ctlplfl.ChunkNisd{
 		NisdUUIDs:   strings.Join(ids, ","),
-		NumReplicas: uint8(len(rqResult.ResultMap)),
+		NumReplicas: uint8(len(ids)),
 	}
 
 	return pmCmn.Encoder(ENC_TYPE, chunkInfo)
@@ -1366,7 +1392,7 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdNisdArgs"); err != nil {
 		return nil, err
 	}
-	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+	argsItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      argsKey,
 		BufSize:  cbArgs.ReplySize,
@@ -1376,28 +1402,31 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 		log.Error("Range read failure: ", err)
 		return nil, err
 	}
+	defer argsItr.Close()
+
 	var nisdArgs ctlplfl.NisdArgs
-	for k, v := range readResult.ResultMap {
+	for argsItr.Valid() {
+		k, v := argsItr.GetKV()
 		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if len(parts) < 2 {
-			continue
+		if len(parts) >= 2 {
+			switch parts[BASE_UUID_PREFIX] {
+			case DEFRAG:
+				nisdArgs.Defrag, _ = strconv.ParseBool(v)
+			case MBCCnt:
+				nisdArgs.MBCCnt, _ = strconv.Atoi(v)
+			case MergeHCnt:
+				nisdArgs.MergeHCnt, _ = strconv.Atoi(v)
+			case MCIReadCache:
+				nisdArgs.MCIBReadCache, _ = strconv.Atoi(v)
+			case DSYNC:
+				nisdArgs.DSync = v
+			case S3:
+				nisdArgs.S3 = v
+			case ALLOW_DEFRAG_MCIB_CACHE:
+				nisdArgs.AllowDefragMCIBCache, _ = strconv.ParseBool(v)
+			}
 		}
-		switch parts[BASE_UUID_PREFIX] {
-		case DEFRAG:
-			nisdArgs.Defrag, _ = strconv.ParseBool(string(v))
-		case MBCCnt:
-			nisdArgs.MBCCnt, _ = strconv.Atoi(string(v))
-		case MergeHCnt:
-			nisdArgs.MergeHCnt, _ = strconv.Atoi(string(v))
-		case MCIReadCache:
-			nisdArgs.MCIBReadCache, _ = strconv.Atoi(string(v))
-		case DSYNC:
-			nisdArgs.DSync = string(v)
-		case S3:
-			nisdArgs.S3 = string(v)
-		case ALLOW_DEFRAG_MCIB_CACHE:
-			nisdArgs.AllowDefragMCIBCache, _ = strconv.ParseBool(string(v))
-		}
+		argsItr.Next()
 	}
 	return pmCmn.Encoder(ENC_TYPE, nisdArgs)
 
@@ -1462,73 +1491,70 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	// Validate Vdev exists
 	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
 
-	for {
-		rrArgs := storageiface.RangeReadArgs{
-			Selector: colmfamily,
-			Key:      vdevKey,
-			BufSize:  cbArgs.ReplySize,
-			Prefix:   vdevKey,
-		}
+	rrArgs := storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      vdevKey,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   vdevKey,
+	}
 
-		rrOp, err := cbArgs.Store.RangeRead(rrArgs)
-		if err != nil {
-			log.Error("Range read failure ", err)
-			resp.Error = err.Error()
-			return pmCmn.Encoder(pmCmn.GOB, resp)
-		}
+	rrOp, err := cbArgs.Store.NewRangeIterator(rrArgs)
+	if err != nil {
+		log.Error("Range read failure ", err)
+		resp.Error = err.Error()
+		return pmCmn.Encoder(pmCmn.GOB, resp)
+	}
+	defer rrOp.Close()
+	// Process Vdev keys
+	for rrOp.Valid() {
+		// Delete
+		k := rrOp.Key()
+		v := rrOp.Value()
+		log.Info("delete itr kv: ", k, v)
+		deleteChgs = append(deleteChgs, funclib.CommitChg{
+			Key:   []byte(k),
+			Value: nil,
+		})
 
-		// Process Vdev keys
-		for k, v := range rrOp.ResultMap {
-			// Delete
+		// Check if it's a chunk allocation key
+		// Key format: v/<ID>/c/<chunk>/R.<Replica> -> <NISD_ID>
+		if strings.Contains(k, "/c/") && strings.Contains(k, "/R.") {
+			nisdID := string(v)
+
+			if _, ok := nisdRefundMap[nisdID]; !ok {
+				key := getConfKey(NisdCfgKey, nisdID)
+				rrargs := storageiface.RangeReadArgs{
+					Selector:   colmfamily,
+					Key:        key,
+					BufSize:    cbArgs.ReplySize,
+					Consistent: false,
+					Prefix:     key,
+				}
+				nisdItr, err := cbArgs.Store.NewRangeIterator(rrargs)
+				if err != nil {
+					log.Error("Range read failure ", err)
+					resp.Error = err.Error()
+					return pmCmn.Encoder(pmCmn.GOB, resp)
+				}
+				defer nisdItr.Close()
+				nisdList := ParseEntities[ctlplfl.Nisd](nisdItr, NisdParser{})
+				if len(nisdList) > 0 {
+					nisdRefundMap[nisdID] = &nisdList[0]
+				}
+			}
+
+			if nisd, ok := nisdRefundMap[nisdID]; ok {
+				nisd.AvailableSize += ctlplfl.CHUNK_SIZE
+			}
+
+			revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
+			// delete nisd-vdev reverse mapping keys
 			deleteChgs = append(deleteChgs, funclib.CommitChg{
-				Key:   []byte(k),
+				Key:   []byte(revKey),
 				Value: nil,
 			})
-
-			// Check if it's a chunk allocation key
-			// Key format: v/<ID>/c/<chunk>/R.<Replica> -> <NISD_ID>
-			if strings.Contains(k, "/c/") && strings.Contains(k, "/R.") {
-				nisdID := string(v)
-
-				if _, ok := nisdRefundMap[nisdID]; !ok {
-					key := getConfKey(NisdCfgKey, nisdID)
-					rrargs := storageiface.RangeReadArgs{
-						Selector:   colmfamily,
-						Key:        key,
-						BufSize:    cbArgs.ReplySize,
-						Consistent: false,
-						Prefix:     key,
-					}
-					nisdRR, err := cbArgs.Store.RangeRead(rrargs)
-					if err != nil {
-						log.Error("Range read failure ", err)
-						resp.Error = err.Error()
-						return pmCmn.Encoder(pmCmn.GOB, resp)
-					}
-					nisdList := ParseEntities[ctlplfl.Nisd](nisdRR.ResultMap, NisdParser{})
-					if len(nisdList) > 0 {
-						nisdRefundMap[nisdID] = &nisdList[0]
-					}
-				}
-
-				if nisd, ok := nisdRefundMap[nisdID]; ok {
-					nisd.AvailableSize += ctlplfl.CHUNK_SIZE
-				}
-
-				revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
-				// delete nisd-vdev reverse mapping keys
-				deleteChgs = append(deleteChgs, funclib.CommitChg{
-					Key:   []byte(revKey),
-					Value: nil,
-				})
-			}
 		}
-		if rrOp.LastKey == "" {
-			break
-		}
-		rrArgs.Key = rrOp.LastKey
-		rrArgs.Prefix = vdevKey
-		rrArgs.SeqNum = rrOp.SeqNum
+		rrOp.Next()
 	}
 
 	// Process NISD refunds
@@ -1540,7 +1566,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	err := applyKV(commitChgs, cbArgs.Store)
+	err = applyKV(commitChgs, cbArgs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
 		resp.Error = err.Error()
