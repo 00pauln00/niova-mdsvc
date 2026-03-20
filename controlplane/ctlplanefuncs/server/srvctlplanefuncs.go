@@ -925,6 +925,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	req.Vdev.ID = resp.ID
+	req.Vdev.NumChunks = uint32(ctlplfl.Count8GBChunks(req.Vdev.Size))
 	if err := AllocNISDs(&req, allocMap, &intrm); err != nil {
 		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{
 			Status:   ctlplfl.StatusFuncError,
@@ -1597,7 +1598,7 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 // validates the token and checks RBAC permissions before any data is modified.
 func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	cpreq, ok1 := args[0].(*ctlplfl.CPReq)
+	cpreq, ok1 := args[0].(ctlplfl.CPReq)
 	if !ok1 {
 		return nil, fmt.Errorf("invalid request type")
 	}
@@ -1618,7 +1619,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	// Step 2: Authenticate the caller and verify RBAC permissions.
 	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
 	// caller's role is allowed to perform "APDeleteVdev".
-	_, err = validateAndAuthorizeRBAC(req.UserToken, "APDeleteVdev")
+	tc, err := validateAndAuthorizeRBAC(cpreq.Token, "APDeleteVdev")
 	if err != nil {
 		log.Errorf("APDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
 		return pmCmn.Encoder(pmCmn.GOB, ctlplfl.CPResp{
@@ -1708,6 +1709,10 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		rrArgs.Prefix = vdevKey
 		rrArgs.SeqNum = rrOp.SeqNum
 	}
+	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.ID)
+	deleteChgs = append(deleteChgs, funclib.CommitChg{
+		Key: []byte(ownershipKey),
+	})
 
 	// Process NISD refunds
 	for nisdID, nisd := range nisdRefundMap {

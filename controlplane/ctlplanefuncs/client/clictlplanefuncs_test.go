@@ -911,23 +911,34 @@ func TestGetNisd(t *testing.T) {
 
 func TestDeleteVdev(t *testing.T) {
 	c := newClient(t)
-	adminToken := getAdminToken(t)
+	nisd := cpLib.Nisd{
+		PeerPort: 9400,
+		ID:       uuid.NewString(),
+		FailureDomain: []string{
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+		},
+		TotalSize:     15_000_000_000_000,
+		AvailableSize: 15_000_000_000_000,
+	}
+	_, err := c.PutNisd(&nisd)
+	require.NoError(t, err, "failed to create NISD for delete test")
+
 	vdev := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
 			Size:       8 * 1024 * 1024 * 1024,
-			NumReplica: 2,
+			NumReplica: 1,
 		},
-		Filter: cpLib.Filter{
-			Type: cpLib.FD_ANY,
-		},
-		UserToken: adminToken,
 	}
 
 	cvresp, err := c.CreateVdev(vdev)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, cvresp.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, cvresp.ID)
 
-	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: cvresp.ID, UserToken: adminToken})
+	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: cvresp.ID})
 	assert.NoError(t, err)
 	assert.NotNil(t, dvResp)
 
@@ -1670,8 +1681,8 @@ func TestABACVdevOwnership(t *testing.T) {
 		TotalSize:     15_000_000_000_000,
 		AvailableSize: 15_000_000_000_000,
 	}
-	ctlClient.SetToken(getAdminToken(t)) // Set admin token to create NISD
-	_, err := ctlClient.PutNisd(&nisd)
+	resp, err := ctlClient.PutNisd(&nisd)
+	assert.True(t, resp.Success, "create NISD should not fail")
 	assert.NoError(t, err, "failed to create NISD for ABAC test")
 
 	// Step 1: Create user1 (regular "user" role)
@@ -1715,7 +1726,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.True(t, user2LoginResp.Success)
 	assert.NotEmpty(t, user2LoginResp.AccessToken, "user2 access token should not be empty")
 	user2Token := user2LoginResp.AccessToken
-	ctlClient.SetToken(user2Token)
 	t.Logf("User2 logged in, access token obtained")
 
 	// Step 6: Each user creates their own vdev.
@@ -1731,6 +1741,7 @@ func TestABACVdevOwnership(t *testing.T) {
 	vdev1ID := vdev1Resp.ID
 	t.Logf("User1 created vdev with ID: %s", vdev1ID)
 
+	ctlClient.SetToken(user2Token)
 	vdev2Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{Size: 300 * 1024 * 1024 * 1024, NumReplica: 1},
 	})
@@ -1742,6 +1753,7 @@ func TestABACVdevOwnership(t *testing.T) {
 	t.Logf("User2 created vdev with ID: %s", vdev2ID)
 
 	// Step 7: Verify ABAC on ReadVdevInfo (GetVdevCfg)
+	ctlClient.SetToken(user1Token)
 	vdev1Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
 	assert.NoError(t, err, "ABAC: user1 should be able to read their own vdev")
 	assert.Equal(t, vdev1ID, vdev1Cfg.ID, "fetched vdev1 ID should match")
@@ -1752,7 +1764,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.Error(t, err, "ABAC: user2 should NOT be able to read user1's vdev")
 	t.Logf("User2 correctly denied access to user1's vdev (ABAC check passed)")
 
-	ctlClient.SetToken(user2Token)
 	vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
 	assert.NoError(t, err, "ABAC: user2 should be able to read their own vdev")
 	assert.Equal(t, vdev2ID, vdev2Cfg.ID, "fetched vdev2 ID should match")
@@ -1768,6 +1779,7 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.NoError(t, err, "ABAC: user1 should be able to read chunk-info of their own vdev")
 	t.Logf("User1 successfully accessed chunk-info of their own vdev: %s", vdev1ID)
 
+	ctlClient.SetToken(user2Token)
 	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
 	assert.Error(t, err, "ABAC: user2 should NOT be able to read chunk-info of user1's vdev")
 	t.Logf("User2 correctly denied chunk-info access to user1's vdev (ABAC check passed)")
@@ -1776,6 +1788,7 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.NoError(t, err, "ABAC: user2 should be able to read chunk-info of their own vdev")
 	t.Logf("User2 successfully accessed chunk-info of their own vdev: %s", vdev2ID)
 
+	ctlClient.SetToken(user1Token)
 	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
 	assert.Error(t, err, "ABAC: user1 should NOT be able to read chunk-info of user2's vdev")
 	t.Logf("User1 correctly denied chunk-info access to user2's vdev (ABAC check passed)")
@@ -1786,6 +1799,7 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.NoError(t, err, "ABAC: user1 should be able to read chunk-nisd of their own vdev")
 	t.Logf("User1 successfully read chunk-nisd of their own vdev: %s", vdev1ID)
 
+	ctlClient.SetToken(user2Token)
 	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
 	assert.Error(t, err, "ABAC: user2 should NOT be able to read chunk-nisd of user1's vdev")
 	t.Logf("User2 correctly denied chunk-nisd access to user1's vdev (ABAC check passed)")
@@ -1794,6 +1808,7 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.NoError(t, err, "ABAC: user2 should be able to read chunk-nisd of their own vdev")
 	t.Logf("User2 successfully read chunk-nisd of their own vdev: %s", vdev2ID)
 
+	ctlClient.SetToken(user1Token)
 	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
 	assert.Error(t, err, "ABAC: user1 should NOT be able to read chunk-nisd of user2's vdev")
 	t.Logf("User1 correctly denied chunk-nisd access to user2's vdev (ABAC check passed)")
