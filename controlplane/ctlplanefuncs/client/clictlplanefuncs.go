@@ -203,7 +203,7 @@ func (ccf *CliCFuncs) PutDevice(device *ctlplfl.Device) (*ctlplfl.ResponseXML, e
 	resp := &ctlplfl.ResponseXML{}
 	cpResp, err := ccf.put(cpReq, ctlplfl.PUT_DEVICE, resp)
 	if err != nil {
-		log.Error("failed to fetch pdu info: ", err)
+		log.Error("PutDevice failed: ", err)
 		return nil, err
 	}
 
@@ -223,7 +223,7 @@ func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
 	dev := make([]ctlplfl.Device, 0)
 	cpResp, err := ccf.get(cpReq, ctlplfl.GET_DEVICE, &dev)
 	if err != nil {
-		log.Error("failed to fetch pdu info: ", err)
+		log.Error("failed to get device info: ", err)
 		return nil, err
 	}
 
@@ -281,7 +281,7 @@ func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
 	ncfg := &ctlplfl.Nisd{}
 	cpResp, err := ccf.get(cpReq, ctlplfl.GET_NISD, ncfg)
 	if err != nil {
-		log.Error("failed to fet nisd info: ", err)
+		log.Error("failed to fetch nisd info: ", err)
 		return nil, err
 	}
 

@@ -126,8 +126,7 @@ func main() {
 	naS := nisdArgs.BuildCmdArgs()
 	for i, nisd := range conf.NisdConfig {
 		req := cpLib.GetReq{
-			ID:     nisd.DevID,
-			GetAll: false,
+			ID: nisd.DevID,
 		}
 		c.SetToken(adminToken)
 		pt, err := c.GetPartition(req)

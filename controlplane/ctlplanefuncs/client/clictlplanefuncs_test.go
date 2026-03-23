@@ -532,9 +532,12 @@ func TestVdevNisdChunk(t *testing.T) {
 	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
 	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	assert.NoError(t, err, "Should be able to get one record")
 	log.Info("Read vdev:", readV)
+	assert.NotNil(t, readV, "get back inserted record")
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(resp.ID, "0")})
 	log.Info("Read Nisd Chunk:", nc)
+	assert.NotNil(t, nc, "get back inserted record")
 }
 
 func TestPutAndGetNisdArgs(t *testing.T) {
@@ -1197,19 +1200,19 @@ func TestNisdAuthorizationWithUsers(t *testing.T) {
 
 	// Step 3: No token write rejected
 	ctlClient.SetToken("")
-	resp, err := ctlClient.PutNisd(makeNisd(""))
+	_, err := ctlClient.PutNisd(makeNisd(""))
 	assert.EqualError(t, err, "user token is required")
 	t.Log("No-token write correctly rejected")
 
 	// Step 4: Regular user write rejected (admin-only RBAC)
 	ctlClient.SetToken(userToken)
-	resp, err = ctlClient.PutNisd(makeNisd(userToken))
+	_, err = ctlClient.PutNisd(makeNisd(userToken))
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 5: Admin write accepted
 	ctlClient.SetToken(adminToken)
-	resp, err = ctlClient.PutNisd(makeNisd(adminToken))
+	resp, err := ctlClient.PutNisd(makeNisd(adminToken))
 	require.NoError(t, err, "admin should be able to register a NISD")
 	assert.True(t, resp.Success, "PutNisd by admin must succeed")
 	t.Logf("Admin registered NISD %s", nisdID)
@@ -1262,19 +1265,19 @@ func TestPDUAuthorizationWithUsers(t *testing.T) {
 	}
 	// Step 3: No token write rejected
 	ctlClient.SetToken("")
-	resp, err := ctlClient.PutPDU(makePDU(""))
+	_, err := ctlClient.PutPDU(makePDU(""))
 	assert.EqualError(t, err, "user token is required")
 	t.Log("No-token write correctly rejected")
 
 	// Step 4: Regular user write rejected
 	ctlClient.SetToken(userToken)
-	resp, err = ctlClient.PutPDU(makePDU(userToken))
+	_, err = ctlClient.PutPDU(makePDU(userToken))
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 5: Admin write accepted
 	ctlClient.SetToken(adminToken)
-	resp, err = ctlClient.PutPDU(makePDU(adminToken))
+	resp, err := ctlClient.PutPDU(makePDU(adminToken))
 	require.NoError(t, err, "admin should be able to create a PDU")
 	assert.True(t, resp.Success, "PutPDU by admin must succeed")
 	t.Logf("Admin created PDU %s", pduID)
@@ -1349,19 +1352,19 @@ func TestRackAuthorizationWithUsers(t *testing.T) {
 
 	// Step 4: No token write rejected
 	ctlClient.SetToken("")
-	resp, err := ctlClient.PutRack(makeRack(""))
+	_, err = ctlClient.PutRack(makeRack(""))
 	assert.EqualError(t, err, "user token is required")
 	t.Log("No-token write correctly rejected")
 
 	// Step 5: Regular user write rejected (admin-only RBAC)
 	ctlClient.SetToken(userToken)
-	resp, err = ctlClient.PutRack(makeRack(userToken))
+	_, err = ctlClient.PutRack(makeRack(userToken))
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 6: Admin write accepted
 	ctlClient.SetToken(adminToken)
-	resp, err = ctlClient.PutRack(makeRack(adminToken))
+	resp, err := ctlClient.PutRack(makeRack(adminToken))
 	require.NoError(t, err, "admin should be able to create a Rack")
 	assert.True(t, resp.Success, "PutRack by admin must succeed")
 	t.Logf("Admin created Rack %s under PDU %s", rackID, pduID)
@@ -1448,19 +1451,19 @@ func TestHypervisorAuthorizationWithUsers(t *testing.T) {
 
 	// Step 4: No token write rejected
 	ctlClient.SetToken("")
-	resp, err := ctlClient.PutHypervisor(makeHV(""))
+	_, err = ctlClient.PutHypervisor(makeHV(""))
 	assert.EqualError(t, err, "user token is required")
 	t.Log("No-token write correctly rejected")
 
 	// Step 5: Regular user write rejected (admin-only RBAC)
 	ctlClient.SetToken(userToken)
-	resp, err = ctlClient.PutHypervisor(makeHV(userToken))
+	_, err = ctlClient.PutHypervisor(makeHV(userToken))
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	t.Log("Regular-user write correctly rejected")
 
 	// Step 6: Admin write accepted
 	ctlClient.SetToken(adminToken)
-	resp, err = ctlClient.PutHypervisor(makeHV(adminToken))
+	resp, err := ctlClient.PutHypervisor(makeHV(adminToken))
 	require.NoError(t, err, "admin should be able to create a Hypervisor")
 	assert.True(t, resp.Success, "PutHypervisor by admin must succeed")
 	t.Logf("Admin created Hypervisor %s under Rack %s", hvID, rackID)

@@ -620,6 +620,6 @@ func TestLoginUser(t *testing.T) {
 	assert.NotEmpty(t, loginResp.AccessToken, "accessToken can not be empty")
 
 	// Login with invalid credentials
-	loginResp, err = c.Login("nouser", "password")
+	_, err = c.Login("nouser", "password")
 	assert.Error(t, err, "login failed: invalid credentials")
 }

@@ -678,10 +678,6 @@ func Login(args ...interface{}) (interface{}, error) {
 	return cpLib.EncodeResponse(resp)
 }
 
-func printUserAdminDetails(key string) {
-	log.Infof("Default User Admin key: %v", key)
-}
-
 func returnError(errMsg string) (interface{}, error) {
 	errorResponse := &userlib.UserResp{
 		Error: errMsg,
