@@ -1075,8 +1075,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	}
 
 	_, err = ctlClient.GetVdevCfg(getReqUser2)
-	// User2 should NOT be able to access user1's vdev
-	assert.Error(t, err, "user2 should NOT be able to access user1's vdev - authorization should fail")
+	assert.EqualError(t, err, "User is not authorized")
 	t.Logf("User2 correctly denied access to user1's vdev (authorization check passed)")
 
 	// Step 9: Create a vdev for user2 and verify they can access their own
@@ -1114,14 +1113,14 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	}
 
 	_, err = ctlClient.GetVdevCfg(getReqUser1ForVdev2)
-	assert.Error(t, err, "user1 should NOT be able to access user2's vdev - authorization should fail")
+	assert.EqualError(t, err, "User is not authorized")
 	t.Logf("User1 correctly denied access to user2's vdev (authorization check passed)")
 
 	// Step 11: Verify that accessing vdev WITHOUT token should fail
 	// Trying to access user1's vdev without any token
 	ctlClient.SetToken("")
 	_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
-	assert.Error(t, err, "accessing vdev without token should fail - authentication required")
+	assert.EqualError(t, err, "Invalid Token")
 	t.Logf("Access denied when no token provided (authentication check passed)")
 
 	// Step 12: Verify that creating vdev WITHOUT token should fail
@@ -1134,7 +1133,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 	}
 	ctlClient.SetToken("")
 	_, err = ctlClient.CreateVdev(vdevNoToken)
-	assert.Error(t, err, "creating vdev without token should fail - authentication required")
+	assert.EqualError(t, err, "user token is required")
 	t.Logf("Vdev creation denied when no token provided (authentication check passed)")
 
 	t.Log("Vdev Authorization Test Completed Successfully")
@@ -1219,14 +1218,12 @@ func TestNisdAuthorizationWithUsers(t *testing.T) {
 	ctlClient.SetToken("")
 	_, err = ctlClient.GetNisds(cpLib.GetReq{})
 	assert.EqualError(t, err, "user token is required")
-	assert.Error(t, err, "GetNisds without token must be rejected")
 	t.Log("No-token read correctly rejected")
 
 	// Step 7: Regular user read rejected (admin-only RBAC)
 	ctlClient.SetToken(userToken)
 	_, err = ctlClient.GetNisds(cpLib.GetReq{})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "GetNisds by regular user must be rejected (admin-only RBAC)")
 	t.Log("Regular-user read correctly rejected")
 
 	// Step 8: Admin read accepted
@@ -1286,14 +1283,12 @@ func TestPDUAuthorizationWithUsers(t *testing.T) {
 	ctlClient.SetToken("")
 	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "user token is required")
-	assert.Error(t, err, "GetPDUs without token must be rejected")
 	t.Log("No-token read correctly rejected")
 
 	// Step 7: Regular user read rejected
 	ctlClient.SetToken(userToken)
 	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "GetPDUs by regular user must be rejected")
 	t.Log("Regular-user read correctly rejected")
 
 	// Step 8: Admin read accepted, created PDU is visible
@@ -1375,14 +1370,12 @@ func TestRackAuthorizationWithUsers(t *testing.T) {
 	ctlClient.SetToken("")
 	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "user token is required")
-	assert.Error(t, err, "GetRacks without token must be rejected")
 	t.Log("No-token read correctly rejected")
 
 	// Step 8: Regular user read rejected (admin-only RBAC)
 	ctlClient.SetToken(userToken)
 	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "GetRacks by regular user must be rejected (admin-only RBAC)")
 	t.Log("Regular-user read correctly rejected")
 
 	// Step 9: Admin read accepted, created Rack is visible
@@ -1476,14 +1469,12 @@ func TestHypervisorAuthorizationWithUsers(t *testing.T) {
 	ctlClient.SetToken("")
 	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "user token is required")
-	assert.Error(t, err, "GetHypervisor without token must be rejected")
 	t.Log("No-token read correctly rejected")
 
 	// Step 8: Regular user read rejected (admin-only RBAC)
 	ctlClient.SetToken(userToken)
 	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "GetHypervisor by regular user must be rejected (admin-only RBAC)")
 	t.Log("Regular-user read correctly rejected")
 	// Step 9: Admin read accepted, created HV is visible
 	ctlClient.SetToken(adminToken)
@@ -1574,22 +1565,22 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 	t.Log("Verifying regular user is blocked at all levels...")
 
 	// PDU
-	_, err = ctlClient.PutPDU(&cpLib.PDU{ID: uuid.NewString(), Name: "user-pdu"}) // remove
+	_, err = ctlClient.PutPDU(&cpLib.PDU{ID: uuid.NewString(), Name: "user-pdu"})
+	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "regular user must NOT list PDUs")
 
 	// Rack
 	_, err = ctlClient.PutRack(&cpLib.Rack{ID: uuid.NewString(), PDUID: pduID, Name: "user-rack"})
+	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "regular user must NOT list Racks")
 
 	// Hypervisor
 	_, err = ctlClient.PutHypervisor(&cpLib.Hypervisor{ID: uuid.NewString(), RackID: rackID, Name: "user-hv"})
+	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "regular user must NOT list Hypervisors")
 
 	// NISD
 	_, err = ctlClient.PutNisd(&cpLib.Nisd{
@@ -1601,9 +1592,9 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 		NetInfo:       cpLib.NetInfoList{{IPAddr: "10.0.0.2", Port: 9999}},
 		NetInfoCnt:    1,
 	})
+	assert.EqualError(t, err, "authorization failed: insufficient permissions")
 	_, err = ctlClient.GetNisds(cpLib.GetReq{})
 	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	assert.Error(t, err, "regular user must NOT list NISDs")
 
 	t.Log("Regular user correctly blocked at all hierarchy levels")
 
@@ -1761,7 +1752,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	ctlClient.SetToken(user2Token)
 	_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
 	assert.EqualError(t, err, "User is not authorized")
-	assert.Error(t, err, "ABAC: user2 should NOT be able to read user1's vdev")
 	t.Logf("User2 correctly denied access to user1's vdev (ABAC check passed)")
 
 	vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
@@ -1772,7 +1762,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	ctlClient.SetToken(user1Token)
 	_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
 	assert.EqualError(t, err, "User is not authorized")
-	assert.Error(t, err, "ABAC: user1 should NOT be able to read user2's vdev")
 	t.Logf("User1 correctly denied access to user2's vdev (ABAC check passed)")
 
 	// Step 8: Verify ABAC on ReadVdevsInfoWithChunkMapping (GetVdevsWithChunkInfo)
@@ -1783,7 +1772,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	ctlClient.SetToken(user2Token)
 	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
 	assert.EqualError(t, err, "User is not authorized")
-	assert.Error(t, err, "ABAC: user2 should NOT be able to read chunk-info of user1's vdev")
 	t.Logf("User2 correctly denied chunk-info access to user1's vdev (ABAC check passed)")
 
 	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
@@ -1793,7 +1781,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	ctlClient.SetToken(user1Token)
 	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
 	assert.EqualError(t, err, "User is not authorized")
-	assert.Error(t, err, "ABAC: user1 should NOT be able to read chunk-info of user2's vdev")
 	t.Logf("User1 correctly denied chunk-info access to user2's vdev (ABAC check passed)")
 
 	// Step 9: Verify ABAC on ReadChunkNisd (GetChunkNisd).
@@ -1805,7 +1792,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	ctlClient.SetToken(user2Token)
 	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
 	assert.EqualError(t, err, "authorization failed")
-	assert.Error(t, err, "ABAC: user2 should NOT be able to read chunk-nisd of user1's vdev")
 	t.Logf("User2 correctly denied chunk-nisd access to user1's vdev (ABAC check passed)")
 
 	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
@@ -1815,7 +1801,6 @@ func TestABACVdevOwnership(t *testing.T) {
 	ctlClient.SetToken(user1Token)
 	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
 	assert.EqualError(t, err, "authorization failed")
-	assert.Error(t, err, "ABAC: user1 should NOT be able to read chunk-nisd of user2's vdev")
 	t.Logf("User1 correctly denied chunk-nisd access to user2's vdev (ABAC check passed)")
 
 	t.Log("ABAC Vdev Ownership Test Completed Successfully")
