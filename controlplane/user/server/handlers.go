@@ -3,7 +3,6 @@ package userserver
 import (
 	"crypto/subtle"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
-	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	pmCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
@@ -359,7 +357,8 @@ func GetUser(args ...interface{}) (interface{}, error) {
 
 	tokenClaims, err := srvctlplanefuncs.ValidateToken(cpReq.Token)
 	if err != nil {
-		return returnGetUserError(err.Error())
+		log.Errorf("GetUser: token validation failed: %v", err)
+		return cpLib.AuthError(err)
 	}
 	callerUserID := tokenClaims.UserID
 	callerRole := tokenClaims.Role
@@ -371,7 +370,7 @@ func GetUser(args ...interface{}) (interface{}, error) {
 	if authz != nil {
 		if !authz.CheckRBAC(userlib.GetUserAPI, []string{callerRole}) {
 			log.Errorf("User %s with role %s not authorized for GetUser", callerUserID, callerRole)
-			return returnGetUserError("authorization failed: insufficient permissions")
+			return cpLib.AuthError(fmt.Errorf("authorization failed: insufficient permissions"))
 		}
 	}
 
@@ -388,17 +387,12 @@ func GetUser(args ...interface{}) (interface{}, error) {
 		userID, err := getUserIDByUsername(req.Username, callbackArgs)
 		if err != nil {
 			log.Errorf("Failed to lookup user by username: %v", err)
-			return returnGetUserError(fmt.Sprintf("failed to lookup user by username: %v", err))
+			return cpLib.FuncError(fmt.Errorf("failed to lookup user by username: %v", err))
 		}
 		if userID == "" {
 			// Username not found - return empty result
 			log.Infof("Username [%v] not found in index\n", req.Username)
-			encodedUsers, err := pmCommon.Encoder(pmCommon.GOB, []userlib.UserResp{})
-			if err != nil {
-				log.Error("Failed to encode empty response: ", err)
-				return returnGetUserError(fmt.Sprintf("failed to encode response: %v", err))
-			}
-			return encodedUsers, nil
+			return cpLib.EncodeResponse([]userlib.UserResp{})
 		}
 		// Use the resolved UserID for lookup
 		targetUserID = userID
@@ -409,13 +403,13 @@ func GetUser(args ...interface{}) (interface{}, error) {
 	// Admins can view any user information (including listing all users)
 	if !callerIsAdmin && targetUserID != "" && targetUserID != callerUserID {
 		log.Errorf("User %s attempted to view user %s - permission denied", callerUserID, targetUserID)
-		return returnGetUserError("authorization failed: you can only view your own information")
+		return cpLib.AuthError(fmt.Errorf("authorization failed: you can only view your own information"))
 	}
 
 	// If querying all users (no specific ID/username), only admin is allowed
 	if !callerIsAdmin && req.UserID == "" && req.Username == "" {
 		log.Errorf("Non-admin user %s attempted to list all users - permission denied", callerUserID)
-		return returnGetUserError("authorization failed: only admins can list all users")
+		return cpLib.AuthError(fmt.Errorf("authorization failed: only admins can list all users"))
 	}
 
 	readResult, err := callbackArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -435,7 +429,7 @@ func GetUser(args ...interface{}) (interface{}, error) {
 			users = []userlib.User{}
 		} else {
 			log.Error("Range read failure: ", err.Error())
-			return returnGetUserError(fmt.Sprintf("range read failure: %v", err))
+			return cpLib.FuncError(fmt.Errorf("range read failure: %v", err))
 		}
 	} else {
 		// Deserialize entities
@@ -467,14 +461,8 @@ func GetUser(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	// Encode response
-	encodedUsers, err := pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Payload: userResps})
-	if err != nil {
-		log.Error("Failed to encode user auth info: ", err)
-		return returnGetUserError(fmt.Sprintf("failed to encode user auth info: %v", err))
-	}
-
-	return encodedUsers, nil
+	log.Debugf("GetUser: returning %d user(s)", len(userResps))
+	return cpLib.EncodeResponse(userResps)
 }
 
 // applyCommitChanges applies commit changes to RocksDB.
@@ -517,10 +505,12 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 
 	username := strings.TrimSpace(req.Username)
 	if username == "" {
-		return returnApplyError("username cannot be empty")
+		log.Error("CreateAdminUser: username cannot be empty")
+		return cpLib.FuncError(fmt.Errorf("username cannot be empty"))
 	}
 	if username != userlib.AdminUsername {
-		return returnApplyError(fmt.Sprintf("unauthorized: username must be %q", userlib.AdminUsername))
+		log.Errorf("CreateAdminUser: unauthorized username %q", username)
+		return cpLib.FuncError(fmt.Errorf("unauthorized: username must be %q", userlib.AdminUsername))
 	}
 
 	adminID := uuid.Nil.String()
@@ -543,7 +533,7 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 			log.Warnf("Could not decrypt existing admin key: %v", err)
 		}
 
-		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Payload: userlib.UserResp{
+		return cpLib.EncodeResponse(userlib.UserResp{
 			UserID:    existing.UserID,
 			Username:  existing.Username,
 			SecretKey: decryptedKey,
@@ -551,7 +541,7 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 			Status:    existing.Status,
 			Success:   true,
 			Error:     "admin user already exists",
-		}})
+		})
 	}
 
 	// Creation & Persistence
@@ -574,24 +564,14 @@ func CreateAdminUser(args ...interface{}) (interface{}, error) {
 	}
 
 	log.Infof("Admin user created successfully (ID: %s)", adminID)
-
-	return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Status: cpLib.StatusOK, Payload: userlib.UserResp{
+	return cpLib.EncodeResponse(userlib.UserResp{
 		UserID:    newUser.UserID,
 		Username:  newUser.Username,
 		SecretKey: secretKey,
 		UserRole:  newUser.UserRole,
 		Status:    newUser.Status,
 		Success:   true,
-	}})
-}
-
-// returnApplyError returns an encoded error response for Apply functions
-func returnApplyError(errMsg string) (interface{}, error) {
-	errorResponse := &userlib.UserResp{
-		Error:   errMsg,
-		Success: false,
-	}
-	return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Status: cpLib.StatusOK, Payload: errorResponse})
+	})
 }
 
 // Login authenticates a user and returns a JWT token
@@ -604,14 +584,17 @@ func Login(args ...interface{}) (interface{}, error) {
 	// Expected ID as username:secretKey
 	sreq := strings.Split(req.ID, ":")
 	if len(sreq) != 2 {
-		return returnLoginError("username:secretKey missing")
+		log.Error("Login: invalid request format: expected username:secretKey")
+		return cpLib.FuncError(fmt.Errorf("username:secretKey missing"))
 	} else {
 		username, secretKey = sreq[0], sreq[1]
 		if strings.TrimSpace(username) == "" {
-			return returnLoginError("username cannot be empty")
+			log.Error("Login: username cannot be empty")
+			return cpLib.FuncError(fmt.Errorf("username cannot be empty"))
 		}
 		if strings.TrimSpace(secretKey) == "" {
-			return returnLoginError("secretKey cannot be empty")
+			log.Error("Login: secretKey cannot be empty")
+			return cpLib.FuncError(fmt.Errorf("secretKey cannot be empty"))
 		}
 	}
 
@@ -619,29 +602,29 @@ func Login(args ...interface{}) (interface{}, error) {
 	userID, err := getUserIDByUsername(username, callbackArgs)
 	if err != nil {
 		log.Errorf("failed to lookup user by username '%s': %v", username, err)
-		return returnLoginError("invalid credentials")
+		return cpLib.FuncError(fmt.Errorf("invalid credentials"))
 	}
 	if userID == "" {
 		log.Errorf("username not found: %s", username)
-		return returnLoginError("invalid credentials")
+		return cpLib.FuncError(fmt.Errorf("invalid credentials"))
 	}
 
 	// Get full user data
 	user, err := checkUserExistsByID(userID, callbackArgs)
 	if err != nil {
 		log.Errorf("failed to get user data for userID '%s': %v", userID, err)
-		return returnLoginError("invalid credentials")
+		return cpLib.FuncError(fmt.Errorf("invalid credentials"))
 	}
 	if user == nil {
 		log.Errorf("user not found by ID '%s'", userID)
-		return returnLoginError("invalid credentials")
+		return cpLib.FuncError(fmt.Errorf("invalid credentials"))
 	}
 
 	// Check user status
 	if user.Status != userlib.StatusActive {
 		log.Errorf("login attempt for inactive account - username: %s, userID: %s, status: %s",
 			user.Username, user.UserID, user.Status.String())
-		return returnLoginError("account not available")
+		return cpLib.FuncError(fmt.Errorf("account not available"))
 	}
 
 	// Decrypt stored secret key
@@ -649,19 +632,19 @@ func Login(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		log.Errorf("failed to decrypt stored secret key for user '%s' (ID: %s): %v",
 			user.Username, user.UserID, err)
-		return returnLoginError("internal error")
+		return cpLib.InternalError(fmt.Errorf("internal error"))
 	}
 
 	// Compare provided secret key with stored key using constant time comparison
 	if subtle.ConstantTimeCompare([]byte(storedKey), []byte(secretKey)) != 1 {
 		log.Errorf("invalid secret key provided for user '%s' (ID: %s)",
 			user.Username, user.UserID)
-		return returnLoginError("invalid credentials")
+		return cpLib.FuncError(fmt.Errorf("invalid credentials"))
 	}
 
 	tokenTTL := defaultTokenTTL
 	tc := &auth.Token{
-		Secret: []byte(ctlplfl.CP_SECRET),
+		Secret: []byte(cpLib.CP_SECRET),
 		TTL:    tokenTTL,
 	}
 
@@ -676,7 +659,7 @@ func Login(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		log.Errorf("failed to create JWT token for user '%s' (ID: %s): %v",
 			user.Username, user.UserID, err)
-		return returnLoginError("failed to generate token")
+		return cpLib.InternalError(fmt.Errorf("failed to generate token"))
 	}
 
 	// Build response
@@ -692,32 +675,7 @@ func Login(args ...interface{}) (interface{}, error) {
 	}
 
 	log.Infof("user '%s' (ID: %s) authenticated successfully", user.Username, user.UserID)
-
-	encodedResp, err := pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{Status: cpLib.StatusOK, Payload: resp})
-	if err != nil {
-		log.Errorf("failed to encode login response for user '%s' (ID: %s): %v",
-			user.Username, user.UserID, err)
-		return returnLoginError("failed to encode response")
-	}
-
-	return encodedResp, nil
-}
-
-// returnLoginError is a helper that constructs an error LoginResp
-func returnLoginError(errMsg string) (interface{}, error) {
-	resp := userlib.LoginResp{
-		Error:   errMsg,
-		Success: false,
-	}
-	encodedResp, err := pmCommon.Encoder(pmCommon.GOB, resp)
-	if err != nil {
-		log.Error("failed to encode error response: ", err)
-		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{
-			Status:   cpLib.StatusFuncError,
-			ErrorMsg: formatError(err),
-		})
-	}
-	return encodedResp, nil
+	return cpLib.EncodeResponse(resp)
 }
 
 func printUserAdminDetails(key string) {
@@ -738,60 +696,9 @@ func returnError(errMsg string) (interface{}, error) {
 	if err != nil {
 		log.Error("Failed to encode error intermediate: ", err)
 		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{
-			Status:   cpLib.StatusFuncError,
-			ErrorMsg: formatError(err),
+			Error: &cpLib.CPError{Code: cpLib.ErrFunc, Message: err.Error()},
 		})
 	}
 
 	return encodedIntermediate, nil
-}
-
-// returnGetUserError returns an encoded error response for GetUser (Read function)
-func returnGetUserError(errMsg string) (interface{}, error) {
-	errorResponse := []userlib.UserResp{{
-		Error:   errMsg,
-		Success: false,
-	}}
-	encodedResponse, err := pmCommon.Encoder(pmCommon.GOB, errorResponse)
-	if err != nil {
-		log.Error("Failed to encode error response: ", err)
-		return pmCommon.Encoder(pmCommon.GOB, cpLib.CPResp{
-			Status:   cpLib.StatusFuncError,
-			ErrorMsg: formatError(err),
-		})
-	}
-	return encodedResponse, nil
-}
-
-// Helper to format error with caller info
-func formatError(err error) string {
-	if err == nil {
-		return ""
-	}
-	pc, _, line, ok := runtime.Caller(1)
-	if !ok {
-		return err.Error()
-	}
-	fn := runtime.FuncForPC(pc)
-	funcName := "unknown"
-	if fn != nil {
-		parts := strings.Split(fn.Name(), ".")
-		funcName = parts[len(parts)-1]
-	}
-	return fmt.Sprintf("[%s:%d] %s", funcName, line, err.Error())
-}
-
-// Helper to format string message with caller info
-func formatErrMsg(msg string) string {
-	pc, _, line, ok := runtime.Caller(1)
-	if !ok {
-		return msg
-	}
-	fn := runtime.FuncForPC(pc)
-	funcName := "unknown"
-	if fn != nil {
-		parts := strings.Split(fn.Name(), ".")
-		funcName = parts[len(parts)-1]
-	}
-	return fmt.Sprintf("[%s:%d] %s", funcName, line, msg)
 }

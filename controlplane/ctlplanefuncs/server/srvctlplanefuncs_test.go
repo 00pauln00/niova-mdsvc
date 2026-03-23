@@ -167,15 +167,16 @@ func TestWPCreateVdev(t *testing.T) {
 	defer func() { authorizer = nil }()
 
 	testCases := []struct {
-		name           string
-		setupToken     func() string
-		vdevSize       int64
-		numChunks      int
-		numReplica     int
-		expectError    bool
-		errorContains  string
-		checkOwnership bool
-		expectedUserID string
+		name            string
+		setupToken      func() string
+		vdevSize        int64
+		numChunks       int
+		numReplica      int
+		expectError     bool
+		errorContains   string
+		expectedErrCode ctlplfl.CPErrCode
+		checkOwnership  bool
+		expectedUserID  string
 	}{
 		{
 			name: "SuccessfulCreation_UserRole",
@@ -208,11 +209,12 @@ func TestWPCreateVdev(t *testing.T) {
 			setupToken: func() string {
 				return ""
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "user token is required",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "user token is required",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "MissingUserIDClaim",
@@ -222,11 +224,12 @@ func TestWPCreateVdev(t *testing.T) {
 				token, _ := tc.CreateToken(claims)
 				return token
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "missing userID",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "missing userID",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "MissingRoleClaim",
@@ -236,11 +239,12 @@ func TestWPCreateVdev(t *testing.T) {
 				token, _ := tc.CreateToken(claims)
 				return token
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "missing role",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "missing role",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "UnauthorizedRole",
@@ -248,11 +252,12 @@ func TestWPCreateVdev(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "viewer", testSecret)
 				return token
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "authorization failed",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "authorization failed",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 	}
 
@@ -279,16 +284,21 @@ func TestWPCreateVdev(t *testing.T) {
 					t.Error("Expected non-nil result for encoded error response")
 					return
 				}
-				var cpResp ctlplfl.CPResp
-				if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &cpResp); decErr != nil {
-					t.Fatalf("Failed to decode response: %v", decErr)
+				// WP functions return FuncIntrm; decode it first, then extract CPResp.
+				var intrm funclib.FuncIntrm
+				if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &intrm); decErr != nil {
+					t.Fatalf("Failed to decode FuncIntrm: %v", decErr)
 				}
-				if cpResp.Status == ctlplfl.StatusOK {
-					t.Errorf("Expected error status, got StatusOK")
+				cpResp, ok := intrm.Response.(ctlplfl.CPResp)
+				if !ok || cpResp.Error == nil {
+					t.Errorf("Expected CPResp with error in FuncIntrm.Response, got %T", intrm.Response)
 					return
 				}
-				if tc.errorContains != "" && !strings.Contains(cpResp.ErrorMsg, tc.errorContains) {
-					t.Errorf("Expected ErrorMsg containing '%s', but got '%s'", tc.errorContains, cpResp.ErrorMsg)
+				if tc.errorContains != "" && !strings.Contains(cpResp.Error.Message, tc.errorContains) {
+					t.Errorf("Expected error message containing %q, got %q", tc.errorContains, cpResp.Error.Message)
+				}
+				if tc.expectedErrCode != "" && cpResp.Error.Code != tc.expectedErrCode {
+					t.Errorf("Expected error code %q, got %q", tc.expectedErrCode, cpResp.Error.Code)
 				}
 				return
 			}
@@ -375,12 +385,13 @@ func TestReadVdevInfo(t *testing.T) {
 	defer func() { authorizer = nil }()
 
 	testCases := []struct {
-		name          string
-		setupData     func(storageiface.DataStore)
-		setupToken    func() string
-		vdevID        string
-		expectError   bool
-		errorContains string
+		name            string
+		setupData       func(storageiface.DataStore)
+		setupToken      func() string
+		vdevID          string
+		expectError     bool
+		errorContains   string
+		expectedErrCode ctlplfl.CPErrCode
 	}{
 		{
 			name: "SuccessfulRead_Owner",
@@ -406,9 +417,10 @@ func TestReadVdevInfo(t *testing.T) {
 			setupToken: func() string {
 				return ""
 			},
-			vdevID:        testVdevID,
-			expectError:   true,
-			errorContains: "Invalid Token",
+			vdevID:          testVdevID,
+			expectError:     true,
+			errorContains:   "Invalid Token",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "UnauthorizedRole_RBAC",
@@ -419,9 +431,10 @@ func TestReadVdevInfo(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "viewer", testSecret)
 				return token
 			},
-			vdevID:        testVdevID,
-			expectError:   true,
-			errorContains: "User is not authorized",
+			vdevID:          testVdevID,
+			expectError:     true,
+			errorContains:   "User is not authorized",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "UnauthorizedUser_NotOwner",
@@ -435,9 +448,10 @@ func TestReadVdevInfo(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "user", testSecret)
 				return token
 			},
-			vdevID:        testVdevID,
-			expectError:   true,
-			errorContains: "User is not authorized",
+			vdevID:          testVdevID,
+			expectError:     true,
+			errorContains:   "User is not authorized",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "InvalidRequest_EmptyID",
@@ -448,9 +462,10 @@ func TestReadVdevInfo(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "user", testSecret)
 				return token
 			},
-			vdevID:        "",
-			expectError:   true,
-			errorContains: "Invalid Request",
+			vdevID:          "",
+			expectError:     true,
+			errorContains:   "Invalid Request",
+			expectedErrCode: ctlplfl.ErrFunc,
 		},
 	}
 
@@ -493,12 +508,15 @@ func TestReadVdevInfo(t *testing.T) {
 				if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &cpResp); decErr != nil {
 					t.Fatalf("Failed to decode response: %v", decErr)
 				}
-				if cpResp.Status == ctlplfl.StatusOK {
-					t.Errorf("Expected error status, got StatusOK")
+				if cpResp.Error == nil {
+					t.Errorf("Expected error response, got success")
 					return
 				}
-				if tc.errorContains != "" && !strings.Contains(cpResp.ErrorMsg, tc.errorContains) {
-					t.Errorf("Expected ErrorMsg containing '%s', but got '%s'", tc.errorContains, cpResp.ErrorMsg)
+				if tc.errorContains != "" && !strings.Contains(cpResp.Error.Message, tc.errorContains) {
+					t.Errorf("Expected error message containing %q, got %q", tc.errorContains, cpResp.Error.Message)
+				}
+				if tc.expectedErrCode != "" && cpResp.Error.Code != tc.expectedErrCode {
+					t.Errorf("Expected error code %q, got %q", tc.expectedErrCode, cpResp.Error.Code)
 				}
 				return
 			}
@@ -518,8 +536,8 @@ func TestReadVdevInfo(t *testing.T) {
 			if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &cpResp); decErr != nil {
 				t.Fatalf("Failed to decode response: %v", decErr)
 			}
-			if cpResp.Status != ctlplfl.StatusOK {
-				t.Errorf("Expected StatusOK, got status %d: %s", cpResp.Status, cpResp.ErrorMsg)
+			if cpResp.Error != nil {
+				t.Errorf("Expected success response, got error: %s", cpResp.Err())
 			}
 		})
 	}
@@ -660,10 +678,10 @@ func TestAPDeleteVdev(t *testing.T) {
 				t.Fatalf("Failed to decode response: %v", decErr)
 			}
 
-			t.Log("Decoded CPResp status:", cpResp.Status, "errorMsg:", cpResp.ErrorMsg)
+			t.Log("Decoded CPResp errorMsg:", cpResp.Err())
 
-			if cpResp.Status != ctlplfl.StatusOK {
-				t.Errorf("Expected StatusOK, got status %d: %s", cpResp.Status, cpResp.ErrorMsg)
+			if cpResp.Error != nil {
+				t.Errorf("Expected success response, got error: %s", cpResp.Err())
 			}
 
 			if tc.verify != nil {

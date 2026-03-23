@@ -132,8 +132,12 @@ func (c *Client) doRequest(token string, data, resp interface{}, operation strin
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if cpResp.Status != cpLib.StatusOK {
-		return fmt.Errorf("server error: %s (status: %v)", cpResp.ErrorMsg, cpResp.Status)
+	if err := cpResp.Err(); err != nil {
+		code := ""
+		if cpResp.Error != nil {
+			code = string(cpResp.Error.Code)
+		}
+		return fmt.Errorf("server error: %s (code: %s)", err, code)
 	}
 
 	return nil

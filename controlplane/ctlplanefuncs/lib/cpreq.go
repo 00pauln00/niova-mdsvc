@@ -1,18 +1,20 @@
 package libctlplanefuncs
 
-// CPStatus distinguishes error categories in control plane responses.
-type CPStatus int
+import "errors"
+
+type CPErrCode string
 
 const (
-	// StatusOK indicates a successful operation.
-	StatusOK CPStatus = iota
-	// StatusAuthError indicates token invalid/expired or RBAC/ABAC denied.
-	StatusAuthError
-	// StatusFuncError indicates a business logic error in the handler.
-	StatusFuncError
-	// StatusInternal indicates a transport/encoding/unexpected error.
-	StatusInternal
+	ErrAuth     CPErrCode = "AUTH_ERROR" // token invalid/expired or RBAC denied
+	ErrFunc     CPErrCode = "FUNC_ERROR" // business logic / handler error
+	ErrInternal CPErrCode = "INTERNAL"   // transport/encoding/unexpected error
 )
+
+// CPError carries a human-readable error message from the server.
+type CPError struct {
+	Message string
+	Code    CPErrCode
+}
 
 // Pagination holds cursor-based pagination parameters for read requests.
 type Pagination struct {
@@ -30,8 +32,15 @@ type CPReq struct {
 
 // CPResp is the unified response envelope for all control plane operations.
 type CPResp struct {
-	Status   CPStatus    // Error category
-	ErrorMsg string      // Human-readable error (empty on success)
-	Page     Pagination  // Range read pagination details
-	Payload  interface{} // Function-specific response
+	Error   *CPError    // nil on success
+	Page    Pagination  // Range read pagination details
+	Payload interface{} // Function-specific response
+}
+
+// Err returns a Go error from the response, or nil on success.
+func (r *CPResp) Err() error {
+	if r.Error == nil {
+		return nil
+	}
+	return errors.New(r.Error.Message)
 }

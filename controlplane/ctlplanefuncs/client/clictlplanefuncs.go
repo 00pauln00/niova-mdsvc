@@ -158,8 +158,8 @@ func (ccf *CliCFuncs) CreateSnap(vdev string, chunkSeq []uint64, snapName string
 		return err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return err
 	}
 
 	if !snapRes.SnapName.Success {
@@ -207,8 +207,8 @@ func (ccf *CliCFuncs) PutDevice(device *ctlplfl.Device) (*ctlplfl.ResponseXML, e
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -227,8 +227,8 @@ func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return dev, nil
@@ -246,8 +246,8 @@ func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) 
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -266,8 +266,8 @@ func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return ncfg, nil
@@ -285,8 +285,8 @@ func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return ncfg, nil
@@ -303,8 +303,8 @@ func (ccf *CliCFuncs) CreateVdev(vdev *ctlplfl.VdevReq) (*ctlplfl.ResponseXML, e
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -322,8 +322,8 @@ func (ccf *CliCFuncs) GetVdevsWithChunkInfo(req *ctlplfl.GetReq) ([]ctlplfl.Vdev
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return vdevs, nil
@@ -341,8 +341,8 @@ func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.Resp
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -360,8 +360,8 @@ func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartitio
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return pts, nil
@@ -379,8 +379,8 @@ func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -398,8 +398,8 @@ func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return pdus, nil
@@ -417,8 +417,8 @@ func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -436,8 +436,8 @@ func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return racks, nil
@@ -455,8 +455,8 @@ func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseX
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -474,8 +474,8 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return hypervisors, nil
@@ -493,8 +493,8 @@ func (ccf *CliCFuncs) PutNisdArgs(req *ctlplfl.NisdArgs) (*ctlplfl.ResponseXML, 
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
@@ -512,8 +512,8 @@ func (ccf *CliCFuncs) GetNisdArgs(req ctlplfl.GetReq) (ctlplfl.NisdArgs, error) 
 		return args, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return args, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return args, err
 	}
 
 	return args, nil
@@ -531,8 +531,8 @@ func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
 		return vdev, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return vdev, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return vdev, err
 	}
 
 	return vdev, nil
@@ -550,8 +550,8 @@ func (ccf *CliCFuncs) GetVdevCfgs(req *ctlplfl.GetReq) ([]ctlplfl.VdevCfg, error
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return vdevs, nil
@@ -574,8 +574,8 @@ func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, erro
 		return cn, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return cn, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return cn, err
 	}
 
 	return cn, nil
@@ -592,8 +592,8 @@ func (ccf *CliCFuncs) DeleteVdev(req *ctlplfl.DeleteVdevReq) (*ctlplfl.ResponseX
 		return nil, err
 	}
 
-	if cpResp.Status != ctlplfl.StatusOK {
-		return nil, errors.New(cpResp.ErrorMsg)
+	if err := cpResp.Err(); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
