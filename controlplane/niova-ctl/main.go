@@ -2239,6 +2239,23 @@ func (m model) updateDeviceDelete(msg tea.Msg) (model, tea.Cmd) {
 	}
 	return m, nil
 }
+// DeviceInfo holds device and its location in the config
+type DeviceInfo struct {
+	Device   ctlplfl.Device
+	HvIndex  int
+	DevIndex int
+}
+
+// TreeItem represents a navigable item in the hierarchical configuration tree
+type TreeItem struct {
+	Type       string // "pdu", "rack", "hypervisor", "device"
+	Index      int    // For PDUs and legacy hypervisors
+	UUID       string // For racks, hypervisors in racks, and devices
+	ParentUUID string // For nested items
+	Name       string // Display name
+	Level      int    // Indentation level
+}
+
 func (m model) getAllInitializedDevices() []DeviceInfo {
 	var devices []DeviceInfo
 	for hvIndex, hv := range m.cpHypervisors {
