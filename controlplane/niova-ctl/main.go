@@ -788,6 +788,26 @@ func (m model) getAllDevicesWithPartitions() []struct {
 	return devices
 }
 
+// getDevicesWithoutPartitions returns devices that have no partitions yet.
+func (m model) getDevicesWithoutPartitions() []struct {
+	HvUUID string
+	HvName string
+	Device Device
+} {
+	all := m.getAllDevicesForPartitioning()
+	var result []struct {
+		HvUUID string
+		HvName string
+		Device Device
+	}
+	for _, d := range all {
+		if len(d.Device.Partitions) == 0 {
+			result = append(result, d)
+		}
+	}
+	return result
+}
+
 // getAllPartitionsForNISD returns all partitions available for NISD initialization from CP data.
 func (m model) getAllPartitionsForNISD() []struct {
 	HvUUID    string
@@ -4352,13 +4372,13 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedDeviceIdx = -1 // Reset device selection
 			}
 		case "down", "j":
-			devices := m.getAllDevicesForPartitioning()
+			devices := m.getDevicesWithoutPartitions()
 			if m.selectedHypervisorIdx < len(devices)-1 {
 				m.selectedHypervisorIdx++
 				m.selectedDeviceIdx = -1 // Reset device selection
 			}
 		case "enter", " ":
-			devices := m.getAllDevicesForPartitioning()
+			devices := m.getDevicesWithoutPartitions()
 			if m.selectedHypervisorIdx >= 0 && m.selectedHypervisorIdx < len(devices) {
 				if m.selectedDeviceIdx == -1 {
 					// Device selected, now fetch existing partitions and show them
@@ -4473,18 +4493,17 @@ func (m model) viewPartitionCreate() string {
 		}
 	}
 
-	devices := m.getAllDevicesForPartitioning()
+	devices := m.getDevicesWithoutPartitions()
 
 	if len(devices) == 0 {
-		s.WriteString("No devices available for partitioning.\n")
-		s.WriteString("Please add devices to hypervisors first.\n\n")
+		s.WriteString("No devices without partitions found.\n")
+		s.WriteString("All devices already have partitions, or no devices have been added yet.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
 	}
 
 	// Device selection phase
-	s.WriteString("Select device to partition:\n")
-	s.WriteString("(Note: Devices can be partitioned whether initialized or not)\n\n")
+	s.WriteString(fmt.Sprintf("Select device to partition (%d device(s) without partitions):\n\n", len(devices)))
 
 	for i, deviceInfo := range devices {
 		cursor := "  "
@@ -4503,9 +4522,6 @@ func (m model) viewPartitionCreate() string {
 		line := fmt.Sprintf("%s%s: %s %s", cursor, deviceInfo.HvName, deviceInfo.Device.Name, status)
 		if deviceInfo.Device.Size != 0 {
 			line += fmt.Sprintf(" (%s)", formatBytes(deviceInfo.Device.Size))
-		}
-		if len(deviceInfo.Device.Partitions) > 0 {
-			line += fmt.Sprintf(" [%d existing partitions]", len(deviceInfo.Device.Partitions))
 		}
 
 		if i == m.selectedHypervisorIdx {
