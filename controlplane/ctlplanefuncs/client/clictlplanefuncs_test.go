@@ -199,7 +199,8 @@ func TestPutAndGetNisd(t *testing.T) {
 	req := cpLib.GetReq{
 		GetAll: true,
 	}
-	_, err := c.GetNisds(req)
+	resp, err := c.GetNisds(req)
+	assert.GreaterOrEqualf(t, len(resp), len(mockNisd), "expected atleast %v nisds", len(mockNisd))
 	assert.NoError(t, err)
 
 }
@@ -268,14 +269,15 @@ func TestPutAndGetDevice(t *testing.T) {
 		}
 	}
 
-	res, err := c.GetDevices(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
-	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
+	resp, err := c.GetDevices(cpLib.GetReq{ID: "60447cd0-ab3e-11f0-aa15-1f40dd976538"})
+	log.Infof("fetch single device info: %s, %s, %s", resp[0].ID, resp[0].HypervisorID, resp[0].SerialNumber)
 	assert.NoError(t, err)
 
-	res, err = c.GetDevices(cpLib.GetReq{GetAll: true})
-	log.Infof("fetech all device list: %s,%v", res[0].ID, res[0].Partitions)
+	resp, err = c.GetDevices(cpLib.GetReq{GetAll: true})
+	log.Infof("fetech all device list: %s,%v", resp[0].ID, resp[0].Partitions)
 	assert.NoError(t, err)
-
+	// all testcases use same data store, so including currently added devices we check the result
+	assert.GreaterOrEqual(t, len(resp), len(mockDevices))
 }
 
 func TestPutAndGetPDU(t *testing.T) {
@@ -305,9 +307,10 @@ func TestPutAndGetPDU(t *testing.T) {
 		}
 	}
 
-	res, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
-	log.Info("resp from get pdus:", res)
+	resp, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
 	assert.NoError(t, err)
+	// all testcases use same data store, so including currently added pdus we check the result
+	assert.GreaterOrEqual(t, len(resp), len(pdus))
 }
 
 func TestPutAndGetRack(t *testing.T) {
@@ -338,8 +341,9 @@ func TestPutAndGetRack(t *testing.T) {
 	}
 
 	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
-	log.Info("GetRacks: ", resp)
 	assert.NoError(t, err)
+	// all testcases use same data store, so including currently added racks we check the result
+	assert.GreaterOrEqual(t, len(resp), len(racks))
 }
 
 func TestPutAndGetHypervisor(t *testing.T) {
@@ -372,8 +376,10 @@ func TestPutAndGetHypervisor(t *testing.T) {
 		}
 	}
 
-	_, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true})
+	resp, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true})
 	assert.NoError(t, err)
+	// all testcases use same data store, so including currently added hypervisors we check the result
+	assert.GreaterOrEqual(t, len(resp), len(hypervisors))
 }
 
 func TestVdevLifecycle(t *testing.T) {
@@ -393,8 +399,10 @@ func TestVdevLifecycle(t *testing.T) {
 		TotalSize:     15_000_000_000_000, // 1 TB
 		AvailableSize: 15_000_000_000_000, // 750 GB
 	}
-	_, err := c.PutNisd(&n)
+	resp, err := c.PutNisd(&n)
 	assert.NoError(t, err)
+	assert.NotEmpty(t, resp.Name, "name cannot be empty")
+	assert.Equal(t, resp.Success, true)
 
 	// Step 1: Create first Vdev
 	req1 := &cpLib.VdevReq{
@@ -404,7 +412,7 @@ func TestVdevLifecycle(t *testing.T) {
 			NumReplica: 1,
 		},
 	}
-	resp, err := c.CreateVdev(req1)
+	resp, err = c.CreateVdev(req1)
 	assert.NoError(t, err, "failed to create vdev1")
 	require.NotNil(t, resp, "vdev1 response should not be nil")
 	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
@@ -467,12 +475,14 @@ func TestPutAndGetPartition(t *testing.T) {
 	resp, err := c.PutPartition(pt)
 	log.Info("created partition: ", resp)
 	assert.NoError(t, err)
-	_, err = c.GetPartition(cpLib.GetReq{ID: "nvme-Amazon_Elastic_Block_Store_vol0dce303259b3884dc-part1"})
+	singleResp, err := c.GetPartition(cpLib.GetReq{ID: pt.PartitionID})
 	assert.NoError(t, err)
+	assert.Equal(t, len(singleResp), 1, "Failed to get inserted partition")
+	assert.Equal(t, singleResp[0].PartitionID, pt.PartitionID)
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
-	_ = getAdminToken(nil)
+	getAdminToken(b)
 	racks := []cpLib.Rack{
 		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
 		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
@@ -487,11 +497,11 @@ func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 
 	resp, err := c.GetRacks(&cpLib.GetReq{GetAll: true})
 	assert.NoError(b, err)
-	_ = resp
+	assert.GreaterOrEqual(b, len(resp), len(racks))
 }
 
 func BenchmarkPutAndGetRack(b *testing.B) {
-	c := newClient(nil) // adjust if your newClient requires *testing.T
+	c := newClient(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		runPutAndGetRack(b, c)
@@ -533,10 +543,8 @@ func TestVdevNisdChunk(t *testing.T) {
 	assert.NoError(t, err)
 	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
 	assert.NoError(t, err, "Should be able to get one record")
-	log.Info("Read vdev:", readV)
 	assert.NotNil(t, readV, "get back inserted record")
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(resp.ID, "0")})
-	log.Info("Read Nisd Chunk:", nc)
 	assert.NotNil(t, nc, "get back inserted record")
 }
 
@@ -545,19 +553,16 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 
 	na := &cpLib.NisdArgs{
 		Defrag:               true,
-		MBCCnt:               0,
-		MergeHCnt:            0,
 		MCIBReadCache:        32,
-		S3:                   "",
-		DSync:                "",
 		AllowDefragMCIBCache: true,
 	}
 	_, err := c.PutNisdArgs(na)
 	assert.NoError(t, err)
 
 	req := cpLib.GetReq{}
-	_, err = c.GetNisdArgs(req)
+	resp, err := c.GetNisdArgs(req)
 	assert.NoError(t, err)
+	assert.NotEmpty(t, resp)
 }
 
 func TestParallelVdevCreation(t *testing.T) {
@@ -891,7 +896,7 @@ func TestCreateVdev(t *testing.T) {
 
 	resp, err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
-	log.Infof("vdev response status: %v", resp)
+	assert.True(t, resp.Success)
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
@@ -905,11 +910,11 @@ func TestGetNisd(t *testing.T) {
 		GetAll: true,
 	}
 	res, err := c.GetNisds(req)
+	assert.NoError(t, err)
 	for _, n := range res {
 		log.Infof("Nisd ID: %s, usage: %d", n.ID, usagePercent(n))
 	}
 	log.Info("total number of nisd's : ", len(res))
-	assert.NoError(t, err)
 }
 
 func TestDeleteVdev(t *testing.T) {

@@ -26,15 +26,15 @@ type Pagination struct {
 // It separates auth, pagination, and function-specific payload.
 type CPReq struct {
 	Token   string      // Auth JWT token
-	Page    Pagination  // Range read pagination params for reads
-	Payload interface{} // Function-specific request struct (Nisd, Rack, GetReq, etc.)
+	Page    *Pagination // Pagination parameters (used only for list/read operations)
+	Payload any         // Function-specific request struct (Nisd, Rack, GetReq, etc.)
 }
 
 // CPResp is the unified response envelope for all control plane operations.
 type CPResp struct {
 	Error   *CPError    // nil on success
-	Page    Pagination  // Range read pagination details
-	Payload interface{} // Function-specific response
+	Page    *Pagination // Pagination metadata (returned on list operations)
+	Payload any         // Function-specific response
 }
 
 // Err returns a Go error from the response, or nil on success.
