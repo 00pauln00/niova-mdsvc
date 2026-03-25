@@ -55,13 +55,9 @@ const (
 	stateShowAddedHypervisor
 	// Device Management States
 	stateDeviceManagement
-	stateDeviceInitialize
-	stateDeviceEdit
 	stateDeviceView
 	stateDeviceDelete
-	stateDeviceInitialization
 	stateDevicePartitioning
-	stateInitializeDeviceForm // deprecated: device initialization now happens implicitly in Add Hypervisor
 	// Partition Management States
 	statePartitionManagement
 	statePartitionCreate
@@ -954,16 +950,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Device Management
 	case stateDeviceManagement:
 		m, cmd = m.updateDeviceManagement(msg)
-	case stateDeviceInitialize:
-		m, cmd = m.updateDeviceInitialize(msg)
-	case stateDeviceEdit:
-		m, cmd = m.updateDeviceEdit(msg)
 	case stateDeviceView:
 		m, cmd = m.updateDeviceView(msg)
 	case stateDeviceDelete:
 		m, cmd = m.updateDeviceDelete(msg)
-	case stateDeviceInitialization:
-		m, cmd = m.updateDeviceInitialization(msg)
 	case stateDevicePartitioning:
 		m, cmd = m.updateDevicePartitioning(msg)
 	// Partition Management
@@ -2164,102 +2154,6 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateDeviceInitialize(msg tea.Msg) (model, tea.Cmd) {
-	if len(m.cpHypervisors) == 0 {
-		m.message = "No hypervisors configured. Please add a hypervisor first."
-		m.state = stateDeviceManagement
-		return m, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if m.deviceMgmtCursor > 0 {
-				m.deviceMgmtCursor--
-			}
-		case "down", "j":
-			maxCursor := 0
-			if m.selectedHypervisorIdx >= 0 {
-				hv := m.cpHypervisors[m.selectedHypervisorIdx]
-				maxCursor = 1 + len(hv.Dev) // Hypervisor selection + device selection + initialize button
-				if m.selectedDeviceIdx >= 0 {
-					maxCursor = 2 // Hypervisor + device + initialize button
-				}
-			}
-			if m.deviceMgmtCursor < maxCursor {
-				m.deviceMgmtCursor++
-			}
-		case "enter", " ":
-			if m.deviceMgmtCursor == 0 {
-				// Hypervisor selection area - cycle through hypervisors
-				if m.selectedHypervisorIdx < len(m.cpHypervisors)-1 {
-					m.selectedHypervisorIdx++
-				} else {
-					m.selectedHypervisorIdx = 0
-				}
-				m.selectedDeviceIdx = -1 // Reset device selection
-				m.deviceMgmtCursor = 0
-			} else if m.selectedHypervisorIdx >= 0 && m.deviceMgmtCursor == 1 {
-				// Device selection area
-				hv := m.cpHypervisors[m.selectedHypervisorIdx]
-				if len(hv.Dev) > 0 {
-					if m.selectedDeviceIdx < len(hv.Dev)-1 {
-						m.selectedDeviceIdx++
-					} else {
-						m.selectedDeviceIdx = 0
-					}
-				}
-			} else if m.selectedHypervisorIdx >= 0 && m.selectedDeviceIdx >= 0 && m.deviceMgmtCursor == 2 {
-				// Initialize device button
-				log.Info("Setting stateDeviceInitialization")
-				m.state = stateDeviceInitialization
-				m.deviceFailureDomain.Focus()
-				m.deviceFailureDomain.SetValue("")
-				return m, textinput.Blink
-			}
-		}
-	}
-	return m, nil
-}
-
-func (m model) updateDeviceEdit(msg tea.Msg) (model, tea.Cmd) {
-	// Get all initialized devices across all hypervisors
-	initializedDevices := m.getAllInitializedDevices()
-
-	if len(initializedDevices) == 0 {
-		m.message = "No initialized devices found. Please initialize devices first."
-		m.state = stateDeviceManagement
-		return m, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if m.selectedDeviceIdx > 0 {
-				m.selectedDeviceIdx--
-			}
-		case "down", "j":
-			if m.selectedDeviceIdx < len(initializedDevices)-1 {
-				m.selectedDeviceIdx++
-			}
-		case "enter", " ":
-			// Start editing the selected device
-			if m.selectedDeviceIdx >= 0 && m.selectedDeviceIdx < len(initializedDevices) {
-				device := initializedDevices[m.selectedDeviceIdx]
-				m.deviceFailureDomain.SetValue(device.Device.FailureDomain)
-				m.deviceFailureDomain.Focus()
-				//FIXME
-				m.selectedHypervisorIdx = 0
-				m.state = stateDeviceInitialization // Reuse the initialization form for editing
-				return m, textinput.Blink
-			}
-		}
-	}
-	return m, nil
-}
-
 func (m model) updateDeviceView(msg tea.Msg) (model, tea.Cmd) {
 	// Get all devices across all hypervisors
 	allDevices := m.getAllDevicesForPartitioning()
@@ -2345,89 +2239,6 @@ func (m model) updateDeviceDelete(msg tea.Msg) (model, tea.Cmd) {
 	}
 	return m, nil
 }
-
-func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			failureDomain := strings.TrimSpace(m.deviceFailureDomain.Value())
-			if failureDomain == "" {
-				m.message = "Failure domain is required for device initialization"
-				return m, nil
-			}
-
-			if m.selectedHypervisorIdx < 0 || m.selectedHypervisorIdx >= len(m.cpHypervisors) {
-				m.message = "No hypervisor selected"
-				return m, nil
-			}
-			hv := m.cpHypervisors[m.selectedHypervisorIdx]
-			if m.selectedDeviceIdx < 0 || m.selectedDeviceIdx >= len(hv.Dev) {
-				m.message = "No device selected"
-				return m, nil
-			}
-			device := hv.Dev[m.selectedDeviceIdx]
-
-			m.message = fmt.Sprintf("Device %s initialized successfully", device.ID)
-
-			// Send to control plane if available
-			if m.cpClient != nil {
-				deviceInfo := ctlplfl.Device{
-					ID:            device.ID,
-					SerialNumber:  device.SerialNumber,
-					State:         ctlplfl.INITIALIZED,
-					HypervisorID:  hv.ID,
-					FailureDomain: failureDomain,
-					UserToken:     m.userToken(),
-				}
-				log.Info("Put device info: ", deviceInfo)
-
-				devResp, cpErr := m.cpClient.PutDevice(&deviceInfo)
-				if cpErr != nil {
-					log.Warn("Failed to sync device to control plane: ", cpErr)
-					m.message += " (Control plane sync failed)"
-				} else if devResp != nil && !devResp.Success {
-					log.Warn("Control plane rejected device sync: ", devResp.Error)
-					m.message += fmt.Sprintf(" (Control plane: %s)", devResp.Error)
-				} else {
-					log.Info("Successfully synced device to control plane")
-					m.message += " and synced to control plane"
-					m.refreshCPData()
-				}
-			} else {
-				log.Error("Failed to write DeviceInfo in CP")
-			}
-
-			m.state = stateDeviceManagement
-			m.selectedDeviceIdx = -1
-			return m, nil
-		}
-	}
-
-	m.deviceFailureDomain, cmd = m.deviceFailureDomain.Update(msg)
-	return m, cmd
-}
-
-// DeviceInfo holds device and its location in the config
-type DeviceInfo struct {
-	Device   ctlplfl.Device
-	HvIndex  int
-	DevIndex int
-}
-
-// TreeItem represents a navigable item in the hierarchical configuration tree
-type TreeItem struct {
-	Type       string // "pdu", "rack", "hypervisor", "device"
-	Index      int    // For PDUs and legacy hypervisors
-	UUID       string // For racks, hypervisors in racks, and devices
-	ParentUUID string // For nested items
-	Name       string // Display name
-	Level      int    // Indentation level
-}
-
-// Helper function to get all initialized devices across all hypervisors
 func (m model) getAllInitializedDevices() []DeviceInfo {
 	var devices []DeviceInfo
 	for hvIndex, hv := range m.cpHypervisors {
@@ -3092,16 +2903,10 @@ func (m model) View() string {
 	// Device Management Views
 	case stateDeviceManagement:
 		return m.viewDeviceManagement()
-	case stateDeviceInitialize:
-		return m.viewDeviceInitialize()
-	case stateDeviceEdit:
-		return m.viewDeviceEdit()
 	case stateDeviceView:
 		return m.viewDeviceView()
 	case stateDeviceDelete:
 		return m.viewDeviceDelete()
-	case stateDeviceInitialization:
-		return m.viewDeviceInitialization()
 	case stateDevicePartitioning:
 		return m.viewDevicePartitioning()
 	// Partition Management Views
@@ -4238,160 +4043,6 @@ func (m model) viewDeviceManagement() string {
 	return s.String()
 }
 
-func (m model) viewDeviceInitialize() string {
-	title := titleStyle.Render("Initialize Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
-			s.WriteString(errorStyle.Render(m.message) + "\n\n")
-		} else {
-			s.WriteString(successStyle.Render(m.message) + "\n\n")
-		}
-	}
-
-	if len(m.cpHypervisors) == 0 {
-		s.WriteString("No hypervisors configured.\n")
-		s.WriteString("Please add hypervisors from the main menu first.\n\n")
-		s.WriteString("Press esc to go back")
-		return s.String()
-	}
-
-	s.WriteString("Select hypervisor and device to initialize\n\n")
-
-	// Hypervisor selection
-	cursor := "  "
-	if m.deviceMgmtCursor == 0 {
-		cursor = "▶ "
-	}
-
-	hypervisorText := "Select Hypervisor: "
-	if m.selectedHypervisorIdx >= 0 {
-		hv := m.cpHypervisors[m.selectedHypervisorIdx]
-		hypervisorText += fmt.Sprintf("%s (%s)", hv.ID, formatIPAddresses(hv))
-	} else {
-		hypervisorText += "<none selected>"
-	}
-
-	if m.deviceMgmtCursor == 0 {
-		s.WriteString(selectedItemStyle.Render(cursor+hypervisorText) + "\n\n")
-	} else {
-		s.WriteString(cursor + hypervisorText + "\n\n")
-	}
-
-	// Device selection (only if hypervisor is selected)
-	if m.selectedHypervisorIdx >= 0 {
-		hv := m.cpHypervisors[m.selectedHypervisorIdx]
-
-		cursor = "  "
-		if m.deviceMgmtCursor == 1 {
-			cursor = "▶ "
-		}
-
-		deviceText := "Select Device: "
-		if len(hv.Dev) == 0 {
-			deviceText += "<no devices available>"
-		} else if m.selectedDeviceIdx >= 0 {
-			device := hv.Dev[m.selectedDeviceIdx]
-			deviceText += fmt.Sprintf("%s", device.String())
-		} else {
-			deviceText += "<none selected>"
-		}
-
-		if m.deviceMgmtCursor == 1 {
-			s.WriteString(selectedItemStyle.Render(cursor+deviceText) + "\n\n")
-		} else {
-			s.WriteString(cursor + deviceText + "\n\n")
-		}
-
-		// Initialize button (only if device is selected)
-		if m.selectedDeviceIdx >= 0 && len(hv.Dev) > 0 {
-			device := hv.Dev[m.selectedDeviceIdx]
-
-			cursor = "  "
-			if m.deviceMgmtCursor == 2 {
-				cursor = "▶ "
-			}
-
-			// Check if device is already initialized
-			if device.State == ctlplfl.INITIALIZED {
-				initText := fmt.Sprintf("Device %s is already initialized", device.ID)
-				s.WriteString(cursor + successStyle.Render(initText) + "\n")
-				s.WriteString(fmt.Sprintf("    UUID: %s\n", device.ID))
-				s.WriteString(fmt.Sprintf("    Failure Domain: %s\n", device.FailureDomain))
-			} else {
-				initText := fmt.Sprintf("Initialize Device: %s", device.ID)
-				if m.deviceMgmtCursor == 2 {
-					s.WriteString(selectedItemStyle.Render(cursor+initText) + "\n")
-				} else {
-					s.WriteString(cursor + initText + "\n")
-				}
-			}
-			s.WriteString("\n")
-		}
-	}
-
-	s.WriteString("Controls:\n")
-	s.WriteString("• ↑/↓: Navigate options\n")
-	s.WriteString("• enter/space: Select hypervisor/device or initialize\n")
-	s.WriteString("• esc: Back to device management")
-
-	return s.String()
-}
-
-func (m model) viewDeviceEdit() string {
-	title := titleStyle.Render("Edit Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		s.WriteString(errorStyle.Render(m.message) + "\n\n")
-	}
-
-	initializedDevices := m.getAllInitializedDevices()
-
-	if len(initializedDevices) == 0 {
-		s.WriteString("No initialized devices found.\n")
-		s.WriteString("Please initialize devices first.\n\n")
-		s.WriteString("Press esc to go back")
-		return s.String()
-	}
-
-	s.WriteString("Select device to edit:\n\n")
-
-	for i, deviceInfo := range initializedDevices {
-		cursor := "  "
-		if i == m.selectedDeviceIdx {
-			cursor = "▶ "
-		}
-
-		hv := m.cpHypervisors[deviceInfo.HvIndex]
-		line := fmt.Sprintf("%s%d. %s on %s (%s)", cursor, i+1,
-			deviceInfo.Device.String(), hv.ID, formatIPAddresses(hv))
-
-		if i == m.selectedDeviceIdx {
-			line = selectedItemStyle.Render(line)
-		}
-		s.WriteString(line + "\n")
-
-		// Show device details for selected item
-		if i == m.selectedDeviceIdx {
-			device := deviceInfo.Device
-			details := fmt.Sprintf("    UUID: %s", device.ID)
-			details += fmt.Sprintf(" | Domain: %s", device.FailureDomain)
-			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(details) + "\n")
-		}
-		s.WriteString("\n")
-	}
-
-	s.WriteString("Controls: ↑/↓ navigate, enter edit selected, esc back")
-
-	return s.String()
-}
-
 func (m model) viewDeviceView() string {
 	title := titleStyle.Render("View All Devices")
 
@@ -4592,44 +4243,6 @@ func (m model) viewDeviceDelete() string {
 
 	return s.String()
 }
-
-func (m model) viewDeviceInitialization() string {
-	title := titleStyle.Render("Initialize Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		s.WriteString(errorStyle.Render(m.message) + "\n\n")
-	}
-
-	if m.selectedHypervisorIdx >= 0 && m.selectedDeviceIdx >= 0 {
-		hv := m.cpHypervisors[m.selectedHypervisorIdx]
-		device := hv.Dev[m.selectedDeviceIdx]
-
-		s.WriteString(fmt.Sprintf("Hypervisor: %s (%s)\n", hv.ID, formatIPAddresses(hv)))
-		s.WriteString(fmt.Sprintf("Device: %s\n\n", device.String()))
-
-		s.WriteString("Device initialization will:\n")
-		s.WriteString("• Generate a unique UUID for the device\n")
-		s.WriteString("• Allocate client and server ports from hypervisor range\n")
-		s.WriteString("• Set device path, hypervisor UUID and IP\n")
-		s.WriteString("• Assign failure domain\n")
-		s.WriteString("• Save all information to configuration file\n\n")
-
-		s.WriteString("Failure Domain:\n")
-		s.WriteString(focusedStyle.Render(m.deviceFailureDomain.View()) + "\n\n")
-
-		s.WriteString("Controls: enter to initialize device, esc to cancel")
-	} else {
-		s.WriteString("Invalid device selection\n\n")
-		s.WriteString("Press esc to go back")
-	}
-
-	return s.String()
-}
-
-// Partition Management Methods
 func (m model) updatePartitionManagement(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
