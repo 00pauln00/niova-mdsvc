@@ -102,7 +102,7 @@ func (s *SSHClient) GetDevices() ([]ctlplfl.Device, error) {
 		}
 	}
 
-	lsblkOutput, err := s.RunCommand("lsblk -d -n -o NAME,SIZE,SERIAL,TYPE | grep 'disk'")
+	lsblkOutput, err := s.RunCommand("lsblk -d -n -o ID,NAME,SIZE,SERIAL,TYPE | grep 'disk'")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device list: %v", err)
 	}
@@ -235,27 +235,34 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 	devices := make([]Device, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
 
-	// Updated regex to handle NAME SIZE SERIAL TYPE format, making SERIAL optional
-	re := regexp.MustCompile(`^(\S+)\s+(\S+)\s+(\S*)\s+disk`)
+	// Regex to handle ID NAME SIZE SERIAL TYPE format.
+	// ID may be empty (lsblk pads with spaces), NAME and SIZE are always present,
+	// SERIAL is optional, TYPE is "disk".
+	re := regexp.MustCompile(`^(\S*)\s+(\S+)\s+(\S+)\s+(\S*)\s+disk`)
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 
 		matches := re.FindStringSubmatch(line)
-		if len(matches) >= 4 {
-			name := matches[1]
-			sizeStr := matches[2] // Size string like "1T", "500G", "1.2G", etc.
-			serialNum := matches[3]
+		if len(matches) >= 5 {
+			id := matches[1]
+			name := matches[2]
+			sizeStr := matches[3]
+			serialNum := matches[4]
+
+			if id == "" {
+				id = name
+			}
 
 			// Convert size string to bytes
 			sizeBytes := parseSizeToBytes(sizeStr)
 			log.Info("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)
 
 			devices = append(devices, Device{
-				ID:           name,
+				ID:           id,
 				Name:         name,
 				DevicePath:   "/dev/" + name,
 				Size:         sizeBytes,
