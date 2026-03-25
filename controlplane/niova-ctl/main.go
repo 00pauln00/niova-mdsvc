@@ -274,15 +274,12 @@ type deviceItem struct {
 	selected bool
 }
 
-func (d deviceItem) Title() string { return d.device.ID }
+func (d deviceItem) Title() string { return d.device.Name }
 func (d deviceItem) Description() string {
-	if d.device.ID != "" {
-		return fmt.Sprintf("ID: %s", d.device.ID)
-	}
-	return fmt.Sprintf("Device: /dev/%s", d.device.ID)
+	return fmt.Sprintf("ID: %s", d.device.ID)
 }
 
-func (d deviceItem) FilterValue() string { return d.device.ID }
+func (d deviceItem) FilterValue() string { return d.device.Name }
 
 type deviceDiscoveredMsg struct {
 	devices []ctlplfl.Device
@@ -3234,8 +3231,11 @@ func (m model) viewDeviceSelection() string {
 			selection = "✓"
 		}
 
-		deviceInfo := dev.String()
-		line := fmt.Sprintf("%s[%s] %d. %s", cursor, selection, actualIndex+1, deviceInfo)
+		sizeStr := fmt.Sprintf("%.1f GB", float64(dev.Size)/(1024*1024*1024))
+		if dev.Size >= 1024*1024*1024*1024 {
+			sizeStr = fmt.Sprintf("%.1f TB", float64(dev.Size)/(1024*1024*1024*1024))
+		}
+		line := fmt.Sprintf("%s[%s] %d. %s (%s)", cursor, selection, actualIndex+1, dev.Name, sizeStr)
 
 		if i == m.deviceCursor {
 			line = selectedItemStyle.Render(line)
@@ -3243,24 +3243,14 @@ func (m model) viewDeviceSelection() string {
 
 		s.WriteString(line + "\n")
 
-		// Show device details
-		if dev.ID != "" {
-			desc := fmt.Sprintf("    ID: %s", dev.ID)
-			if i == m.deviceCursor {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(desc)
-			} else {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).Render(desc)
-			}
-			s.WriteString(desc + "\n")
+		// Show device ID as detail
+		desc := fmt.Sprintf("    ID: %s", dev.ID)
+		if i == m.deviceCursor {
+			desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(desc)
 		} else {
-			desc := fmt.Sprintf("    Device: /dev/%s", dev.ID)
-			if i == m.deviceCursor {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(desc)
-			} else {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).Render(desc)
-			}
-			s.WriteString(desc + "\n")
+			desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).Render(desc)
 		}
+		s.WriteString(desc + "\n")
 		s.WriteString("\n")
 	}
 
@@ -4143,7 +4133,7 @@ func (m model) viewDeviceView() string {
 		}
 
 		// Header line
-		headerLine := fmt.Sprintf("%s%d. %s %s on %s", cursor, i+1, device.ID, status, deviceInfo.HvName)
+		headerLine := fmt.Sprintf("%s%d. %s %s on %s", cursor, i+1, device.Name, status, deviceInfo.HvName)
 		if device.Size != 0 {
 			headerLine += fmt.Sprintf(" (%s)", formatBytes(device.Size))
 		}
@@ -4160,7 +4150,7 @@ func (m model) viewDeviceView() string {
 				s.WriteString(fmt.Sprintf("    Device UUID: %s\n", device.ID))
 			}
 			if device.Name != "" && device.Name != device.ID {
-				s.WriteString(fmt.Sprintf("    Hardware Name: %s\n", device.Name))
+				s.WriteString(fmt.Sprintf("    Device Name: %s\n", device.Name))
 			}
 			if device.SerialNumber != "" {
 				s.WriteString(fmt.Sprintf("    Serial Number: %s\n", device.SerialNumber))
