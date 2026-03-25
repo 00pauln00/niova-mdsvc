@@ -61,7 +61,7 @@ const (
 	stateDeviceDelete
 	stateDeviceInitialization
 	stateDevicePartitioning
-	stateInitializeDeviceForm
+	stateInitializeDeviceForm // deprecated: device initialization now happens implicitly in Add Hypervisor
 	// Partition Management States
 	statePartitionManagement
 	statePartitionCreate
@@ -966,8 +966,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateDeviceInitialization(msg)
 	case stateDevicePartitioning:
 		m, cmd = m.updateDevicePartitioning(msg)
-	case stateInitializeDeviceForm:
-		m, cmd = m.updateInitializeDeviceForm(msg)
 	// Partition Management
 	case statePartitionManagement:
 		m, cmd = m.updatePartitionManagement(msg)
@@ -1921,7 +1919,7 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					selDev := m.discoveredDevs[i]
 					log.Info("Discovered device: ", selDev)
 					selDev.HypervisorID = m.currentHv.ID
-					selDev.State = ctlplfl.UNINITIALIZED
+					selDev.State = ctlplfl.INITIALIZED
 					selectedDevices = append(selectedDevices, selDev)
 				}
 			}
@@ -1944,12 +1942,38 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					m.message = fmt.Sprintf("Failed to add hypervisor: %s", hvResp.Error)
 					return m, nil
 				}
+				// Immediately initialize devices in the control plane
+				deviceErrors := 0
+				for _, dev := range selectedDevices {
+					deviceInfo := Device{
+						ID:            dev.ID,
+						Name:          dev.Name,
+						DevicePath:    dev.DevicePath,
+						SerialNumber:  dev.SerialNumber,
+						State:         ctlplfl.INITIALIZED,
+						Size:          dev.Size,
+						HypervisorID:  m.currentHv.ID,
+						FailureDomain: dev.FailureDomain,
+						UserToken:     m.userToken(),
+					}
+					validateDeviceInfo(&deviceInfo)
+					devResp, err := m.cpClient.PutDevice(&deviceInfo)
+					if err != nil {
+						log.Warn("Failed to initialize device in control plane: ", err)
+						deviceErrors++
+					} else if devResp != nil && !devResp.Success {
+						log.Warn("Control plane rejected device init: ", devResp.Error)
+						deviceErrors++
+					}
+				}
 				m.refreshCPData()
-				m.message = fmt.Sprintf("Added hypervisor %s with %d devices", m.currentHv.ID, len(selectedDevices))
+				if deviceErrors > 0 {
+					m.message = fmt.Sprintf("Added hypervisor %s with %d devices (%d device(s) failed to initialize)", m.currentHv.ID, len(selectedDevices), deviceErrors)
+				} else {
+					m.message = fmt.Sprintf("Added hypervisor %s with %d devices", m.currentHv.ID, len(selectedDevices))
+				}
 			}
-			// Replace discovered devices with only the selected ones so unselected
-			// devices don't appear in Initialize Devices
-			m.discoveredDevs = selectedDevices
+			m.discoveredDevs = nil
 			m.state = stateShowAddedHypervisor
 			return m, nil
 		}
@@ -2122,19 +2146,13 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.deviceMgmtCursor--
 			}
 		case "down", "j":
-			maxItems := 2 // Initialize Device, View Device
+			maxItems := 1 // View Device
 			if m.deviceMgmtCursor < maxItems-1 {
 				m.deviceMgmtCursor++
 			}
 		case "enter", " ":
 			switch m.deviceMgmtCursor {
-			case 0: // Initialize Device
-				m.state = stateInitializeDeviceForm
-				m.selectedHypervisorIdx = -1
-				m.selectedDeviceIdx = -1
-				m.message = ""
-				return m, nil
-			case 1: // View Device
+			case 0: // View Device
 				m.state = stateDeviceView
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
@@ -3086,8 +3104,6 @@ func (m model) View() string {
 		return m.viewDeviceInitialization()
 	case stateDevicePartitioning:
 		return m.viewDevicePartitioning()
-	case stateInitializeDeviceForm:
-		return m.viewInitializeDeviceForm()
 	// Partition Management Views
 	case statePartitionManagement:
 		return m.viewPartitionManagement()
@@ -4186,7 +4202,6 @@ func (m model) viewDeviceManagement() string {
 	s.WriteString("Select a device management option:\n\n")
 
 	managementItems := []string{
-		"Initialize Device - Write device info to Control Plane",
 		"View Device - Display device details and status",
 	}
 
@@ -9132,197 +9147,6 @@ func validateDeviceInfo(device *ctlplfl.Device) {
 	if device.FailureDomain == "" {
 		device.FailureDomain = "default"
 	}
-}
-
-// updateInitializeDeviceForm handles the Initialize Device form
-func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
-	// Check if control plane is connected
-	if m.cpClient == nil || !m.cpConnected {
-		m.message = "Control plane not connected. Please connect to control plane first."
-		m.state = stateDeviceManagement
-		return m, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			m.state = stateDeviceManagement
-			m.message = ""
-			return m, nil
-		case "enter", " ":
-			// Call PutDevice for all devices
-			deviceCount := 0
-			errorCount := 0
-
-			// Initialize configured devices
-			for _, hv := range m.cpHypervisors {
-				for _, device := range hv.Dev {
-					deviceInfo := ctlplfl.Device{
-						ID:            device.ID,
-						Name:          device.Name,
-						DevicePath:    device.DevicePath,
-						SerialNumber:  device.SerialNumber,
-						State:         ctlplfl.INITIALIZED, // Default status
-						Size:          device.Size,
-						HypervisorID:  hv.ID,
-						FailureDomain: device.FailureDomain,
-						UserToken:     m.userToken(),
-					}
-
-					// Validate and fix device info
-					validateDeviceInfo(&deviceInfo)
-
-					log.Info("Sending device to CP - ID: ", deviceInfo.ID,
-						", Name: ", deviceInfo.Name,
-						", Path: ", deviceInfo.DevicePath,
-						", Size: ", deviceInfo.Size,
-						", Serial: ", deviceInfo.SerialNumber,
-						", HV: ", deviceInfo.HypervisorID)
-
-					devResp, err := m.cpClient.PutDevice(&deviceInfo)
-					if err != nil {
-						log.Warn("Failed to initialize device in control plane: ", err)
-						errorCount++
-					} else if devResp != nil && !devResp.Success {
-						log.Warn("Control plane rejected device init: ", devResp.Error)
-						errorCount++
-					} else {
-						deviceCount++
-					}
-				}
-			}
-
-			// Initialize discovered devices if any
-			if len(m.discoveredDevs) > 0 && m.currentHv.ID != "" {
-				for _, device := range m.discoveredDevs {
-					deviceInfo := ctlplfl.Device{
-						ID:            device.ID,
-						Name:          device.Name,
-						DevicePath:    device.DevicePath,
-						SerialNumber:  device.SerialNumber,
-						State:         ctlplfl.INITIALIZED, // Default status
-						Size:          device.Size,
-						HypervisorID:  m.currentHv.ID,
-						FailureDomain: device.FailureDomain,
-						UserToken:     m.userToken(),
-					}
-
-					// Validate and fix device info
-					validateDeviceInfo(&deviceInfo)
-
-					log.Info("Sending device to CP - ID: ", deviceInfo.ID,
-						", Name: ", deviceInfo.Name,
-						", Path: ", deviceInfo.DevicePath,
-						", Size: ", deviceInfo.Size,
-						", Serial: ", deviceInfo.SerialNumber,
-						", HV: ", deviceInfo.HypervisorID)
-
-					devResp, err := m.cpClient.PutDevice(&deviceInfo)
-					if err != nil {
-						log.Warn("Failed to initialize discovered device in control plane: ", err)
-						errorCount++
-					} else if devResp != nil && !devResp.Success {
-						log.Warn("Control plane rejected discovered device init: ", devResp.Error)
-						errorCount++
-					} else {
-						deviceCount++
-					}
-				}
-			}
-
-			if errorCount > 0 {
-				m.message = fmt.Sprintf("Initialized %d devices with %d errors", deviceCount, errorCount)
-			} else {
-				m.message = fmt.Sprintf("Successfully initialized %d devices in control plane", deviceCount)
-			}
-			m.refreshCPData()
-
-			m.state = stateDeviceManagement
-			return m, nil
-		}
-	}
-	return m, nil
-}
-
-// viewInitializeDeviceForm displays the Initialize Device form
-func (m model) viewInitializeDeviceForm() string {
-	title := titleStyle.Render("Initialize Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
-			s.WriteString(errorStyle.Render(m.message) + "\n\n")
-		} else {
-			s.WriteString(successStyle.Render(m.message) + "\n\n")
-		}
-	}
-
-	// Check if control plane is connected
-	if m.cpClient == nil || !m.cpConnected {
-		s.WriteString(errorStyle.Render("Control plane not connected. Please connect to control plane first.") + "\n\n")
-		s.WriteString(helpStyle.Render("esc: back to Device Management"))
-		return s.String()
-	}
-
-	// Count devices from both local config and discovered devices
-	deviceCount := 0
-	for _, hv := range m.cpHypervisors {
-		deviceCount += len(hv.Dev)
-	}
-
-	// Also check if there are any discovered devices not yet in config
-	if len(m.discoveredDevs) > 0 {
-		s.WriteString("Note: Found discovered devices that can be initialized.\n\n")
-	}
-
-	if deviceCount == 0 && len(m.discoveredDevs) == 0 {
-		s.WriteString("This function initializes devices to the Control Plane.\n\n")
-		s.WriteString("Options:\n")
-		s.WriteString("• Use Hypervisor Management → Device Discovery to find devices\n")
-		s.WriteString("• Manually configure devices in hypervisor settings\n\n")
-		s.WriteString("Current status:\n")
-		s.WriteString(fmt.Sprintf("• Configured devices: %d\n", deviceCount))
-		s.WriteString(fmt.Sprintf("• Discovered devices: %d\n", len(m.discoveredDevs)))
-		s.WriteString("\n" + helpStyle.Render("esc: back to Device Management"))
-		return s.String()
-	}
-
-	totalDevices := deviceCount + len(m.discoveredDevs)
-	s.WriteString(fmt.Sprintf("This will initialize %d devices to the Control Plane using PutDevice().\n\n", totalDevices))
-
-	// Show device summary
-	s.WriteString("Devices to be initialized:\n")
-
-	// Show configured devices
-	for _, hv := range m.cpHypervisors {
-		if len(hv.Dev) > 0 {
-			s.WriteString(fmt.Sprintf("\nHypervisor: %s (%s) - Configured Devices\n", hv.Name, hv.ID))
-			for _, device := range hv.Dev {
-				status := "✓"
-				if device.State != ctlplfl.INITIALIZED {
-					status = "○"
-				}
-				s.WriteString(fmt.Sprintf("  %s %s - %s (Size: %d GB)\n",
-					status, device.Name, device.ID, device.Size/(1024*1024*1024)))
-			}
-		}
-	}
-
-	// Show discovered devices
-	if len(m.discoveredDevs) > 0 && m.currentHv.ID != "" {
-		s.WriteString(fmt.Sprintf("\nHypervisor: %s (%s) - Discovered Devices\n", m.currentHv.Name, m.currentHv.ID))
-		for _, device := range m.discoveredDevs {
-			s.WriteString(fmt.Sprintf("  ○ %s - %s (Size: %d GB) [Discovered]\n",
-				device.Name, device.ID, device.Size/(1024*1024*1024)))
-		}
-	}
-
-	s.WriteString("\n" + helpStyle.Render("enter: Initialize all devices, esc: back to Device Management"))
-
-	return s.String()
 }
 
 func main() {
