@@ -1960,9 +1960,9 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 						Size:          dev.Size,
 						HypervisorID:  m.currentHv.ID,
 						FailureDomain: dev.FailureDomain,
-						UserToken:     m.userToken(),
 					}
 					validateDeviceInfo(&deviceInfo)
+					m.cpClient.SetToken(m.userToken())
 					devResp, err := m.cpClient.PutDevice(&deviceInfo)
 					if err != nil {
 						log.Warn("Failed to initialize device in control plane: ", err)
