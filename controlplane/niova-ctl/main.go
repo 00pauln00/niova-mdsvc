@@ -8896,9 +8896,11 @@ func (m model) viewVdevCreationSummary() string {
 	if successCount > 0 {
 		s.WriteString("✓ Successfully created:\n")
 		for i, vdev := range m.createdVdevs {
-			s.WriteString(fmt.Sprintf("%d. Vdev ID: %s\n", i+1, vdev.ID))
-			s.WriteString(fmt.Sprintf("   Size: %s (%d bytes)\n", formatSize(vdev.Size), vdev.Size))
-			s.WriteString(fmt.Sprintf("   Status: Active\n\n"))
+			s.WriteString(fmt.Sprintf("%d. Name:   %s\n", i+1, vdev.Name))
+			s.WriteString(fmt.Sprintf("   Vdev ID: %s\n", vdev.ID))
+			s.WriteString(fmt.Sprintf("   Size:    %s (%d bytes)\n", formatSize(vdev.Size), vdev.Size))
+			s.WriteString(fmt.Sprintf("   Chunks:  %d\n", vdev.NumChunks))
+			s.WriteString(fmt.Sprintf("   Status:  Active\n\n"))
 		}
 	}
 
