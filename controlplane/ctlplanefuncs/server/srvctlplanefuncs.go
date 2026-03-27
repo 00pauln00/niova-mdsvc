@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
@@ -90,8 +89,6 @@ const (
 	hvKey        = "hv"
 	ptKey        = "pt"
 	argsKey      = "na"
-
-	ENC_TYPE = pmCmn.GOB
 )
 
 // TokenClaims holds user identity extracted from a verified JWT.
@@ -174,10 +171,11 @@ func ReadSnapByName(args ...interface{}) (interface{}, error) {
 	readResult, err := cbargs.Store.Read(key, colmfamily)
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
-	return readResult, nil
+	log.Debugf("ReadSnapByName: returning snap data for key %s", key)
+	return ctlplfl.EncodeResponse(readResult)
 }
 
 func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
@@ -196,17 +194,18 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	readResult, err := cbArgs.Store.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
-	log.Info("Read result by Vdev", readResult)
+	log.Tracef("ReadSnapForVdev: range read returned %d results for vdev %s", len(readResult.ResultMap), Snap.Vdev)
 	for key, _ := range readResult.ResultMap {
 		c := strings.Split(key, "/")
 
 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
 		seq, err := strconv.ParseUint(c[len(c)-1], 10, 64)
 		if err != nil {
-			return nil, err
+			log.Errorf("ReadSnapForVdev: failed to parse chunk index/seq from key %q: %v", key, err)
+			return ctlplfl.FuncError(err)
 		}
 
 		Snap.Chunks = append(Snap.Chunks, ctlplfl.ChunkXML{
@@ -215,7 +214,8 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	return pmCmn.Encoder(pmCmn.GOB, Snap)
+	log.Debugf("ReadSnapForVdev: returning snap info for vdev %s with %d chunks", Snap.Vdev, len(Snap.Chunks))
+	return ctlplfl.EncodeResponse(Snap)
 }
 
 func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
@@ -249,16 +249,10 @@ func WritePrepCreateSnap(args ...interface{}) (interface{}, error) {
 		},
 	}
 
-	r, err := pmCmn.Encoder(pmCmn.GOB, snapResponse)
-	if err != nil {
-		log.Error("Failed to marshal snapshot response: ", err)
-		return nil, fmt.Errorf("failed to marshal snapshot response: %v", err)
-	}
-
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: snapResponse,
 	}
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
@@ -305,16 +299,27 @@ func ApplyFunc(args ...interface{}) (interface{}, error) {
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
 	if err != nil {
 		log.Error("Failed to decode the apply changes: ", err)
-		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
+		return ctlplfl.FuncError(fmt.Errorf("failed to decode apply changes: %v", err))
+	}
+
+	// Write-prep stored a CPResp directly (e.g. auth failure); forward it as-is.
+	if cpResp, ok := intrm.Response.(ctlplfl.CPResp); ok && cpResp.Error != nil {
+		log.Debugf("ApplyFunc: forwarding write-prep error response: %s", cpResp.Error.Message)
+		return pmCmn.Encoder(pmCmn.GOB, cpResp)
 	}
 
 	err = applyKV(intrm.Changes, cbargs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
-	return intrm.Response, nil
+	resp, err := ctlplfl.EncodeResponse(intrm.Response)
+	if err != nil {
+		log.Error("Failed to encode response: ", err)
+		return ctlplfl.FuncError(fmt.Errorf("failed to encode response: %v", err))
+	}
+	return resp, nil
 }
 
 func ApplyNisd(args ...interface{}) (interface{}, error) {
@@ -322,24 +327,24 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 	cbargs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
 	if !ok {
 		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
-		log.Error("ApplyNisd: invalid cbargs argument:", err)
-		return nil, err
+		log.Errorf("ApplyNisd: %v", err)
+		return ctlplfl.FuncError(err)
 	}
-
-	log.Debugf("ApplyNisd: received cbargs | AppDataSize=%d", cbargs.AppDataSize)
-
-	// Extract NISD request
-	nisd, ok := args[0].(ctlplfl.Nisd)
+	cpReq, ok := args[0].(ctlplfl.CPReq)
 	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type Nisd")
-		log.Error("ApplyNisd: invalid nisd argument:", err)
-		return nil, err
+		err := fmt.Errorf("invalid argument: expecting type CPReq")
+		log.Errorf("ApplyNisd: %v", err)
+		return ctlplfl.FuncError(err)
 	}
-
-	// Authorization check
-	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "ApplyNisd"); err != nil {
-		log.Error("ApplyNisd: RBAC authorization failed for NISD:", nisd.ID, " error:", err)
-		return nil, err
+	nisd, ok := cpReq.Payload.(ctlplfl.Nisd)
+	if !ok {
+		err := fmt.Errorf("invalid payload: expecting type Nisd")
+		log.Errorf("ApplyNisd: %v", err)
+		return ctlplfl.FuncError(err)
+	}
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ApplyNisd"); err != nil {
+		log.Errorf("ApplyNisd: auth/RBAC failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 
 	log.Debugf("ApplyNisd: RBAC authorization successful for NISD=%s", nisd.ID)
@@ -350,8 +355,8 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 
 	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
 	if err != nil {
-		log.Error("ApplyNisd: failed to decode apply changes:", err)
-		return nil, fmt.Errorf("failed to decode apply changes: %v", err)
+		log.Error("Failed to decode the apply changes: ", err)
+		return ctlplfl.FuncError(fmt.Errorf("failed to decode apply changes: %v", err))
 	}
 
 	log.Debugf("ApplyNisd: decoded intermediate changes | numChanges=%d", len(intrm.Changes))
@@ -359,8 +364,8 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 	// Apply KV changes to the store
 	err = applyKV(intrm.Changes, cbargs.Store)
 	if err != nil {
-		log.Error("ApplyNisd: applyKV failed:", err)
-		return nil, err
+		log.Error("applyKV(): ", err)
+		return ctlplfl.FuncError(err)
 	}
 
 	log.Debugf("ApplyNisd: KV changes successfully applied for NISD=%s", nisd.ID)
@@ -372,19 +377,22 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	log.Debugf("ApplyNisd completed successfully for NISD=%s, %s", nisd.ID, string(intrm.Response))
-
-	// Return previously prepared response
-	return intrm.Response, nil
+	resp, err := ctlplfl.EncodeResponse(intrm.Response)
+	if err != nil {
+		log.Error("Failed to encode response: ", err)
+		return ctlplfl.FuncError(fmt.Errorf("failed to encode response: %v", err))
+	}
+	return resp, nil
 }
 
 // TODO: This method needs to be tested
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
 
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadAllNisdConfigs"); err != nil {
-		return nil, err
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadAllNisdConfigs"); err != nil {
+		log.Errorf("ReadAllNisdConfigs: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	log.Trace("fetching nisd details for key : ", NisdCfgKey)
 	rrargs := storageiface.RangeReadArgs{
@@ -397,21 +405,25 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	readResult, err := cbArgs.Store.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
-	return pmCmn.Encoder(pmCmn.GOB, nisdList)
+	log.Debugf("ReadAllNisdConfigs: returning %d nisd configs", len(nisdList))
+	return ctlplfl.EncodeResponse(nisdList)
 }
 
 func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	if err := req.ValidateRequest(); err != nil {
-		return nil, err
+		log.Errorf("ReadNisdConfig: invalid request: %v", err)
+		return ctlplfl.AuthError(err)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadNisdConfig"); err != nil {
-		return nil, err
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadNisdConfig"); err != nil {
+		log.Errorf("ReadNisdConfig: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	key := getConfKey(NisdCfgKey, req.ID)
 	log.Trace("fetching nisd details for key : ", key)
@@ -425,10 +437,11 @@ func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	readResult, err := cbArgs.Store.RangeRead(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
-	return pmCmn.Encoder(pmCmn.GOB, nisdList[0])
+	log.Debugf("ReadNisdConfig: returning nisd config for key %s", key)
+	return ctlplfl.EncodeResponse(nisdList[0])
 }
 
 func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
@@ -446,21 +459,17 @@ func getNisdList(cbArgs *PumiceDBServer.PmdbCbArgs) ([]ctlplfl.Nisd, error) {
 	nisdList := ParseEntities[ctlplfl.Nisd](readResult.ResultMap, NisdParser{})
 	return nisdList, nil
 }
-func WPNisdCfg(args ...interface{}) (interface{}, error) {
-	// Extract NISD object from arguments
-	nisd := args[0].(ctlplfl.Nisd)
-	log.Debug("WPNisdCfg request received for NISD:", nisd.ID)
 
-	// Validate the NISD configuration before processing
+func WPNisdCfg(args ...interface{}) (interface{}, error) {
+	cpReq := args[0].(ctlplfl.CPReq)
+	nisd := cpReq.Payload.(ctlplfl.Nisd)
 	if err := nisd.Validate(); err != nil {
 		log.Error("WPNisdCfg validation failed for NISD:", nisd.ID, " error:", err)
-		return ctlplfl.SendErrorResponse(nisd.ID, err)
+		return ctlplfl.WPFuncError(err)
 	}
-
-	// Perform RBAC authorization for the request
-	if _, err := validateAndAuthorizeRBAC(nisd.UserToken, "WPNisdCfg"); err != nil {
-		log.Error("WPNisdCfg RBAC authorization failed for NISD:", nisd.ID, " error:", err)
-		return ctlplfl.SendErrorResponse(nisd.ID, err)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPNisdCfg"); err != nil {
+		log.Errorf("WPNisdCfg: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 
 	log.Debug("WPNisdCfg authorization successful for NISD:", nisd.ID)
@@ -475,17 +484,9 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 		Success: true,
 	}
 
-	// Encode the response using GOB
-	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
-	if err != nil {
-		log.Error("WPNisdCfg failed to encode response for NISD:", nisd.ID, " error:", err)
-		return ctlplfl.SendErrorResponse(nisd.ID, fmt.Errorf("failed to encode nisd response: %v", err))
-	}
-
-	// Prepare intermediate function structure containing changes and encoded response
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: nisdResponse,
 	}
 
 	log.Debug("WPNisdCfg successfully prepared response for NISD:", nisd.ID)
@@ -496,9 +497,11 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 
 func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdDeviceInfo"); err != nil {
-		return nil, err
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "RdDeviceInfo"); err != nil {
+		log.Errorf("RdDeviceInfo: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	key := getConfKey(deviceCfgKey, req.ID)
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -510,27 +513,25 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	deviceList := ParseEntities[ctlplfl.Device](readResult.ResultMap, deviceWithPartitionParser{})
-	return pmCmn.Encoder(pmCmn.GOB, deviceList)
+	log.Debugf("RdDeviceInfo: returning device info for key %s", key)
+	return ctlplfl.EncodeResponse(deviceList)
 }
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
-	dev := args[0].(ctlplfl.Device)
-	if _, err := validateAndAuthorizeRBAC(dev.UserToken, "WPDeviceInfo"); err != nil {
-		return nil, err
+	cpReq := args[0].(ctlplfl.CPReq)
+	dev := cpReq.Payload.(ctlplfl.Device)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPDeviceInfo"); err != nil {
+		log.Errorf("WPDeviceInfo: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 	nisdResponse := ctlplfl.ResponseXML{
 		Name:    dev.ID,
 		Success: true,
 	}
 
-	r, err := pmCmn.Encoder(pmCmn.GOB, nisdResponse)
-	if err != nil {
-		log.Error("Failed to marshal nisd response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-	}
 	commitChgs := PopulateEntities[*ctlplfl.Device](&dev, devicePopulator{}, deviceCfgKey)
 	for _, pt := range dev.Partitions {
 		ptCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, dev.ID, ptKey))
@@ -540,7 +541,7 @@ func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: nisdResponse,
 	}
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
@@ -568,20 +569,28 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commi
 func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	// Decode the input buffer into structure format
-	req, ok := args[0].(ctlplfl.VdevReq)
+	cpReq, ok := args[0].(ctlplfl.CPReq)
 	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type vdev")
-		return nil, err
+		err := fmt.Errorf("invalid argument: expecting type CPReq")
+		log.Errorf("WPCreateVdev: %v", err)
+		return ctlplfl.WPFuncError(err)
 	}
-	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPCreateVdev")
+	req, ok := cpReq.Payload.(ctlplfl.VdevReq)
+	if !ok {
+		err := fmt.Errorf("invalid payload: expecting type VdevReq")
+		log.Errorf("WPCreateVdev: %v", err)
+		return ctlplfl.WPFuncError(err)
+	}
+	tc, err := validateAndAuthorizeRBAC(cpReq.Token, "WPCreateVdev")
 	if err != nil {
-		return nil, err
+		log.Errorf("WPCreateVdev: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 
 	err = req.Vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
-		return nil, err
+		return ctlplfl.WPFuncError(err)
 	}
 	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, tc.UserID)
 	key := getConfKey(vdevKey, req.Vdev.ID)
@@ -611,15 +620,12 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	})
 	log.Infof("added ownership key: %s for vdev: %s", ownershipKey, req.Vdev.ID)
 
-	r, err := pmCmn.Encoder(pmCmn.GOB, req)
-	if err != nil {
-		log.Error("Failed to marshal vdev response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-	}
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
-		Changes:  commitChgs,
-		Response: r,
+		Changes: commitChgs,
+		Response: ctlplfl.ResponseXML{
+			ID: req.Vdev.ID,
+		},
 	}
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
@@ -797,36 +803,49 @@ func applyNISDAlloc(allocMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) {
 
 // Creates a VDEV, allocates the NISD and updates the PMDB with new data
 func APCreateVdev(args ...interface{}) (interface{}, error) {
-	var req ctlplfl.VdevReq
-	var funcIntrm funclib.FuncIntrm
-	resp := ctlplfl.ResponseXML{
-		Name:    "vdev",
-		Success: false,
+	log.Info("APCreateVdev called")
+	cpreq, ok1 := args[0].(ctlplfl.CPReq)
+	req, ok2 := cpreq.Payload.(ctlplfl.VdevReq)
+	cbArgs, ok3 := args[1].(*PumiceDBServer.PmdbCbArgs)
+	if !ok1 || !ok2 || !ok3 {
+		err := fmt.Errorf("invalid argument to the APCreateVdev srvctl function")
+		log.Errorf("APCreateVdev: %v", err)
+		return ctlplfl.InternalError(err)
 	}
-	cbArgs, ok := args[1].(*PumiceDBServer.PmdbCbArgs)
-	if !ok {
-		err := fmt.Errorf("invalid argument: expecting type PmdbCbArgs")
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-	fnI := unsafe.Slice((*byte)(cbArgs.AppData), int(cbArgs.AppDataSize))
-	pmCmn.Decoder(pmCmn.GOB, fnI, &funcIntrm)
-	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &req)
-	log.Infof("allocating vdev for ID: %s", req.Vdev.ID)
-	resp.ID = req.Vdev.ID
 	allocMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	defer allocMap.Clear()
 	HR.Dump()
-	// allocate nisd chunks to vdev
-	if err := AllocNISDs(&req, allocMap, &funcIntrm); err != nil {
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
+
+	var intrm funclib.FuncIntrm
+	buf := C.GoBytes(cbArgs.AppData, C.int(cbArgs.AppDataSize))
+	err := pmCmn.Decoder(pmCmn.GOB, buf, &intrm)
+	if err != nil {
+		log.Error("Failed to decode the apply changes: ", err)
+		return ctlplfl.FuncError(fmt.Errorf("failed to decode apply changes: %v", err))
+	}
+	// Write-prep stored a CPResp directly (e.g. auth failure); forward it as-is.
+	if cpResp, ok := intrm.Response.(ctlplfl.CPResp); ok && cpResp.Error != nil {
+		log.Debugf("APCreateVdev: forwarding write-prep error response: %s", cpResp.Error.Message)
+		return pmCmn.Encoder(pmCmn.GOB, cpResp)
+	}
+	resp, ok4 := intrm.Response.(ctlplfl.ResponseXML)
+	if !ok4 {
+		log.Errorf("APCreateVdev: invalid response type in decoded intermediate data")
+		return ctlplfl.FuncError(fmt.Errorf("invalid response type"))
+	}
+
+	req.Vdev.ID = resp.ID
+	req.Vdev.NumChunks = uint32(ctlplfl.Count8GBChunks(req.Vdev.Size))
+	if err := AllocNISDs(&req, allocMap, &intrm); err != nil {
+		log.Errorf("APCreateVdev: NISD allocation failed for vdev %s: %v", req.Vdev.ID, err)
+		return ctlplfl.FuncError(err)
 	}
 
 	resp.Success = true
 
-	if err := commitAllocChgs(&funcIntrm, allocMap, cbArgs); err != nil {
-		return nil, err
+	if err := commitAllocChgs(&intrm, allocMap, cbArgs); err != nil {
+		log.Errorf("APCreateVdev: failed to commit allocation changes for vdev %s: %v", req.Vdev.ID, err)
+		return ctlplfl.FuncError(err)
 	}
 
 	applyNISDAlloc(allocMap)
@@ -834,41 +853,41 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	log.Infof("vdev %s, request successfully processed", req.Vdev.ID)
 	HR.Dump()
 
-	return pmCmn.Encoder(pmCmn.GOB, resp)
+	return ctlplfl.EncodeResponse(resp)
 }
 
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
-	pt := args[0].(ctlplfl.DevicePartition)
-	if _, err := validateAndAuthorizeRBAC(pt.UserToken, "WPCreatePartition"); err != nil {
-		return nil, err
+	cpReq := args[0].(ctlplfl.CPReq)
+	pt := cpReq.Payload.(ctlplfl.DevicePartition)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPCreatePartition"); err != nil {
+		log.Errorf("WPCreatePartition: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    pt.PartitionID,
 		Success: true,
-	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode pt response: %v", err)
 	}
 	commitChgs := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, ptKey)
 	devPTCommits := PopulateEntities[*ctlplfl.DevicePartition](&pt, partitionPopulator{}, fmt.Sprintf("%s/%s/%s", deviceCfgKey, pt.DevID, ptKey))
 	commitChgs = append(commitChgs, devPTCommits...)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: resp,
 	}
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
 func ReadPartition(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	key := ptKey
 	if !req.GetAll {
 		key = getConfKey(ptKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPartition"); err != nil {
-		return nil, err
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadPartition"); err != nil {
+		log.Errorf("ReadPartition: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -878,29 +897,28 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	pt := ParseEntities[ctlplfl.DevicePartition](readResult.ResultMap, ptParser{})
-	return pmCmn.Encoder(pmCmn.GOB, pt)
+	log.Debugf("ReadPartition: returning %d partition(s) for key %s", len(pt), key)
+	return ctlplfl.EncodeResponse(pt)
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
-	pdu := args[0].(ctlplfl.PDU)
-	if _, err := validateAndAuthorizeRBAC(pdu.UserToken, "WPPDUCfg"); err != nil {
-		return nil, err
+	cpReq := args[0].(ctlplfl.CPReq)
+	pdu := cpReq.Payload.(ctlplfl.PDU)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPPDUCfg"); err != nil {
+		log.Errorf("WPPDUCfg: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    pdu.ID,
 		Success: true,
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to  encode pdu response: %v", err)
-	}
 	commitChgs := PopulateEntities[*ctlplfl.PDU](&pdu, pduPopulator{}, pduKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: resp,
 	}
 
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
@@ -908,13 +926,15 @@ func WPPDUCfg(args ...interface{}) (interface{}, error) {
 
 func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	key := pduKey
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadPDUCfg"); err != nil {
-		return nil, err
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadPDUCfg"); err != nil {
+		log.Errorf("ReadPDUCfg: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -924,31 +944,30 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	pduList := ParseEntities[ctlplfl.PDU](readResult.ResultMap, pduParser{})
 
-	return pmCmn.Encoder(pmCmn.GOB, pduList)
+	log.Debugf("ReadPDUCfg: returning %d PDU config(s) for key %s", len(pduList), key)
+	return ctlplfl.EncodeResponse(pduList)
 
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
-	rack := args[0].(ctlplfl.Rack)
-	if _, err := validateAndAuthorizeRBAC(rack.UserToken, "WPRackCfg"); err != nil {
-		return nil, err
+	cpReq := args[0].(ctlplfl.CPReq)
+	rack := cpReq.Payload.(ctlplfl.Rack)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPRackCfg"); err != nil {
+		log.Errorf("WPRackCfg: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    rack.ID,
 		Success: true,
 	}
 	commitChgs := PopulateEntities[*ctlplfl.Rack](&rack, rackPopulator{}, rackKey)
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		return nil, err
-	}
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: resp,
 	}
 
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
@@ -957,13 +976,15 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
 
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 	key := rackKey
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadRackCfg"); err != nil {
-		return nil, err
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadRackCfg"); err != nil {
+		log.Errorf("ReadRackCfg: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -973,35 +994,28 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	rackList := ParseEntities[ctlplfl.Rack](readResult.ResultMap, rackParser{})
-	response, err := pmCmn.Encoder(pmCmn.GOB, rackList)
-	if err != nil {
-		log.Error("failed to encode rack info:", err)
-		return nil, fmt.Errorf("failed to encode rack info: %v", err)
-	}
-	return response, nil
+	log.Debugf("ReadRackCfg: returning %d rack config(s) for key %s", len(rackList), key)
+	return ctlplfl.EncodeResponse(rackList)
 }
 
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
-	hv := args[0].(ctlplfl.Hypervisor)
-	if _, err := validateAndAuthorizeRBAC(hv.UserToken, "WPHyperVisorCfg"); err != nil {
-		return nil, err
+	cpReq := args[0].(ctlplfl.CPReq)
+	hv := cpReq.Payload.(ctlplfl.Hypervisor)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPHyperVisorCfg"); err != nil {
+		log.Errorf("WPHyperVisorCfg: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    hv.ID,
 		Success: true,
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		log.Error("Failed to marshal vdev response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd response: %v", err)
-	}
 	commitChgs := PopulateEntities[*ctlplfl.Hypervisor](&hv, hvPopulator{}, hvKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: resp,
 	}
 
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
@@ -1010,14 +1024,16 @@ func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 
 func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 
 	key := hvKey
 	if !req.GetAll {
 		key = getConfKey(hvKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "ReadHyperVisorCfg"); err != nil {
-		return nil, err
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadHyperVisorCfg"); err != nil {
+		log.Errorf("ReadHyperVisorCfg: auth failure: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -1027,34 +1043,37 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
 	hvList := ParseEntities[ctlplfl.Hypervisor](readResult.ResultMap, hvParser{})
 
-	return pmCmn.Encoder(pmCmn.GOB, hvList)
+	log.Debugf("ReadHyperVisorCfg: returning %d hypervisor config(s) for key %s", len(hvList), key)
+	return ctlplfl.EncodeResponse(hvList)
 }
 
 func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
-	tc, err := ValidateToken(req.UserToken)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
+	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
-		return nil, err
+		log.Errorf("ReadVdevsInfoWithChunkMapping: token validation failed: %v", err)
+		return ctlplfl.FuncError(err)
 	}
 	if authorizer != nil {
 		if req.GetAll {
 			// Listing all vdevs with chunk info: admin only, same restriction as ReadAllVdevInfo
 			if !authorizer.Authorize("ReadAllVdevInfo", tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
 				log.Errorf("user %s with role %s not authorized to list all vdevs with chunk info", tc.UserID, tc.Role)
-				return nil, fmt.Errorf("authorization failed: admin required to list all vdevs")
-			}
+				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
+			} // ← add this closing brace
 		} else {
 			// Specific vdev: verify RBAC + ABAC ownership
 			attributes := map[string]string{"vdev": req.ID}
 			if !authorizer.Authorize("ReadVdevsInfoWithChunkMapping", tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
 				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.ID)
-				return nil, fmt.Errorf("authorization failed")
+				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 			}
 		}
 	}
@@ -1072,7 +1091,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	// ParseEntitiesMap now returns map[string]Entity
 	nisdEntityMap := ParseEntitiesMap(nisdResult.ResultMap, NisdParser{})
@@ -1085,7 +1104,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
 	vdevMap := make(map[string]*ctlplfl.Vdev)
@@ -1165,7 +1184,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		}
 	}
 
-	vdevList := make([]*ctlplfl.Vdev, 0, len(vdevMap))
+	vdevList := make([]ctlplfl.Vdev, 0, len(vdevMap))
 	// attach only the nisd chunks that belong to each vdev
 	for vid, v := range vdevMap {
 		if perVdevMap, ok := vdevNisdChunkMap[vid]; ok {
@@ -1173,31 +1192,34 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 				v.NisdToChkMap = append(v.NisdToChkMap, *nc)
 			}
 		}
-		vdevList = append(vdevList, v)
+		vdevList = append(vdevList, *v)
 	}
 
-	return pmCmn.Encoder(ENC_TYPE, vdevList)
+	log.Debugf("ReadVdevsInfoWithChunkMapping: returning %d vdev(s) with chunk info", len(vdevList))
+	return ctlplfl.EncodeResponse(vdevList)
 }
 
 func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 
 	err := req.ValidateRequest()
 	if err != nil {
-		log.Error("failed to validate request:", err)
-		return nil, err
+		log.Errorf("ReadVdevInfo: invalid request: %v", err)
+		return ctlplfl.FuncError(fmt.Errorf("Invalid Request"))
 	}
 
-	tc, err := ValidateToken(req.UserToken)
+	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
-		return nil, err
+		log.Errorf("ReadVdevInfo: token validation failed: %v", err)
+		return ctlplfl.AuthError(fmt.Errorf("Invalid Token"))
 	}
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": req.ID}
 		if !authorizer.Authorize("ReadVdevInfo", tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
 			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
-			return nil, fmt.Errorf("authorization failed")
+			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 		}
 	}
 	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.ID)
@@ -1211,7 +1233,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
 	authtc := &auth.Token{
@@ -1226,7 +1248,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	authtoken, err := authtc.CreateToken(claims)
 	if err != nil {
 		log.Error("Token Creation failed with: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
 
@@ -1260,7 +1282,8 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		}
 
 	}
-	return pmCmn.Encoder(ENC_TYPE, vdevInfo)
+	log.Debugf("ReadVdevInfo: returning vdev config for %s", req.ID)
+	return ctlplfl.EncodeResponse(vdevInfo)
 }
 
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
@@ -1273,30 +1296,33 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
 	// TODO: move this to parsing file
 	vdevList := ParseEntities[ctlplfl.VdevCfg](rqResult.ResultMap, vdevParser{})
-	return pmCmn.Encoder(ENC_TYPE, vdevList)
+	log.Debugf("ReadAllVdevInfo: returning %d vdev(s)", len(vdevList))
+	return ctlplfl.EncodeResponse(vdevList)
 }
 
 func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	cbargs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
 
 	if err := req.ValidateRequest(); err != nil {
 		log.Error("failed to validate request:", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
-	tc, err := ValidateToken(req.UserToken)
+	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
-		return nil, err
+		log.Errorf("ReadChunkNisd: token validation failed: %v", err)
+		return ctlplfl.AuthError(err)
 	}
 	keys := strings.Split(strings.Trim(req.ID, "/"), "/")
 	if len(keys) < 2 {
 		log.Errorf("invalid request ID format %q: expected vdevID/chunkIndex", req.ID)
-		return nil, fmt.Errorf("invalid request ID format: expected vdevID/chunkIndex")
+		return ctlplfl.FuncError(fmt.Errorf("invalid request ID format: expected vdevID/chunkIndex"))
 	}
 	vdevID, chunk := keys[0], keys[1]
 
@@ -1305,7 +1331,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 		attributes := map[string]string{"vdev": vdevID}
 		if !authorizer.Authorize("ReadChunkNisd", tc.UserID, []string{tc.Role}, attributes, cbargs.Store, colmfamily) {
 			log.Errorf("user %s with role %s not authorized to read chunk nisd for vdev %s", tc.UserID, tc.Role, vdevID)
-			return nil, fmt.Errorf("authorization failed")
+			return ctlplfl.AuthError(fmt.Errorf("authorization failed"))
 		}
 	}
 
@@ -1321,7 +1347,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 
 	var ids []string
@@ -1333,28 +1359,26 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 		NumReplicas: uint8(len(rqResult.ResultMap)),
 	}
 
-	return pmCmn.Encoder(ENC_TYPE, chunkInfo)
+	log.Debugf("ReadChunkNisd: returning chunk-nisd info for vdev %s chunk %s", vdevID, chunk)
+	return ctlplfl.EncodeResponse(chunkInfo)
 
 }
 
 func WPNisdArgs(args ...interface{}) (interface{}, error) {
-	nArgs := args[0].(ctlplfl.NisdArgs)
-	if _, err := validateAndAuthorizeRBAC(nArgs.UserToken, "WPNisdArgs"); err != nil {
-		return nil, err
+	cpReq := args[0].(ctlplfl.CPReq)
+	nArgs := cpReq.Payload.(ctlplfl.NisdArgs)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPNisdArgs"); err != nil {
+		log.Errorf("WPNisdArgs: auth failure: %v", err)
+		return ctlplfl.WPAuthError(err)
 	}
 	resp := &ctlplfl.ResponseXML{
 		Name:    "nisd-args",
 		Success: true,
 	}
-	r, err := pmCmn.Encoder(pmCmn.GOB, resp)
-	if err != nil {
-		log.Error("Failed to marshal nisd args response: ", err)
-		return nil, fmt.Errorf("failed to marshal nisd args response: %v", err)
-	}
 	commitChgs := PopulateEntities[*ctlplfl.NisdArgs](&nArgs, nisdArgsPopulator{}, argsKey)
 	funcIntrm := funclib.FuncIntrm{
 		Changes:  commitChgs,
-		Response: r,
+		Response: resp,
 	}
 
 	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
@@ -1362,9 +1386,10 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 
 func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-	req := args[1].(ctlplfl.GetReq)
-	if _, err := validateAndAuthorizeRBAC(req.UserToken, "RdNisdArgs"); err != nil {
-		return nil, err
+	cpReq := args[1].(ctlplfl.CPReq)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "RdNisdArgs"); err != nil {
+		log.Errorf("RdNisdArgs: auth failure: %v", err)
+		return ctlplfl.FuncError(err)
 	}
 	readResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -1374,7 +1399,7 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	})
 	if err != nil {
 		log.Error("Range read failure: ", err)
-		return nil, err
+		return ctlplfl.FuncError(err)
 	}
 	var nisdArgs ctlplfl.NisdArgs
 	for k, v := range readResult.ResultMap {
@@ -1399,47 +1424,9 @@ func RdNisdArgs(args ...interface{}) (interface{}, error) {
 			nisdArgs.AllowDefragMCIBCache, _ = strconv.ParseBool(string(v))
 		}
 	}
-	return pmCmn.Encoder(ENC_TYPE, nisdArgs)
+	log.Debugf("RdNisdArgs: returning nisd args")
+	return ctlplfl.EncodeResponse(nisdArgs)
 
-}
-
-func WPDeleteVdev(args ...interface{}) (interface{}, error) {
-	req := args[0].(ctlplfl.DeleteVdevReq)
-	resp := ctlplfl.ResponseXML{
-		Name: "vdev",
-		ID:   req.ID,
-	}
-	// Step 1: Validate the request fields (e.g. ID must be a valid UUID).
-	err := req.Validate()
-	if err != nil {
-		log.Errorf("WPDeleteVdev: invalid request for vdev %q: %v", req.ID, err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-
-	// Step 2: Authenticate the caller and verify RBAC permissions.
-	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
-	// caller's role is allowed to perform "WPDeleteVdev".
-	tc, err := validateAndAuthorizeRBAC(req.UserToken, "WPDeleteVdev")
-	if err != nil {
-		log.Errorf("WPDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-	log.Debugf("WPDeleteVdev: user %q authorized to delete vdev %q", tc.UserID, req.ID)
-
-	r, err := pmCmn.Encoder(pmCmn.GOB, req)
-	if err != nil {
-		log.Errorf("WPDeleteVdev: failed to marshal vdev delete request: %v", err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
-	}
-
-	funcIntrm := funclib.FuncIntrm{
-		Response: r,
-	}
-
-	return pmCmn.Encoder(pmCmn.GOB, funcIntrm)
 }
 
 // Deletes a Vdev, archives its data and refunds allocated space to NISDs.
@@ -1447,7 +1434,30 @@ func WPDeleteVdev(args ...interface{}) (interface{}, error) {
 // validates the token and checks RBAC permissions before any data is modified.
 func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	cbArgs := args[1].(*PumiceDBServer.PmdbCbArgs)
-	req := args[0].(ctlplfl.DeleteVdevReq)
+	cpreq, ok1 := args[0].(ctlplfl.CPReq)
+	if !ok1 {
+		return nil, fmt.Errorf("invalid request type")
+	}
+	req, ok2 := cpreq.Payload.(ctlplfl.DeleteVdevReq)
+	if !ok2 {
+		return nil, fmt.Errorf("invalid request type")
+	}
+
+	err := req.Validate()
+	if err != nil {
+		log.Errorf("APDeleteVdev: invalid request for vdev %q: %v", req.ID, err)
+		return ctlplfl.FuncError(err)
+	}
+
+	// Step 2: Authenticate the caller and verify RBAC permissions.
+	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
+	// caller's role is allowed to perform "APDeleteVdev".
+	tc, err := validateAndAuthorizeRBAC(cpreq.Token, "APDeleteVdev")
+	if err != nil {
+		log.Errorf("APDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
+		return ctlplfl.FuncError(err)
+	}
+
 	resp := ctlplfl.ResponseXML{
 		Name:    "vdev",
 		ID:      req.ID,
@@ -1474,7 +1484,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		if err != nil {
 			log.Error("Range read failure ", err)
 			resp.Error = err.Error()
-			return pmCmn.Encoder(pmCmn.GOB, resp)
+			return ctlplfl.FuncError(err)
 		}
 
 		// Process Vdev keys
@@ -1502,8 +1512,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 					nisdRR, err := cbArgs.Store.RangeRead(rrargs)
 					if err != nil {
 						log.Error("Range read failure ", err)
-						resp.Error = err.Error()
-						return pmCmn.Encoder(pmCmn.GOB, resp)
+						return ctlplfl.FuncError(err)
 					}
 					nisdList := ParseEntities[ctlplfl.Nisd](nisdRR.ResultMap, NisdParser{})
 					if len(nisdList) > 0 {
@@ -1530,6 +1539,10 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		rrArgs.Prefix = vdevKey
 		rrArgs.SeqNum = rrOp.SeqNum
 	}
+	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.ID)
+	deleteChgs = append(deleteChgs, funclib.CommitChg{
+		Key: []byte(ownershipKey),
+	})
 
 	// Process NISD refunds
 	for nisdID, nisd := range nisdRefundMap {
@@ -1540,27 +1553,27 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
-	err := applyKV(commitChgs, cbArgs.Store)
+	err = applyKV(commitChgs, cbArgs.Store)
 	if err != nil {
 		log.Error("applyKV(): ", err)
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
+		return ctlplfl.FuncError(err)
 	}
 
 	err = deleteKV(deleteChgs, cbArgs.Store)
 	if err != nil {
-		resp.Error = err.Error()
-		return pmCmn.Encoder(pmCmn.GOB, resp)
+		log.Errorf("APDeleteVdev: deleteKV failed for vdev %s: %v", req.ID, err)
+		return ctlplfl.FuncError(err)
 	}
 
 	for nisdID, nisd := range nisdRefundMap {
 		hrNisd, err := HR.GetNisdByPDUID(nisd.FailureDomain[ctlplfl.PDU_IDX], nisdID)
 		if err != nil {
-			resp.Error = err.Error()
-			return pmCmn.Encoder(pmCmn.GOB, resp)
+			log.Errorf("APDeleteVdev: GetNisdByPDUID failed for nisd %s: %v", nisdID, err)
+			return ctlplfl.FuncError(err)
 		}
 		hrNisd.AvailableSize = nisd.AvailableSize
 	}
 	resp.Success = true
-	return pmCmn.Encoder(pmCmn.GOB, resp)
+	log.Debugf("APDeleteVdev: vdev %s deleted successfully", req.ID)
+	return ctlplfl.EncodeResponse(resp)
 }

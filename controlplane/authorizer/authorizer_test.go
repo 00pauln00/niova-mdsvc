@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/memstore"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -100,8 +101,10 @@ func TestCheckABAC(t *testing.T) {
 	}
 
 	ds := memstore.NewMemStore()
-	ds.Write("/u/user1/ns/dev", "1", "")
-	ds.Write("/u/user1/obj-owner/resource1", "1", "")
+	err := ds.Write("/u/user1/ns/dev", "1", "")
+	assert.NoError(t, err, "expected correct write for namespace")
+	err = ds.Write("/u/user1/obj-owner/resource1", "1", "")
+	assert.NoError(t, err, "expected correct write for obj-owner")
 
 	testCases := []struct {
 		name       string
@@ -140,7 +143,8 @@ func TestAuthorize(t *testing.T) {
 	}
 
 	ds := memstore.NewMemStore()
-	ds.Write("/u/user1/ns/dev", "1", "")
+	err := ds.Write("/u/user1/ns/dev", "1", "")
+	assert.NoError(t, err, "expected correct write for namespace")
 
 	testCases := []struct {
 		name       string

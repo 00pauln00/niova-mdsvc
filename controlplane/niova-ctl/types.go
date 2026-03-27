@@ -71,7 +71,8 @@ func AllocatePortPair(hypervisorUUID string, portRange string, userToken string,
 		if client, ok := cpClient.(interface {
 			GetNisds(ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
 		}); ok {
-			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true, UserToken: userToken})
+			// Get all NISDs and filter by hypervisor UUID locally
+			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true})
 			if err == nil {
 				for _, nisd := range nisds {
 					if nisd.FailureDomain[ctlplfl.HV_IDX] == hypervisorUUID {

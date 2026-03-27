@@ -117,7 +117,8 @@ func main() {
 
 	log.Debugf("read nisd config details: %+v", conf.NisdConfig)
 	// Pass admin token for NISD operations (admin-only)
-	req := cpLib.GetReq{UserToken: adminToken}
+	req := cpLib.GetReq{}
+	c.SetToken(adminToken)
 	nisdArgs, err := c.GetNisdArgs(req)
 	if err != nil {
 		log.Error("failed to fetch nisd args: ", err)
@@ -125,10 +126,9 @@ func main() {
 	naS := nisdArgs.BuildCmdArgs()
 	for i, nisd := range conf.NisdConfig {
 		req := cpLib.GetReq{
-			ID:        nisd.DevID,
-			GetAll:    false,
-			UserToken: adminToken,
+			ID: nisd.DevID,
 		}
+		c.SetToken(adminToken)
 		pt, err := c.GetPartition(req)
 		if err != nil {
 			log.Error("failed to get device uuid: ", err)
