@@ -85,6 +85,8 @@ const (
 	stateShowAddedVdev
 	stateVdevCreationProgress
 	stateVdevCreationSummary
+	stateSearchVdev
+	stateSearchVdevResult
 	// User Management States
 	stateUserCreateForm
 	stateUserCreateAdminKey
@@ -116,6 +118,7 @@ const (
 	inputNISDInstance
 	inputPartitionSize
 	// Vdev specific
+	inputVdevSearch
 	inputVdevName
 	inputVdevReplica
 	inputVdevCount
@@ -226,6 +229,9 @@ type model struct {
 	vdevViewCursor         int
 	currentVdev            ctlplfl.Vdev
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
+	vdevSearchInput        textinput.Model
+	vdevSearchResult       *ctlplfl.Vdev
+	vdevSearchErr          string
 	vdevNameInput          textinput.Model
 	vdevReplicaInput       textinput.Model
 	vdevSizeInput          textinput.Model
@@ -452,6 +458,11 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 	deviceFailureDomainInput.Placeholder = "Enter failure domain for device"
 	deviceFailureDomainInput.CharLimit = 500
 
+	// Initialize vdev search input
+	vdevSearchInput := textinput.New()
+	vdevSearchInput.Placeholder = "vdev name or UUID"
+	vdevSearchInput.CharLimit = 64
+
 	// Initialize vdev name input
 	vdevNameInput := textinput.New()
 	vdevNameInput.Placeholder = "unique name (letters and digits only)"
@@ -531,6 +542,7 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 		selectedHypervisorIdx: -1,
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
+		vdevSearchInput:       vdevSearchInput,
 		vdevNameInput:         vdevNameInput,
 		vdevReplicaInput:      vdevReplicaInput,
 		vdevSizeInput:         vdevSizeInput,
@@ -1041,6 +1053,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateVdevCreationProgress(msg)
 	case stateVdevCreationSummary:
 		m, cmd = m.updateVdevCreationSummary(msg)
+	case stateSearchVdev:
+		m, cmd = m.updateSearchVdev(msg)
+	case stateSearchVdevResult:
+		m, cmd = m.updateSearchVdevResult(msg)
 	// User Management
 	case stateUserCreateForm:
 		m, cmd = m.updateUserCreateForm(msg)
@@ -3011,6 +3027,10 @@ func (m model) View() string {
 		return m.viewVdevCreationProgress()
 	case stateVdevCreationSummary:
 		return m.viewVdevCreationSummary()
+	case stateSearchVdev:
+		return m.viewSearchVdev()
+	case stateSearchVdevResult:
+		return m.viewSearchVdevResult()
 	// User Management Views
 	case stateUserCreateForm:
 		return m.viewUserCreateForm()
@@ -7848,7 +7868,7 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.vdevMgmtCursor--
 			}
 		case "down", "j":
-			maxItems := 4 // Create Vdev, Edit Vdev, View Vdev, Delete Vdev
+			maxItems := 5 // Create Vdev, Edit Vdev, View Vdev, Delete Vdev, Search Vdev
 			if m.vdevMgmtCursor < maxItems-1 {
 				m.vdevMgmtCursor++
 			}
@@ -7890,6 +7910,14 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.state = stateDeleteVdev
 				m.message = ""
 				return m, nil
+			case 4: // Search Vdev
+				m.state = stateSearchVdev
+				m.message = ""
+				m.vdevSearchInput.SetValue("")
+				m.vdevSearchResult = nil
+				m.vdevSearchErr = ""
+				m.vdevSearchInput.Focus()
+				return m, textinput.Blink
 			}
 		case "esc":
 			m.state = stateMenu
@@ -7919,6 +7947,7 @@ func (m model) viewVdevManagement() string {
 		"Edit Vdev",
 		"View Vdev",
 		"Delete Vdev",
+		"Search Vdev",
 	}
 
 	for i, option := range options {
@@ -7931,6 +7960,177 @@ func (m model) viewVdevManagement() string {
 
 	s.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • esc: back"))
 
+	return s.String()
+}
+
+func (m model) updateSearchVdev(msg tea.Msg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.state = stateVdevManagement
+			m.message = ""
+			return m, nil
+		case "enter":
+			query := strings.TrimSpace(m.vdevSearchInput.Value())
+			if query == "" {
+				m.message = "Please enter a vdev name or UUID"
+				return m, nil
+			}
+			if m.cpClient == nil || !m.cpConnected {
+				m.vdevSearchResult = nil
+				m.vdevSearchErr = "Control plane not connected"
+				m.state = stateSearchVdevResult
+				return m, nil
+			}
+			vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetReq{
+				GetAll:    true,
+				UserToken: m.userToken(),
+			})
+			if err != nil {
+				m.vdevSearchResult = nil
+				m.vdevSearchErr = fmt.Sprintf("Failed to query vdevs: %v", err)
+				m.state = stateSearchVdevResult
+				return m, nil
+			}
+			var found *ctlplfl.Vdev
+			for i := range vdevs {
+				if vdevs[i].Cfg.ID == query || vdevs[i].Cfg.Name == query {
+					found = &vdevs[i]
+					break
+				}
+			}
+			m.vdevSearchResult = found
+			if found == nil {
+				m.vdevSearchErr = fmt.Sprintf("No vdev found matching %q", query)
+			} else {
+				m.vdevSearchErr = ""
+			}
+			m.state = stateSearchVdevResult
+			return m, nil
+		}
+	}
+	m.vdevSearchInput, cmd = m.vdevSearchInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) viewSearchVdev() string {
+	title := titleStyle.Render("Search Vdev")
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		s.WriteString(errorStyle.Render(m.message) + "\n\n")
+	}
+
+	s.WriteString("Search by name or UUID: ")
+	s.WriteString(m.vdevSearchInput.View())
+	s.WriteString("\n\n")
+	s.WriteString(helpStyle.Render("enter: search • esc: back"))
+	return s.String()
+}
+
+func (m model) updateSearchVdevResult(msg tea.Msg) (model, tea.Cmd) {
+	switch msg.(type) {
+	case tea.KeyMsg:
+		// Any key returns to the search form so the user can refine
+		m.state = stateSearchVdev
+		m.message = ""
+		m.vdevSearchInput.Focus()
+		return m, textinput.Blink
+	}
+	return m, nil
+}
+
+// buildChunkToNisds inverts NisdToChkMap so we can display per-chunk replica sets.
+// Returns a sorted list of chunk indices and a map of chunk → []nisdID (one per replica).
+func buildChunkToNisds(vdev *ctlplfl.Vdev) ([]int, map[int][]string) {
+	chunkToNisds := make(map[int][]string)
+	for _, nc := range vdev.NisdToChkMap {
+		for _, chunkIdx := range nc.Chunk {
+			chunkToNisds[chunkIdx] = append(chunkToNisds[chunkIdx], nc.Nisd.ID)
+		}
+	}
+	// Collect and sort chunk indices for deterministic display
+	keys := make([]int, 0, len(chunkToNisds))
+	for k := range chunkToNisds {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys, chunkToNisds
+}
+
+func (m model) viewSearchVdevResult() string {
+	title := titleStyle.Render("Search Result")
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.vdevSearchErr != "" {
+		s.WriteString(errorStyle.Render(m.vdevSearchErr) + "\n\n")
+		s.WriteString(helpStyle.Render("any key: search again • esc: search again"))
+		return s.String()
+	}
+
+	v := m.vdevSearchResult
+
+	// ── Vdev config ──────────────────────────────────────────────────────────
+	s.WriteString(fmt.Sprintf("  Name:     %s\n", v.Cfg.Name))
+	s.WriteString(fmt.Sprintf("  ID:       %s\n", v.Cfg.ID))
+	s.WriteString(fmt.Sprintf("  Size:     %s (%d bytes)\n", formatSize(v.Cfg.Size), v.Cfg.Size))
+	s.WriteString(fmt.Sprintf("  Chunks:   %d\n", v.Cfg.NumChunks))
+	s.WriteString(fmt.Sprintf("  Replicas: %d\n", v.Cfg.NumReplica))
+	s.WriteString("\n")
+
+	if len(v.NisdToChkMap) == 0 {
+		s.WriteString("  No NISD allocation data available.\n\n")
+		s.WriteString(helpStyle.Render("any key: search again"))
+		return s.String()
+	}
+
+	// ── NISD summary ─────────────────────────────────────────────────────────
+	// Sort NISD entries by ID for consistent display
+	nisdEntries := make([]ctlplfl.NisdChunk, len(v.NisdToChkMap))
+	copy(nisdEntries, v.NisdToChkMap)
+	sort.Slice(nisdEntries, func(i, j int) bool {
+		return nisdEntries[i].Nisd.ID < nisdEntries[j].Nisd.ID
+	})
+
+	s.WriteString(fmt.Sprintf("NISD Summary (%d NISD(s) involved):\n", len(nisdEntries)))
+	for _, nc := range nisdEntries {
+		s.WriteString(fmt.Sprintf("  NISD  %s   %d chunk replica(s)\n", nc.Nisd.ID, len(nc.Chunk)))
+	}
+	s.WriteString("\n")
+
+	// ── Chunk → replica mapping ───────────────────────────────────────────────
+	const maxChunksShown = 8
+	chunkKeys, chunkToNisds := buildChunkToNisds(v)
+
+	shown := len(chunkKeys)
+	if shown > maxChunksShown {
+		shown = maxChunksShown
+	}
+
+	s.WriteString(fmt.Sprintf("Chunk → Replica Mapping (showing %d of %d):\n", shown, len(chunkKeys)))
+	for i := 0; i < shown; i++ {
+		chunkIdx := chunkKeys[i]
+		nisds := chunkToNisds[chunkIdx]
+		sort.Strings(nisds)
+		s.WriteString(fmt.Sprintf("  Chunk %3d: ", chunkIdx))
+		for r, nisdID := range nisds {
+			s.WriteString(fmt.Sprintf("R.%d→%s", r, nisdID))
+			if r < len(nisds)-1 {
+				s.WriteString("  ")
+			}
+		}
+		s.WriteString("\n")
+	}
+	if len(chunkKeys) > maxChunksShown {
+		s.WriteString(fmt.Sprintf("  ... (%d more chunks)\n", len(chunkKeys)-maxChunksShown))
+	}
+	s.WriteString("\n")
+
+	s.WriteString(helpStyle.Render("any key: search again"))
 	return s.String()
 }
 
