@@ -7963,9 +7963,54 @@ func (m model) viewVdevManagement() string {
 	return s.String()
 }
 
+// doVdevSearch is run in a goroutine via tea.Cmd.
+// Step 1: GetVdevCfgs (GetAll) to resolve name/UUID → vdevID.
+// Step 2: GetVdevsWithChunkInfo with the specific ID to fetch chunk mapping.
+func (m model) doVdevSearch(query string) VdevSearchMsg {
+	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{
+		GetAll:    true,
+		UserToken: m.userToken(),
+	})
+	if err != nil {
+		return VdevSearchMsg{err: fmt.Sprintf("Failed to query vdevs: %v", err)}
+	}
+
+	var matchedID string
+	for _, cfg := range cfgs {
+		if cfg.ID == query || cfg.Name == query {
+			matchedID = cfg.ID
+			break
+		}
+	}
+	if matchedID == "" {
+		return VdevSearchMsg{err: fmt.Sprintf("No vdev found matching %q", query)}
+	}
+
+	// Fetch chunk mapping for the specific vdev (no admin role required).
+	vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetReq{
+		ID:        matchedID,
+		GetAll:    false,
+		UserToken: m.userToken(),
+	})
+	if err != nil {
+		return VdevSearchMsg{err: fmt.Sprintf("Failed to get chunk info: %v", err)}
+	}
+	if len(vdevs) == 0 {
+		return VdevSearchMsg{err: fmt.Sprintf("No chunk data found for vdev %q", query)}
+	}
+	found := vdevs[0]
+	return VdevSearchMsg{result: &found}
+}
+
 func (m model) updateSearchVdev(msg tea.Msg) (model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
+	case VdevSearchMsg:
+		m.message = ""
+		m.vdevSearchResult = msg.result
+		m.vdevSearchErr = msg.err
+		m.state = stateSearchVdevResult
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
@@ -7984,31 +8029,8 @@ func (m model) updateSearchVdev(msg tea.Msg) (model, tea.Cmd) {
 				m.state = stateSearchVdevResult
 				return m, nil
 			}
-			vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetReq{
-				GetAll:    true,
-				UserToken: m.userToken(),
-			})
-			if err != nil {
-				m.vdevSearchResult = nil
-				m.vdevSearchErr = fmt.Sprintf("Failed to query vdevs: %v", err)
-				m.state = stateSearchVdevResult
-				return m, nil
-			}
-			var found *ctlplfl.Vdev
-			for i := range vdevs {
-				if vdevs[i].Cfg.ID == query || vdevs[i].Cfg.Name == query {
-					found = &vdevs[i]
-					break
-				}
-			}
-			m.vdevSearchResult = found
-			if found == nil {
-				m.vdevSearchErr = fmt.Sprintf("No vdev found matching %q", query)
-			} else {
-				m.vdevSearchErr = ""
-			}
-			m.state = stateSearchVdevResult
-			return m, nil
+			m.message = "Searching..."
+			return m, func() tea.Msg { return m.doVdevSearch(query) }
 		}
 	}
 	m.vdevSearchInput, cmd = m.vdevSearchInput.Update(msg)
@@ -8021,7 +8043,11 @@ func (m model) viewSearchVdev() string {
 	s.WriteString(title + "\n\n")
 
 	if m.message != "" {
-		s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		if m.message == "Searching..." {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		}
 	}
 
 	s.WriteString("Search by name or UUID: ")
@@ -8894,6 +8920,11 @@ type VdevCreationMsg struct {
 	Success bool
 	Vdev    *ctlplfl.VdevCfg
 	Error   error
+}
+
+type VdevSearchMsg struct {
+	result *ctlplfl.Vdev
+	err    string
 }
 
 // createVdevsCommand returns a command that creates multiple Vdevs
