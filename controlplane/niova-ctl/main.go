@@ -8356,7 +8356,9 @@ func (m model) viewViewVdev() string {
 				cursor := "  "
 				if m.vdevViewCursor == i {
 					cursor = "▶ "
-					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. Name: %s  ID: %s", cursor, i+1, vdev.Name, vdev.ID)))
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. %s", cursor, i+1, vdev.Name)))
+					s.WriteString("\n")
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   ID: %s", vdev.ID)))
 					s.WriteString("\n")
 					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Size: %d bytes", vdev.Size)))
 					s.WriteString("\n")
@@ -8365,7 +8367,8 @@ func (m model) viewViewVdev() string {
 					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Replicas: %d", vdev.NumReplica)))
 					s.WriteString("\n\n")
 				} else {
-					s.WriteString(fmt.Sprintf("%s%d. Name: %s  ID: %s\n", cursor, i+1, vdev.Name, vdev.ID))
+					s.WriteString(fmt.Sprintf("%s%d. %s\n", cursor, i+1, vdev.Name))
+					s.WriteString(fmt.Sprintf("   ID: %s\n", vdev.ID))
 					s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
 					s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
 					s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
