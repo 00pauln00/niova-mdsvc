@@ -232,8 +232,7 @@ type model struct {
 	vdevSearchInput        textinput.Model
 	vdevSearchResult       *ctlplfl.Vdev
 	vdevSearchErr          string
-	vdevSearchNisdExpanded  bool
-	vdevSearchChunkExpanded bool
+	vdevSearchChunkPage int
 	vdevNameInput          textinput.Model
 	vdevReplicaInput       textinput.Model
 	vdevSizeInput          textinput.Model
@@ -7918,8 +7917,7 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.vdevSearchInput.SetValue("")
 				m.vdevSearchResult = nil
 				m.vdevSearchErr = ""
-				m.vdevSearchNisdExpanded = false
-				m.vdevSearchChunkExpanded = false
+				m.vdevSearchChunkPage = 0
 				m.vdevSearchInput.Focus()
 				return m, textinput.Blink
 			}
@@ -8013,8 +8011,7 @@ func (m model) updateSearchVdev(msg tea.Msg) (model, tea.Cmd) {
 		m.message = ""
 		m.vdevSearchResult = msg.result
 		m.vdevSearchErr = msg.err
-		m.vdevSearchNisdExpanded = false
-		m.vdevSearchChunkExpanded = false
+		m.vdevSearchChunkPage = 0
 		m.state = stateSearchVdevResult
 		return m, nil
 	case tea.KeyMsg:
@@ -8067,15 +8064,23 @@ func (m model) updateSearchVdevResult(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "n":
-			m.vdevSearchNisdExpanded = !m.vdevSearchNisdExpanded
-		case "c":
-			m.vdevSearchChunkExpanded = !m.vdevSearchChunkExpanded
-		default:
+		case "esc":
 			m.state = stateSearchVdev
 			m.message = ""
 			m.vdevSearchInput.Focus()
 			return m, textinput.Blink
+		case "right", "down", "j", "l":
+			if m.vdevSearchResult != nil {
+				chunkKeys, _ := buildChunkToNisds(m.vdevSearchResult)
+				totalPages := (len(chunkKeys) + chunkPageSize - 1) / chunkPageSize
+				if m.vdevSearchChunkPage < totalPages-1 {
+					m.vdevSearchChunkPage++
+				}
+			}
+		case "left", "up", "k", "h":
+			if m.vdevSearchChunkPage > 0 {
+				m.vdevSearchChunkPage--
+			}
 		}
 	}
 	return m, nil
@@ -8099,6 +8104,8 @@ func buildChunkToNisds(vdev *ctlplfl.Vdev) ([]int, map[int][]string) {
 	return keys, chunkToNisds
 }
 
+const chunkPageSize = 10
+
 func (m model) viewSearchVdevResult() string {
 	title := titleStyle.Render("Search Result")
 	var s strings.Builder
@@ -8106,7 +8113,7 @@ func (m model) viewSearchVdevResult() string {
 
 	if m.vdevSearchErr != "" {
 		s.WriteString(errorStyle.Render(m.vdevSearchErr) + "\n\n")
-		s.WriteString(helpStyle.Render("any key: search again"))
+		s.WriteString(helpStyle.Render("esc: search again"))
 		return s.String()
 	}
 
@@ -8122,60 +8129,45 @@ func (m model) viewSearchVdevResult() string {
 
 	if len(v.NisdToChkMap) == 0 {
 		s.WriteString("  No NISD allocation data available.\n\n")
-		s.WriteString(helpStyle.Render("any key: search again"))
+		s.WriteString(helpStyle.Render("esc: search again"))
 		return s.String()
 	}
 
-	// Sort NISD entries once for both sections
-	nisdEntries := make([]ctlplfl.NisdChunk, len(v.NisdToChkMap))
-	copy(nisdEntries, v.NisdToChkMap)
-	sort.Slice(nisdEntries, func(i, j int) bool {
-		return nisdEntries[i].Nisd.ID < nisdEntries[j].Nisd.ID
-	})
-
-	// ── NISD summary (collapsible) ────────────────────────────────────────────
-	if m.vdevSearchNisdExpanded {
-		s.WriteString(fmt.Sprintf("▼ NISD Summary (%d NISD(s)):\n", len(nisdEntries)))
-		for _, nc := range nisdEntries {
-			s.WriteString(fmt.Sprintf("    %s   %d chunk replica(s)\n", nc.Nisd.ID, len(nc.Chunk)))
-		}
-	} else {
-		s.WriteString(fmt.Sprintf("▶ NISD Summary (%d NISD(s))  [press n to expand]\n", len(nisdEntries)))
-	}
-	s.WriteString("\n")
-
-	// ── Chunk → replica mapping (collapsible) ────────────────────────────────
+	// ── Chunk → replica mapping (paginated) ──────────────────────────────────
 	chunkKeys, chunkToNisds := buildChunkToNisds(v)
-	const maxChunksShown = 8
+	totalChunks := len(chunkKeys)
+	totalPages := (totalChunks + chunkPageSize - 1) / chunkPageSize
+	page := m.vdevSearchChunkPage
+	if page >= totalPages {
+		page = totalPages - 1
+	}
 
-	if m.vdevSearchChunkExpanded {
-		s.WriteString(fmt.Sprintf("▼ Chunk → Replica Mapping (%d chunks):\n", len(chunkKeys)))
-		shown := len(chunkKeys)
-		if shown > maxChunksShown {
-			shown = maxChunksShown
-		}
-		for i := 0; i < shown; i++ {
-			chunkIdx := chunkKeys[i]
-			nisds := chunkToNisds[chunkIdx]
-			sort.Strings(nisds)
-			s.WriteString(fmt.Sprintf("  Chunk %3d: ", chunkIdx))
-			for r, nisdID := range nisds {
-				s.WriteString(fmt.Sprintf("R.%d→%s", r, nisdID))
-				if r < len(nisds)-1 {
-					s.WriteString("  ")
-				}
+	start := page * chunkPageSize
+	end := start + chunkPageSize
+	if end > totalChunks {
+		end = totalChunks
+	}
+
+	s.WriteString(fmt.Sprintf("Chunk → Replica Mapping  (page %d of %d, chunks %d–%d of %d):\n",
+		page+1, totalPages, start, end-1, totalChunks))
+	s.WriteString("\n")
+
+	for i := start; i < end; i++ {
+		chunkIdx := chunkKeys[i]
+		nisds := chunkToNisds[chunkIdx]
+		sort.Strings(nisds)
+		s.WriteString(fmt.Sprintf("  Chunk %3d: ", chunkIdx))
+		for r, nisdID := range nisds {
+			s.WriteString(fmt.Sprintf("R.%d→%s", r, nisdID))
+			if r < len(nisds)-1 {
+				s.WriteString("  ")
 			}
-			s.WriteString("\n")
 		}
-		if len(chunkKeys) > maxChunksShown {
-			s.WriteString(fmt.Sprintf("  ... (%d more chunks not shown)\n", len(chunkKeys)-maxChunksShown))
-		}
-	} else {
-		s.WriteString(fmt.Sprintf("▶ Chunk → Replica Mapping (%d chunks)  [press c to expand]\n", len(chunkKeys)))
+		s.WriteString("\n")
 	}
 	s.WriteString("\n")
 
-	s.WriteString(helpStyle.Render("n: toggle NISD list • c: toggle chunk map • any other key: search again"))
+	s.WriteString(helpStyle.Render("←/→: prev/next page • esc: search again"))
 	return s.String()
 }
 
