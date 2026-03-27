@@ -116,6 +116,8 @@ const (
 	inputNISDInstance
 	inputPartitionSize
 	// Vdev specific
+	inputVdevName
+	inputVdevReplica
 	inputVdevCount
 	inputVdevSize
 	inputVdevEntityUUID
@@ -224,6 +226,8 @@ type model struct {
 	vdevViewCursor         int
 	currentVdev            ctlplfl.Vdev
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
+	vdevNameInput          textinput.Model
+	vdevReplicaInput       textinput.Model
 	vdevSizeInput          textinput.Model
 	vdevCountInput         textinput.Model
 	vdevEntityUUIDInput    textinput.Model
@@ -448,6 +452,17 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 	deviceFailureDomainInput.Placeholder = "Enter failure domain for device"
 	deviceFailureDomainInput.CharLimit = 500
 
+	// Initialize vdev name input
+	vdevNameInput := textinput.New()
+	vdevNameInput.Placeholder = "unique name (letters and digits only)"
+	vdevNameInput.CharLimit = 64
+
+	// Initialize vdev replica input
+	vdevReplicaInput := textinput.New()
+	vdevReplicaInput.Placeholder = "1"
+	vdevReplicaInput.CharLimit = 4
+	vdevReplicaInput.SetValue("1")
+
 	// Initialize vdev size input
 	vdevSizeInput := textinput.New()
 	vdevSizeInput.Placeholder = "e.g., 10GB, 1TB, 1PB"
@@ -516,11 +531,13 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 		selectedHypervisorIdx: -1,
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
+		vdevNameInput:         vdevNameInput,
+		vdevReplicaInput:      vdevReplicaInput,
 		vdevSizeInput:         vdevSizeInput,
 		vdevCountInput:        vdevCountInput,
 		vdevEntityUUIDInput:   vdevEntityUUIDInput,
 		vdevFilterTypeInput:   vdevFilterTypeInput,
-		vdevFormActiveField:   inputVdevCount,
+		vdevFormActiveField:   inputVdevName,
 		// Control plane configuration
 		logFile:      logFile,
 		cpEnabled:    cpEnabled,
@@ -7841,12 +7858,16 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.state = stateVdevForm
 				m.message = ""
 				// Initialize input fields
+				m.vdevNameInput.SetValue("")
+				m.vdevReplicaInput.SetValue("1")
 				m.vdevCountInput.SetValue("1")
 				m.vdevSizeInput.SetValue("")
 				m.vdevEntityUUIDInput.SetValue("")
 				m.vdevFilterTypeInput.SetValue("any")
-				m.vdevFormActiveField = inputVdevCount
-				m.vdevCountInput.Focus()
+				m.vdevFormActiveField = inputVdevName
+				m.vdevNameInput.Focus()
+				m.vdevReplicaInput.Blur()
+				m.vdevCountInput.Blur()
 				m.vdevSizeInput.Blur()
 				m.vdevEntityUUIDInput.Blur()
 				m.vdevFilterTypeInput.Blur()
@@ -7982,12 +8003,20 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab", "down":
-			// Cycle forward through fields: count → size → entityUUID → filterType → count
+			// Cycle forward: name → replica → count → size → entityUUID → filterType → name
+			m.vdevNameInput.Blur()
+			m.vdevReplicaInput.Blur()
 			m.vdevCountInput.Blur()
 			m.vdevSizeInput.Blur()
 			m.vdevEntityUUIDInput.Blur()
 			m.vdevFilterTypeInput.Blur()
 			switch m.vdevFormActiveField {
+			case inputVdevName:
+				m.vdevFormActiveField = inputVdevReplica
+				m.vdevReplicaInput.Focus()
+			case inputVdevReplica:
+				m.vdevFormActiveField = inputVdevCount
+				m.vdevCountInput.Focus()
 			case inputVdevCount:
 				m.vdevFormActiveField = inputVdevSize
 				m.vdevSizeInput.Focus()
@@ -7998,17 +8027,25 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 				m.vdevFormActiveField = inputVdevFilterType
 				m.vdevFilterTypeInput.Focus()
 			default:
-				m.vdevFormActiveField = inputVdevCount
-				m.vdevCountInput.Focus()
+				m.vdevFormActiveField = inputVdevName
+				m.vdevNameInput.Focus()
 			}
 			return m, textinput.Blink
 		case "shift+tab", "up":
-			// Cycle backward through fields
+			// Cycle backward
+			m.vdevNameInput.Blur()
+			m.vdevReplicaInput.Blur()
 			m.vdevCountInput.Blur()
 			m.vdevSizeInput.Blur()
 			m.vdevEntityUUIDInput.Blur()
 			m.vdevFilterTypeInput.Blur()
 			switch m.vdevFormActiveField {
+			case inputVdevReplica:
+				m.vdevFormActiveField = inputVdevName
+				m.vdevNameInput.Focus()
+			case inputVdevCount:
+				m.vdevFormActiveField = inputVdevReplica
+				m.vdevReplicaInput.Focus()
 			case inputVdevSize:
 				m.vdevFormActiveField = inputVdevCount
 				m.vdevCountInput.Focus()
@@ -8025,8 +8062,28 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			return m, textinput.Blink
 		case "enter":
 			// Validate inputs and create Vdevs
+			nameStr := strings.TrimSpace(m.vdevNameInput.Value())
+			replicaStr := m.vdevReplicaInput.Value()
 			countStr := m.vdevCountInput.Value()
 			sizeStr := m.vdevSizeInput.Value()
+
+			if nameStr == "" {
+				m.message = "Please enter a Vdev name"
+				return m, nil
+			}
+			if !isAlphanumericStr(nameStr) {
+				m.message = "Vdev name must contain only letters and digits"
+				return m, nil
+			}
+
+			if replicaStr == "" {
+				replicaStr = "1"
+			}
+			replica, err := strconv.Atoi(replicaStr)
+			if err != nil || replica < 1 {
+				m.message = "Replication factor must be a positive integer (e.g. 1, 2, 4)"
+				return m, nil
+			}
 
 			if countStr == "" {
 				m.message = "Please enter number of Vdevs"
@@ -8075,7 +8132,7 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			m.message = ""
 
 			// Start creating Vdevs
-			return m, m.createVdevsCommand(size, count)
+			return m, m.createVdevsCommand(size, count, replica)
 		case "esc":
 			m.state = stateVdevManagement
 			m.message = ""
@@ -8085,6 +8142,10 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 
 	// Update the active input field
 	switch m.vdevFormActiveField {
+	case inputVdevName:
+		m.vdevNameInput, cmd = m.vdevNameInput.Update(msg)
+	case inputVdevReplica:
+		m.vdevReplicaInput, cmd = m.vdevReplicaInput.Update(msg)
 	case inputVdevCount:
 		m.vdevCountInput, cmd = m.vdevCountInput.Update(msg)
 	case inputVdevSize:
@@ -8114,6 +8175,16 @@ func (m model) viewVdevForm() string {
 
 	s.WriteString("Enter configuration for Vdev creation:\n\n")
 
+	// Name input
+	s.WriteString("Vdev Name: ")
+	s.WriteString(m.vdevNameInput.View())
+	s.WriteString("\n\n")
+
+	// Replica input
+	s.WriteString("Replication Factor: ")
+	s.WriteString(m.vdevReplicaInput.View())
+	s.WriteString("\n\n")
+
 	// Count input
 	s.WriteString("Number of Vdevs: ")
 	s.WriteString(m.vdevCountInput.View())
@@ -8134,9 +8205,10 @@ func (m model) viewVdevForm() string {
 	s.WriteString(m.vdevFilterTypeInput.View())
 	s.WriteString("\n\n")
 
+	s.WriteString("Name: letters and digits only, unique across all Vdevs\n")
+	s.WriteString("Replication factor: positive integer (default 1); when count > 1 names get a numeric suffix\n")
 	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n")
-	s.WriteString("Failure domain types: any, pdu, rack, hv, device, partition\n")
-	s.WriteString("The control plane will allocate Vdev chunks to the given entity or failure domain.\n\n")
+	s.WriteString("Failure domain types: any, pdu, rack, hv, device, partition\n\n")
 
 	// Show summary if both fields have values
 	countStr := m.vdevCountInput.Value()
@@ -8284,7 +8356,7 @@ func (m model) viewViewVdev() string {
 				cursor := "  "
 				if m.vdevViewCursor == i {
 					cursor = "▶ "
-					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. ID: %s", cursor, i+1, vdev.ID)))
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. Name: %s  ID: %s", cursor, i+1, vdev.Name, vdev.ID)))
 					s.WriteString("\n")
 					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Size: %d bytes", vdev.Size)))
 					s.WriteString("\n")
@@ -8293,7 +8365,7 @@ func (m model) viewViewVdev() string {
 					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Replicas: %d", vdev.NumReplica)))
 					s.WriteString("\n\n")
 				} else {
-					s.WriteString(fmt.Sprintf("%s%d. ID: %s\n", cursor, i+1, vdev.ID))
+					s.WriteString(fmt.Sprintf("%s%d. Name: %s  ID: %s\n", cursor, i+1, vdev.Name, vdev.ID))
 					s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
 					s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
 					s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
@@ -8442,6 +8514,7 @@ func (m model) viewShowAddedVdev() string {
 	s.WriteString(title + "\n\n")
 
 	s.WriteString("Vdev Details:\n")
+	s.WriteString(fmt.Sprintf("Name: %s\n", m.currentVdev.Cfg.Name))
 	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.Cfg.ID))
 	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Cfg.Size))
 	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.Cfg.NumChunks))
@@ -8476,9 +8549,15 @@ func (m model) updateVdevCreationProgress(msg tea.Msg) (model, tea.Cmd) {
 		if m.vdevCreationProgress < m.vdevCreationTotal {
 			// Get the size and create next Vdev
 			sizeStr := m.vdevSizeInput.Value()
+			replicaStr := m.vdevReplicaInput.Value()
+			replica := 1
+			if r, err := strconv.Atoi(replicaStr); err == nil && r >= 1 {
+				replica = r
+			}
 			if size, err := parseSize(sizeStr); err == nil {
+				progress := m.vdevCreationProgress
 				return m, func() tea.Msg {
-					return m.createSingleVdev(size, m.vdevCreationProgress)
+					return m.createSingleVdev(size, replica, progress)
 				}
 			} else {
 				// Error parsing size, stop creation
@@ -8615,11 +8694,24 @@ type VdevCreationMsg struct {
 }
 
 // createVdevsCommand returns a command that creates multiple Vdevs
-func (m model) createVdevsCommand(size int64, count int) tea.Cmd {
+func (m model) createVdevsCommand(size int64, count int, replica int) tea.Cmd {
 	return func() tea.Msg {
 		// Create the first Vdev
-		return m.createSingleVdev(size, 0)
+		return m.createSingleVdev(size, replica, 0)
 	}
+}
+
+// isAlphanumericStr returns true if s contains only ASCII letters and digits.
+func isAlphanumericStr(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 // parseFDType converts a filter type string to an FD constant.
@@ -8641,7 +8733,7 @@ func parseFDType(s string) ctlplfl.FD {
 }
 
 // createSingleVdev creates a single Vdev and returns a VdevCreationMsg
-func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
+func (m model) createSingleVdev(size int64, replica int, index int) VdevCreationMsg {
 	filter := ctlplfl.Filter{
 		Type: parseFDType(m.vdevFilterTypeInput.Value()),
 	}
@@ -8651,10 +8743,17 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 	if filter.Type != ctlplfl.FD_ANY {
 		filter.ID = strings.TrimSpace(m.vdevEntityUUIDInput.Value())
 	}
+	// When creating multiple Vdevs, append a 1-based numeric suffix to make
+	// each name unique (e.g. "myvol1", "myvol2"). Single Vdev uses the name as-is.
+	name := strings.TrimSpace(m.vdevNameInput.Value())
+	if m.vdevCreationTotal > 1 {
+		name = name + strconv.Itoa(index+1)
+	}
 	vdev := &ctlplfl.VdevReq{
 		Vdev: &ctlplfl.VdevCfg{
+			Name:       name,
 			Size:       size,
-			NumReplica: 1,
+			NumReplica: uint8(replica),
 		},
 		Filter:    filter,
 		UserToken: m.userToken(),

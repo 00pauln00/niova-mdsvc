@@ -225,6 +225,7 @@ type NisdVdevAlloc struct {
 type VdevCfg struct {
 	XMLName      xml.Name `xml:"Vdev"`
 	ID           string
+	Name         string
 	Size         int64
 	NumChunks    uint32
 	NumReplica   uint8

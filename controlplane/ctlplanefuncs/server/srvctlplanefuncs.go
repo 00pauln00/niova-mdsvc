@@ -86,6 +86,7 @@ const (
 	rackKey      = "r"
 	nisdKey      = "n"
 	vdevKey      = "v"
+	vnameKey     = "vname"
 	chunkKey     = "c"
 	hvKey        = "hv"
 	ptKey        = "pt"
@@ -562,6 +563,19 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commi
 	log.Debugf("generated kv updates for chunk %s/R.%d", chunk, i)
 }
 
+// isAlphanumeric returns true if s contains only ASCII letters and digits.
+func isAlphanumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
 // Initialize the VDEV during the write preparation stage.
 // Since the VDEV ID is derived from a randomly generated UUID,
 // It needs to be generated within the Write Prep Phase.
@@ -578,6 +592,10 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		return nil, err
 	}
 
+	if !isAlphanumeric(req.Vdev.Name) {
+		return nil, fmt.Errorf("vdev name %q is invalid: must be non-empty and contain only letters and digits", req.Vdev.Name)
+	}
+
 	err = req.Vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
@@ -585,7 +603,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	}
 	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, tc.UserID)
 	key := getConfKey(vdevKey, req.Vdev.ID)
-	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
+	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS, NAME} {
 		var value string
 		switch field {
 		case SIZE:
@@ -594,6 +612,8 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			value = strconv.Itoa(int(req.Vdev.NumChunks))
 		case NUM_REPLICAS:
 			value = strconv.Itoa(int(req.Vdev.NumReplica))
+		case NAME:
+			value = req.Vdev.Name
 		default:
 			continue
 		}
@@ -602,6 +622,13 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(value),
 		})
 	}
+
+	// Add reverse-index key so duplicate name lookups are O(1)
+	reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key:   []byte(reverseNameKey),
+		Value: []byte(req.Vdev.ID),
+	})
 
 	// Add ownership key to mark user as owner of this vdev
 	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.Vdev.ID)
@@ -814,6 +841,17 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	pmCmn.Decoder(pmCmn.GOB, funcIntrm.Response, &req)
 	log.Infof("allocating vdev for ID: %s", req.Vdev.ID)
 	resp.ID = req.Vdev.ID
+
+	// Check for duplicate vdev name before allocating any resources.
+	if req.Vdev.Name != "" {
+		reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
+		existing, readErr := cbArgs.Store.Read(reverseNameKey, colmfamily)
+		if readErr == nil && len(existing) > 0 {
+			resp.Error = fmt.Sprintf("vdev with name %q already exists (ID: %s)", req.Vdev.Name, string(existing))
+			return pmCmn.Encoder(pmCmn.GOB, resp)
+		}
+	}
+
 	allocMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	defer allocMap.Clear()
 	HR.Dump()
@@ -1115,7 +1153,8 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
 					vdev.Cfg.NumReplica = uint8(nr)
 				}
-
+			case NAME:
+				vdev.Cfg.Name = string(value)
 			}
 
 		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
@@ -1256,6 +1295,8 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 				if nr, err := strconv.ParseUint(string(v), 10, 8); err == nil {
 					vdevInfo.NumReplica = uint8(nr)
 				}
+			case NAME:
+				vdevInfo.Name = string(v)
 			}
 		}
 
@@ -1457,6 +1498,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	deleteChgs := make([]funclib.CommitChg, 0)
 	nisdRefundMap := make(map[string]*ctlplfl.Nisd)
+	var vdevName string
 
 	log.Infof("APDeleteVdev: deleting vdev %q", req.ID)
 	// Validate Vdev exists
@@ -1479,6 +1521,10 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 
 		// Process Vdev keys
 		for k, v := range rrOp.ResultMap {
+			// Capture vdev name so we can remove the reverse-index entry.
+			if strings.HasSuffix(k, "/"+cfgkey+"/"+NAME) {
+				vdevName = string(v)
+			}
 			// Delete
 			deleteChgs = append(deleteChgs, funclib.CommitChg{
 				Key:   []byte(k),
@@ -1537,6 +1583,14 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(asKey),
 			Value: []byte(strconv.FormatInt(nisd.AvailableSize, 10)),
+		})
+	}
+
+	// Remove vdev name reverse-index so the name can be reused.
+	if vdevName != "" {
+		deleteChgs = append(deleteChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", vnameKey, vdevName)),
+			Value: nil,
 		})
 	}
 
