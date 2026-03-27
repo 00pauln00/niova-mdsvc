@@ -10,6 +10,7 @@ import (
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
+	authz "github.com/00pauln00/niova-mdsvc/controlplane/authorizer"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
@@ -209,9 +210,8 @@ func PutUser(args ...interface{}) (interface{}, error) {
 	callerIsAdmin := tokenClaims.IsAdmin
 	log.Infof("PutUser called by user %s with role %s", callerUserID, callerRole)
 	// Check authorization
-	authz := srvctlplanefuncs.GetAuthorizer()
-	if authz != nil {
-		if !authz.CheckRBAC(userlib.PutUserAPI, []string{callerRole}) {
+	if auth := srvctlplanefuncs.GetAuthorizer(); auth != nil {
+		if !auth.CheckRBAC(authz.PutUser, []string{callerRole}) {
 			log.Errorf("User %s with role %s not authorized for PutUser", callerUserID, callerRole)
 			return returnError("authorization failed: insufficient permissions")
 		}
@@ -366,9 +366,8 @@ func GetUser(args ...interface{}) (interface{}, error) {
 	log.Infof("GetUser called by user %s with role %s", callerUserID, callerRole)
 
 	// Check authorization
-	authz := srvctlplanefuncs.GetAuthorizer()
-	if authz != nil {
-		if !authz.CheckRBAC(userlib.GetUserAPI, []string{callerRole}) {
+	if auth := srvctlplanefuncs.GetAuthorizer(); auth != nil {
+		if !auth.CheckRBAC(authz.GetUser, []string{callerRole}) {
 			log.Errorf("User %s with role %s not authorized for GetUser", callerUserID, callerRole)
 			return cpLib.AuthError(fmt.Errorf("authorization failed: insufficient permissions"))
 		}

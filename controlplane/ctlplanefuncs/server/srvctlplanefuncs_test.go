@@ -157,13 +157,11 @@ func setupVdevData(ds storageiface.DataStore, vdevID string) error {
 
 func TestWPCreateVdev(t *testing.T) {
 	// Initialize test authorizer
-	authorizer = &authz.Authorizer{
-		Config: authz.Config{
-			"WPCreateVdev": authz.FunctionPolicy{
-				RBAC: []string{"admin", "user"},
-			},
+	authorizer = authz.NewAuthorizerWithConfig(authz.Config{
+		authz.WPCreateVdev: authz.FunctionPolicy{
+			RBAC: []string{"admin", "user"},
 		},
-	}
+	})
 	defer func() { authorizer = nil }()
 
 	testCases := []struct {
@@ -372,16 +370,14 @@ func TestWPCreateVdev_NilAuthorizer(t *testing.T) {
 
 func TestReadVdevInfo(t *testing.T) {
 	// Initialize test authorizer
-	authorizer = &authz.Authorizer{
-		Config: authz.Config{
-			"ReadVdevInfo": authz.FunctionPolicy{
-				RBAC: []string{"admin", "user"},
-				ABAC: []authz.ABACRule{
-					{Argument: "vdev", Prefix: "v/"},
-				},
+	authorizer = authz.NewAuthorizerWithConfig(authz.Config{
+		authz.ReadVdevInfo: authz.FunctionPolicy{
+			RBAC: []string{"admin", "user"},
+			ABAC: []authz.ABACRule{
+				{Argument: "vdev", Prefix: "v/"},
 			},
 		},
-	}
+	})
 	defer func() { authorizer = nil }()
 
 	testCases := []struct {

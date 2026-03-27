@@ -25,12 +25,9 @@ var (
 	authorizer *authz.Authorizer
 )
 
-// InitAuthorizer initializes the global authorizer instance with the config file
-func InitAuthorizer(configPath string) error {
-	authorizer = &authz.Authorizer{
-		Config: make(authz.Config),
-	}
-	return authorizer.LoadConfig(configPath)
+// InitAuthorizer initializes the global authorizer instance from hardcoded policies.
+func InitAuthorizer() {
+	authorizer = authz.NewAuthorizer()
 }
 
 // GetAuthorizer returns the global authorizer instance
@@ -133,18 +130,18 @@ func ValidateToken(token string) (*TokenClaims, error) {
 
 // validateAndAuthorizeRBAC verifies the token and checks RBAC-only permissions.
 // For operations that also require ABAC (ownership checks)
-func validateAndAuthorizeRBAC(token, operation string) (*TokenClaims, error) {
+func validateAndAuthorizeRBAC(token string, fn authz.FunctionName) (*TokenClaims, error) {
 	tc, err := ValidateToken(token)
 	if err != nil {
 		return nil, err
 	}
 	if authorizer != nil {
-		if !authorizer.CheckRBAC(operation, []string{tc.Role}) {
-			log.Errorf("user %s with role %s not authorized for %s", tc.UserID, tc.Role, operation)
+		if !authorizer.CheckRBAC(fn, []string{tc.Role}) {
+			log.Errorf("user %s with role %s not authorized for %s", tc.UserID, tc.Role, fn)
 			return nil, fmt.Errorf("authorization failed: insufficient permissions")
 		}
 	}
-	log.Infof("user %s authorized for %s", tc.UserID, operation)
+	log.Infof("user %s authorized for %s", tc.UserID, fn)
 	return tc, nil
 }
 
@@ -336,14 +333,15 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 		log.Errorf("ApplyNisd: %v", err)
 		return ctlplfl.FuncError(err)
 	}
+
 	nisd, ok := cpReq.Payload.(ctlplfl.Nisd)
 	if !ok {
 		err := fmt.Errorf("invalid payload: expecting type Nisd")
 		log.Errorf("ApplyNisd: %v", err)
 		return ctlplfl.FuncError(err)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ApplyNisd"); err != nil {
-		log.Errorf("ApplyNisd: auth/RBAC failure: %v", err)
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ApplyNisd); err != nil {
+		log.Error("ApplyNisd: RBAC authorization failed for NISD:", nisd.ID, " error:", err)
 		return ctlplfl.AuthError(err)
 	}
 
@@ -389,8 +387,7 @@ func ApplyNisd(args ...interface{}) (interface{}, error) {
 func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadAllNisdConfigs"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadAllNisdConfigs); err != nil {
 		log.Errorf("ReadAllNisdConfigs: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -414,14 +411,14 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 
 func ReadNisdConfig(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
-
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
 	if err := req.ValidateRequest(); err != nil {
 		log.Errorf("ReadNisdConfig: invalid request: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadNisdConfig"); err != nil {
+
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadNisdConfig); err != nil {
 		log.Errorf("ReadNisdConfig: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -467,8 +464,9 @@ func WPNisdCfg(args ...interface{}) (interface{}, error) {
 		log.Error("WPNisdCfg validation failed for NISD:", nisd.ID, " error:", err)
 		return ctlplfl.WPFuncError(err)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPNisdCfg"); err != nil {
-		log.Errorf("WPNisdCfg: auth failure: %v", err)
+
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPNisdCfg); err != nil {
+		log.Error("WPNisdCfg RBAC authorization failed for NISD:", nisd.ID, " error:", err)
 		return ctlplfl.WPAuthError(err)
 	}
 
@@ -499,7 +497,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "RdDeviceInfo"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.RdDeviceInfo); err != nil {
 		log.Errorf("RdDeviceInfo: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -523,7 +521,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
 	cpReq := args[0].(ctlplfl.CPReq)
 	dev := cpReq.Payload.(ctlplfl.Device)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPDeviceInfo"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPDeviceInfo); err != nil {
 		log.Errorf("WPDeviceInfo: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
@@ -581,7 +579,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Errorf("WPCreateVdev: %v", err)
 		return ctlplfl.WPFuncError(err)
 	}
-	tc, err := validateAndAuthorizeRBAC(cpReq.Token, "WPCreateVdev")
+	tc, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPCreateVdev)
 	if err != nil {
 		log.Errorf("WPCreateVdev: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
@@ -859,7 +857,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 func WPCreatePartition(args ...interface{}) (interface{}, error) {
 	cpReq := args[0].(ctlplfl.CPReq)
 	pt := cpReq.Payload.(ctlplfl.DevicePartition)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPCreatePartition"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPCreatePartition); err != nil {
 		log.Errorf("WPCreatePartition: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
@@ -885,7 +883,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(ptKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadPartition"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadPartition); err != nil {
 		log.Errorf("ReadPartition: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -907,7 +905,7 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
 	cpReq := args[0].(ctlplfl.CPReq)
 	pdu := cpReq.Payload.(ctlplfl.PDU)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPPDUCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPPDUCfg); err != nil {
 		log.Errorf("WPPDUCfg: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
@@ -932,7 +930,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(pduKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadPDUCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadPDUCfg); err != nil {
 		log.Errorf("ReadPDUCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -956,7 +954,7 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 func WPRackCfg(args ...interface{}) (interface{}, error) {
 	cpReq := args[0].(ctlplfl.CPReq)
 	rack := cpReq.Payload.(ctlplfl.Rack)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPRackCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPRackCfg); err != nil {
 		log.Errorf("WPRackCfg: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
@@ -974,7 +972,6 @@ func WPRackCfg(args ...interface{}) (interface{}, error) {
 }
 
 func ReadRackCfg(args ...interface{}) (interface{}, error) {
-
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
@@ -982,7 +979,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(rackKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadRackCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadRackCfg); err != nil {
 		log.Errorf("ReadRackCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -1004,7 +1001,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	cpReq := args[0].(ctlplfl.CPReq)
 	hv := cpReq.Payload.(ctlplfl.Hypervisor)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPHyperVisorCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPHyperVisorCfg); err != nil {
 		log.Errorf("WPHyperVisorCfg: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
@@ -1031,7 +1028,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	if !req.GetAll {
 		key = getConfKey(hvKey, req.ID)
 	}
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "ReadHyperVisorCfg"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.ReadHyperVisorCfg); err != nil {
 		log.Errorf("ReadHyperVisorCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
@@ -1064,14 +1061,14 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	if authorizer != nil {
 		if req.GetAll {
 			// Listing all vdevs with chunk info: admin only, same restriction as ReadAllVdevInfo
-			if !authorizer.Authorize("ReadAllVdevInfo", tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
+			if !authorizer.Authorize(authz.ReadAllVdevInfo, tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
 				log.Errorf("user %s with role %s not authorized to list all vdevs with chunk info", tc.UserID, tc.Role)
 				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 			} // ← add this closing brace
 		} else {
 			// Specific vdev: verify RBAC + ABAC ownership
 			attributes := map[string]string{"vdev": req.ID}
-			if !authorizer.Authorize("ReadVdevsInfoWithChunkMapping", tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+			if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
 				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.ID)
 				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 			}
@@ -1217,7 +1214,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": req.ID}
-		if !authorizer.Authorize("ReadVdevInfo", tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
 			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
 			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 		}
@@ -1329,7 +1326,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 	// Check authorization: ownership of the vdev implies access to its chunks
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": vdevID}
-		if !authorizer.Authorize("ReadChunkNisd", tc.UserID, []string{tc.Role}, attributes, cbargs.Store, colmfamily) {
+		if !authorizer.Authorize(authz.ReadChunkNisd, tc.UserID, []string{tc.Role}, attributes, cbargs.Store, colmfamily) {
 			log.Errorf("user %s with role %s not authorized to read chunk nisd for vdev %s", tc.UserID, tc.Role, vdevID)
 			return ctlplfl.AuthError(fmt.Errorf("authorization failed"))
 		}
@@ -1367,7 +1364,7 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 func WPNisdArgs(args ...interface{}) (interface{}, error) {
 	cpReq := args[0].(ctlplfl.CPReq)
 	nArgs := cpReq.Payload.(ctlplfl.NisdArgs)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "WPNisdArgs"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.WPNisdArgs); err != nil {
 		log.Errorf("WPNisdArgs: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
@@ -1387,7 +1384,7 @@ func WPNisdArgs(args ...interface{}) (interface{}, error) {
 func RdNisdArgs(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-	if _, err := validateAndAuthorizeRBAC(cpReq.Token, "RdNisdArgs"); err != nil {
+	if _, err := validateAndAuthorizeRBAC(cpReq.Token, authz.RdNisdArgs); err != nil {
 		log.Errorf("RdNisdArgs: auth failure: %v", err)
 		return ctlplfl.FuncError(err)
 	}
@@ -1452,7 +1449,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	// Step 2: Authenticate the caller and verify RBAC permissions.
 	// validateAndAuthorizeRBAC verifies the JWT token and checks that the
 	// caller's role is allowed to perform "APDeleteVdev".
-	tc, err := validateAndAuthorizeRBAC(cpreq.Token, "APDeleteVdev")
+	tc, err := validateAndAuthorizeRBAC(cpreq.Token, authz.APDeleteVdev)
 	if err != nil {
 		log.Errorf("APDeleteVdev: RBAC authorization failed for vdev %q: %v", req.ID, err)
 		return ctlplfl.FuncError(err)
