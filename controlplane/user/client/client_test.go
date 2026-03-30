@@ -15,23 +15,39 @@ import (
 // Tests that modify the admin secret must restore it when done.
 const testAdminSecret = "test-admin-secret"
 
-func newClient(t *testing.T) (*Client, func()) {
-	t.Helper()
+// Package-level test configuration initialized once in TestMain.
+var (
+	testClusterID  string
+	testConfigPath string
+)
 
-	clusterID := os.Getenv("RAFT_ID")
-	if clusterID == "" {
+func TestMain(m *testing.M) {
+	authDisabled := os.Getenv("AUTH_ENABLED") == "false"
+	if authDisabled {
+		log.Info("Skipping user client tests: AUTH_ENABLED=false")
+		os.Exit(0)
+	}
+
+	testClusterID = os.Getenv("RAFT_ID")
+	if testClusterID == "" {
 		log.Fatal("RAFT_ID env variable not set")
 	}
 
-	configPath := os.Getenv("GOSSIP_NODES_PATH")
-	if configPath == "" {
+	testConfigPath = os.Getenv("GOSSIP_NODES_PATH")
+	if testConfigPath == "" {
 		log.Fatal("GOSSIP_NODES_PATH env variable not set")
 	}
 
+	os.Exit(m.Run())
+}
+
+func newClient(t *testing.T) (*Client, func()) {
+	t.Helper()
+
 	cfg := Config{
 		AppUUID:          uuid.New().String(),
-		RaftUUID:         clusterID,
-		GossipConfigPath: configPath,
+		RaftUUID:         testClusterID,
+		GossipConfigPath: testConfigPath,
 	}
 
 	c, tearDown := New(cfg)

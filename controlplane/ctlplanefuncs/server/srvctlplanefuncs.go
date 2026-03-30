@@ -22,12 +22,25 @@ import (
 var colmfamily string
 
 var (
-	authorizer *authz.Authorizer
+	authorizer  *authz.Authorizer
+	authEnabled = true
 )
 
 // InitAuthorizer initializes the global authorizer instance from hardcoded policies.
 func InitAuthorizer() {
 	authorizer = authz.NewAuthorizer()
+}
+
+// SetAuthEnabled enables or disables authentication and authorization.
+// This is called at startup with the value resolved from the AUTH_ENABLED
+// env var (default true). When disabled, ValidateToken bypasses JWT verification.
+func SetAuthEnabled(enabled bool) {
+	authEnabled = enabled
+}
+
+// IsAuthEnabled reports whether authentication and authorization are enabled.
+func IsAuthEnabled() bool {
+	return authEnabled
 }
 
 // GetAuthorizer returns the global authorizer instance
@@ -97,7 +110,15 @@ type TokenClaims struct {
 
 // ValidateToken verifies the JWT token using CP_SECRET and extracts user claims.
 // Returns an error if the token is empty, invalid, or missing required fields.
+// When authentication is disabled (SetAuthEnabled(false)), the token is not
+// verified and an anonymous identity is returned instead.
 func ValidateToken(token string) (*TokenClaims, error) {
+	if !authEnabled {
+		return &TokenClaims{
+			UserID: "anonymous",
+			Role:   "anonymous",
+		}, nil
+	}
 	if token == "" {
 		return nil, fmt.Errorf("user token is required")
 	}
@@ -135,7 +156,7 @@ func validateAndAuthorizeRBAC(token string, fn authz.FunctionName) (*TokenClaims
 	if err != nil {
 		return nil, err
 	}
-	if authorizer != nil {
+	if authorizer != nil && authEnabled {
 		if !authorizer.CheckRBAC(fn, []string{tc.Role}) {
 			log.Errorf("user %s with role %s not authorized for %s", tc.UserID, tc.Role, fn)
 			return nil, fmt.Errorf("authorization failed: insufficient permissions")

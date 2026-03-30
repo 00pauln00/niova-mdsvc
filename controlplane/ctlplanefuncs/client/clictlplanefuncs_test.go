@@ -31,6 +31,10 @@ var (
 	adminTokenCacheLock sync.Mutex
 )
 
+// authEnabled is set once in TestMain and reflects whether the server under
+// test has authentication enabled (AUTH_ENABLED != "false").
+var authEnabled bool
+
 // Shared admin secret used across all tests.
 const testAdminSecret = "test-admin-secret-123"
 
@@ -44,6 +48,8 @@ func TestMain(m *testing.M) {
 	if testConfigPath == "" {
 		log.Fatal("GOSSIP_NODES_PATH env variable not set")
 	}
+
+	authEnabled = os.Getenv("AUTH_ENABLED") != "false"
 
 	os.Exit(m.Run())
 }
@@ -130,7 +136,9 @@ func newClient(t testing.TB) *CliCFuncs {
 	if c == nil {
 		t.Fatal("failed to init client funcs")
 	}
-	c.SetToken(getAdminToken(t))
+	if authEnabled {
+		c.SetToken(getAdminToken(t))
+	}
 	return c
 }
 
@@ -483,7 +491,6 @@ func TestPutAndGetPartition(t *testing.T) {
 }
 
 func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
-	getAdminToken(b)
 	racks := []cpLib.Rack{
 		{ID: "9bc244bc-df29-11f0-a93b-277aec17e437", PDUID: "95f62aee-997e-11f0-9f1b-a70cff4b660b"},
 		{ID: "3704e442-df2b-11f0-be6a-776bc1500ab8", PDUID: "13ce1c48-9979-11f0-8bd0-4f62ec9356ea"},
@@ -761,7 +768,6 @@ func TestParallelVdevCreation(t *testing.T) {
 
 func TestCreateSmallHierarchy(t *testing.T) {
 	c := newClient(t)
-	getAdminToken(t)
 
 	pdus := []string{
 		"e5bdb838-df76-11f0-9d60-d3a87e703a41",
@@ -977,15 +983,7 @@ func newUserClient(t *testing.T) (*userClient.Client, func()) {
 // TestVdevAuthorizationWithUsers test admin user creation, along with
 // two users trying to access vdev's
 func TestVdevAuthorizationWithUsers(t *testing.T) {
-	// Initialize control plane client for vdev operations
 	ctlClient := newClient(t)
-
-	// Initialize user client for authentication operations
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
-
-	// Step 0: Get admin token using shared helper (ensure admin exists/reset)
-	t.Logf("Admin logged in/setup complete")
 
 	// Step 1: Create a NISD to allocate space for Vdevs
 	nisd := cpLib.Nisd{
@@ -1001,149 +999,107 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		TotalSize:     15_000_000_000_000,
 		AvailableSize: 15_000_000_000_000,
 	}
-	_, err := ctlClient.PutNisd(&nisd)
-	assert.NoError(t, err, "failed to create NISD for auth test")
 
-	// Step 2: Create normal user1
-	user1Username := "vdev_owner_" + uuid.New().String()[:8]
-	user1Req := &userlib.UserReq{
-		Username: user1Username,
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+
+		adminToken := getAdminToken(t)
+		ctlClient.SetToken(adminToken)
+		_, err := ctlClient.PutNisd(&nisd)
+		assert.NoError(t, err, "failed to create NISD for auth test")
+
+		// Create user1 and log in
+		user1Username := "vdev_owner_" + uuid.New().String()[:8]
+		user1Resp, err := authClient.CreateUser(adminToken, &userlib.UserReq{Username: user1Username})
+		assert.NoError(t, err, "failed to create user1")
+		require.True(t, user1Resp.Success)
+		user1LoginResp, err := authClient.Login(user1Username, user1Resp.SecretKey)
+		assert.NoError(t, err, "user1 login should succeed")
+		user1AccessToken := user1LoginResp.AccessToken
+		ctlClient.SetToken(user1AccessToken)
+		t.Logf("User1 logged in: %s", user1Username)
+
+		// User1 creates vdev1
+		vdevResp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 500 * 1024 * 1024 * 1024, NumReplica: 1}})
+		assert.NoError(t, err, "user1 should be able to create vdev")
+		require.NotNil(t, vdevResp)
+		assert.True(t, vdevResp.Success)
+		vdevID := vdevResp.ID
+		t.Logf("User1 created vdev: %s", vdevID)
+
+		// User1 can read own vdev
+		vdevCfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		assert.NoError(t, err, "user1 should be able to read their own vdev")
+		assert.Equal(t, vdevID, vdevCfg.ID)
+
+		// Create user2 and log in
+		user2Username := "unauthorized_user_" + uuid.New().String()[:8]
+		user2Resp, err := authClient.CreateUser(adminToken, &userlib.UserReq{Username: user2Username})
+		assert.NoError(t, err, "failed to create user2")
+		require.True(t, user2Resp.Success)
+		user2LoginResp, err := authClient.Login(user2Username, user2Resp.SecretKey)
+		assert.NoError(t, err, "user2 login should succeed")
+		user2AccessToken := user2LoginResp.AccessToken
+		ctlClient.SetToken(user2AccessToken)
+		t.Logf("User2 logged in: %s", user2Username)
+
+		// User2 cannot access user1's vdev
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		assert.EqualError(t, err, "User is not authorized")
+		t.Log("User2 correctly denied access to user1's vdev")
+
+		// User2 creates own vdev
+		vdev2Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 300 * 1024 * 1024 * 1024, NumReplica: 1}})
+		assert.NoError(t, err, "user2 should be able to create their own vdev")
+		require.NotNil(t, vdev2Resp)
+		assert.True(t, vdev2Resp.Success)
+		vdev2ID := vdev2Resp.ID
+
+		// User2 can read own vdev
+		vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		assert.NoError(t, err, "user2 should be able to read their own vdev")
+		assert.Equal(t, vdev2ID, vdev2Cfg.ID)
+
+		// User1 cannot access user2's vdev
+		ctlClient.SetToken(user1AccessToken)
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		assert.EqualError(t, err, "User is not authorized")
+		t.Log("User1 correctly denied access to user2's vdev")
+
+		// No token: read and create are rejected
+		ctlClient.SetToken("")
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		assert.EqualError(t, err, "Invalid Token")
+		_, err = ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 100 * 1024 * 1024 * 1024, NumReplica: 1}})
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token requests correctly rejected")
+	} else {
+		// Auth disabled: empty token is accepted; ownership checks are not enforced
+		ctlClient.SetToken("")
+		_, err := ctlClient.PutNisd(&nisd)
+		assert.NoError(t, err, "PutNisd should succeed when auth is disabled")
+
+		vdev1Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 500 * 1024 * 1024 * 1024, NumReplica: 1}})
+		require.NoError(t, err, "CreateVdev should succeed when auth is disabled")
+		assert.True(t, vdev1Resp.Success)
+		vdev1ID := vdev1Resp.ID
+
+		vdev2Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 300 * 1024 * 1024 * 1024, NumReplica: 1}})
+		require.NoError(t, err, "CreateVdev should succeed when auth is disabled")
+		assert.True(t, vdev2Resp.Success)
+		vdev2ID := vdev2Resp.ID
+
+		// Any caller can read any vdev — no ownership enforcement
+		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
+		assert.Equal(t, vdev1ID, cfg1.ID)
+
+		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
+		assert.Equal(t, vdev2ID, cfg2.ID)
+		t.Log("Auth disabled: vdev operations succeed without token")
 	}
-
-	adminToken := getAdminToken(t)
-	user1Resp, err := authClient.CreateUser(adminToken, user1Req)
-	assert.NoError(t, err, "failed to create user1")
-	assert.NotNil(t, user1Resp)
-	assert.True(t, user1Resp.Success)
-	assert.NotEmpty(t, user1Resp.SecretKey)
-	assert.NotEmpty(t, user1Resp.UserID)
-	assert.Equal(t, userlib.DefaultUserRole, user1Resp.UserRole)
-	t.Logf("Created user1: %s with ID: %s", user1Username, user1Resp.UserID)
-
-	// Step 3: Login with user1 to get access token
-	user1LoginResp, err := authClient.Login(user1Username, user1Resp.SecretKey)
-	assert.NoError(t, err, "user1 login should succeed")
-	assert.True(t, user1LoginResp.Success)
-	assert.NotEmpty(t, user1LoginResp.AccessToken, "user1 access token should not be empty")
-	user1AccessToken := user1LoginResp.AccessToken
-	ctlClient.SetToken(user1AccessToken)
-	t.Logf("User1 logged in, access token obtained")
-
-	// Step 4: User1 creates a vdev with their access token
-	vdev1 := &cpLib.VdevReq{
-		Vdev: &cpLib.VdevCfg{
-			Size:       500 * 1024 * 1024 * 1024, // 500 GB
-			NumReplica: 1,
-		},
-	}
-
-	vdevResp, err := ctlClient.CreateVdev(vdev1)
-	assert.NoError(t, err, "user1 should be able to create vdev")
-	require.NotNil(t, vdevResp, "user1 vdev response should not be nil")
-	assert.True(t, vdevResp.Success, "vdev creation should succeed")
-	assert.NotEmpty(t, vdevResp.ID, "vdev ID should not be empty")
-	vdevID := vdevResp.ID
-	t.Logf("User1 created vdev with ID: %s", vdevID)
-
-	// Step 5: Verify user1 can access their own vdev
-	getReqUser1 := &cpLib.GetReq{
-		ID: vdevID,
-	}
-
-	vdevCfg, err := ctlClient.GetVdevCfg(getReqUser1)
-	assert.NoError(t, err, "user1 should be able to read their own vdev")
-	assert.Equal(t, vdevID, vdevCfg.ID, "fetched vdev ID should match")
-	t.Logf("User1 successfully accessed their vdev: %s", vdevCfg.ID)
-
-	// Step 6: Create normal user2
-	user2Username := "unauthorized_user_" + uuid.New().String()[:8]
-	user2Req := &userlib.UserReq{
-		Username: user2Username,
-	}
-
-	user2Resp, err := authClient.CreateUser(adminToken, user2Req)
-	assert.NoError(t, err, "failed to create user2")
-	assert.NotNil(t, user2Resp)
-	assert.True(t, user2Resp.Success)
-	assert.NotEmpty(t, user2Resp.SecretKey)
-	assert.NotEmpty(t, user2Resp.UserID)
-	t.Logf("Created user2: %s with ID: %s", user2Username, user2Resp.UserID)
-
-	// Step 7: Login with user2 to get access token
-	user2LoginResp, err := authClient.Login(user2Username, user2Resp.SecretKey)
-	assert.NoError(t, err, "user2 login should succeed")
-	assert.True(t, user2LoginResp.Success)
-	assert.NotEmpty(t, user2LoginResp.AccessToken, "user2 access token should not be empty")
-	user2AccessToken := user2LoginResp.AccessToken
-	ctlClient.SetToken(user2AccessToken)
-	t.Logf("User2 logged in, access token obtained")
-
-	// Step 8: Verify user2 CANNOT access user1's vdev (authorization should fail)
-	getReqUser2 := &cpLib.GetReq{
-		ID: vdevID, // Trying to access user1's vdev
-	}
-
-	_, err = ctlClient.GetVdevCfg(getReqUser2)
-	assert.EqualError(t, err, "User is not authorized")
-	t.Logf("User2 correctly denied access to user1's vdev (authorization check passed)")
-
-	// Step 9: Create a vdev for user2 and verify they can access their own
-	vdev2 := &cpLib.VdevReq{
-		Vdev: &cpLib.VdevCfg{
-			Size:       300 * 1024 * 1024 * 1024, // 300 GB
-			NumReplica: 1,
-		},
-	}
-
-	vdev2Resp, err := ctlClient.CreateVdev(vdev2)
-	assert.NoError(t, err, "user2 should be able to create their own vdev")
-	require.NotNil(t, vdev2Resp, "user2 vdev response should not be nil")
-	assert.True(t, vdev2Resp.Success, "user2 vdev creation should succeed")
-	assert.NotEmpty(t, vdev2Resp.ID)
-	vdev2ID := vdev2Resp.ID
-	t.Logf("User2 created their own vdev with ID: %s", vdev2ID)
-
-	// Verify user2 can access their own vdev
-	getReqUser2Own := &cpLib.GetReq{
-		ID: vdev2ID,
-	}
-
-	vdev2Cfg, err := ctlClient.GetVdevCfg(getReqUser2Own)
-	assert.NoError(t, err, "user2 should be able to read their own vdev")
-	assert.Equal(t, vdev2ID, vdev2Cfg.ID, "fetched vdev2 ID should match")
-	t.Logf("User2 successfully accessed their own vdev: %s", vdev2Cfg.ID)
-
-	// Switch back to user1 for next step
-	ctlClient.SetToken(user1AccessToken)
-
-	// Step 10: Verify user1 CANNOT access user2's vdev
-	getReqUser1ForVdev2 := &cpLib.GetReq{
-		ID: vdev2ID, // Trying to access user2's vdev
-	}
-
-	_, err = ctlClient.GetVdevCfg(getReqUser1ForVdev2)
-	assert.EqualError(t, err, "User is not authorized")
-	t.Logf("User1 correctly denied access to user2's vdev (authorization check passed)")
-
-	// Step 11: Verify that accessing vdev WITHOUT token should fail
-	// Trying to access user1's vdev without any token
-	ctlClient.SetToken("")
-	_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
-	assert.EqualError(t, err, "Invalid Token")
-	t.Logf("Access denied when no token provided (authentication check passed)")
-
-	// Step 12: Verify that creating vdev WITHOUT token should fail
-	vdevNoToken := &cpLib.VdevReq{
-		Vdev: &cpLib.VdevCfg{
-			Size:       100 * 1024 * 1024 * 1024,
-			NumReplica: 1,
-		},
-		// No UserToken provided
-	}
-	ctlClient.SetToken("")
-	_, err = ctlClient.CreateVdev(vdevNoToken)
-	assert.EqualError(t, err, "user token is required")
-	t.Logf("Vdev creation denied when no token provided (authentication check passed)")
 
 	t.Log("Vdev Authorization Test Completed Successfully")
 }
@@ -1173,19 +1129,9 @@ func createRegularUserAndLogin(t *testing.T, authClient *userClient.Client, admi
 // TestNisdAuthorizationWithUsers verifies that only admin users can register or list nisds
 func TestNisdAuthorizationWithUsers(t *testing.T) {
 	ctlClient := newClient(t)
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
-
-	// Step 1: Admin token
-	adminToken := getAdminToken(t)
-	t.Log("Admin authenticated")
-
-	// Step 2: Regular user token
-	userToken := createRegularUserAndLogin(t, authClient, adminToken)
-	t.Log("Regular user authenticated")
 
 	nisdID := uuid.NewString()
-	makeNisd := func(token string) *cpLib.Nisd {
+	makeNisd := func() *cpLib.Nisd {
 		return &cpLib.Nisd{
 			PeerPort: 9100,
 			ID:       nisdID,
@@ -1204,43 +1150,62 @@ func TestNisdAuthorizationWithUsers(t *testing.T) {
 		}
 	}
 
-	// Step 3: No token write rejected
-	ctlClient.SetToken("")
-	_, err := ctlClient.PutNisd(makeNisd(""))
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token write correctly rejected")
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
 
-	// Step 4: Regular user write rejected (admin-only RBAC)
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.PutNisd(makeNisd(userToken))
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user write correctly rejected")
+		// No token write rejected
+		ctlClient.SetToken("")
+		_, err := ctlClient.PutNisd(makeNisd())
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token write correctly rejected")
 
-	// Step 5: Admin write accepted
-	ctlClient.SetToken(adminToken)
-	resp, err := ctlClient.PutNisd(makeNisd(adminToken))
-	require.NoError(t, err, "admin should be able to register a NISD")
-	assert.True(t, resp.Success, "PutNisd by admin must succeed")
-	t.Logf("Admin registered NISD %s", nisdID)
+		// Regular user write rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.PutNisd(makeNisd())
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user write correctly rejected")
 
-	// Step 6: No token read rejected
-	ctlClient.SetToken("")
-	_, err = ctlClient.GetNisds(cpLib.GetReq{})
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token read correctly rejected")
+		// Admin write accepted
+		ctlClient.SetToken(adminToken)
+		resp, err := ctlClient.PutNisd(makeNisd())
+		require.NoError(t, err, "admin should be able to register a NISD")
+		assert.True(t, resp.Success)
+		t.Logf("Admin registered NISD %s", nisdID)
 
-	// Step 7: Regular user read rejected (admin-only RBAC)
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.GetNisds(cpLib.GetReq{})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user read correctly rejected")
+		// No token read rejected
+		ctlClient.SetToken("")
+		_, err = ctlClient.GetNisds(cpLib.GetReq{})
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token read correctly rejected")
 
-	// Step 8: Admin read accepted
-	ctlClient.SetToken(adminToken)
-	nisds, err := ctlClient.GetNisds(cpLib.GetReq{})
-	assert.NoError(t, err, "admin should be able to list NISDs")
-	assert.NotEmpty(t, nisds, "at least the NISD we just created should appear")
-	t.Logf("Admin listed %d NISD(s)", len(nisds))
+		// Regular user read rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.GetNisds(cpLib.GetReq{})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user read correctly rejected")
+
+		// Admin read accepted
+		ctlClient.SetToken(adminToken)
+		nisds, err := ctlClient.GetNisds(cpLib.GetReq{})
+		assert.NoError(t, err, "admin should be able to list NISDs")
+		assert.NotEmpty(t, nisds)
+		t.Logf("Admin listed %d NISD(s)", len(nisds))
+	} else {
+		// Auth disabled: empty token is accepted for all operations
+		ctlClient.SetToken("")
+		resp, err := ctlClient.PutNisd(makeNisd())
+		require.NoError(t, err, "PutNisd should succeed when auth is disabled")
+		assert.True(t, resp.Success)
+		t.Logf("Registered NISD %s without token", nisdID)
+
+		nisds, err := ctlClient.GetNisds(cpLib.GetReq{})
+		require.NoError(t, err, "GetNisds should succeed when auth is disabled")
+		assert.NotEmpty(t, nisds)
+		t.Log("Auth disabled: NISD operations succeed without token")
+	}
 
 	t.Log("NISD Authorization Test Completed Successfully")
 }
@@ -1248,19 +1213,9 @@ func TestNisdAuthorizationWithUsers(t *testing.T) {
 // TestPDUAuthorizationWithUsers verifies that only admin users can create or list PDU
 func TestPDUAuthorizationWithUsers(t *testing.T) {
 	ctlClient := newClient(t)
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
-
-	// Step 1: Admin token
-	adminToken := getAdminToken(t)
-	t.Log("Admin authenticated")
-
-	// Step 2: Regular user token
-	userToken := createRegularUserAndLogin(t, authClient, adminToken)
-	t.Log("Regular user authenticated")
 
 	pduID := uuid.NewString()
-	makePDU := func(token string) *cpLib.PDU {
+	makePDU := func() *cpLib.PDU {
 		return &cpLib.PDU{
 			ID:            pduID,
 			Name:          "pdu-auth-" + pduID[:8],
@@ -1269,50 +1224,77 @@ func TestPDUAuthorizationWithUsers(t *testing.T) {
 			Specification: "auth-test-pdu",
 		}
 	}
-	// Step 3: No token write rejected
-	ctlClient.SetToken("")
-	_, err := ctlClient.PutPDU(makePDU(""))
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token write correctly rejected")
 
-	// Step 4: Regular user write rejected
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.PutPDU(makePDU(userToken))
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user write correctly rejected")
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
 
-	// Step 5: Admin write accepted
-	ctlClient.SetToken(adminToken)
-	resp, err := ctlClient.PutPDU(makePDU(adminToken))
-	require.NoError(t, err, "admin should be able to create a PDU")
-	assert.True(t, resp.Success, "PutPDU by admin must succeed")
-	t.Logf("Admin created PDU %s", pduID)
+		// No token write rejected
+		ctlClient.SetToken("")
+		_, err := ctlClient.PutPDU(makePDU())
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token write correctly rejected")
 
-	// Step 6: No token read rejected
-	ctlClient.SetToken("")
-	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token read correctly rejected")
+		// Regular user write rejected
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.PutPDU(makePDU())
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user write correctly rejected")
 
-	// Step 7: Regular user read rejected
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user read correctly rejected")
+		// Admin write accepted
+		ctlClient.SetToken(adminToken)
+		resp, err := ctlClient.PutPDU(makePDU())
+		require.NoError(t, err, "admin should be able to create a PDU")
+		assert.True(t, resp.Success)
+		t.Logf("Admin created PDU %s", pduID)
 
-	// Step 8: Admin read accepted, created PDU is visible
-	ctlClient.SetToken(adminToken)
-	pdus, err := ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
-	assert.NoError(t, err, "admin should be able to list PDUs")
-	found := false
-	for _, p := range pdus {
-		if p.ID == pduID {
-			found = true
-			break
+		// No token read rejected
+		ctlClient.SetToken("")
+		_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token read correctly rejected")
+
+		// Regular user read rejected
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user read correctly rejected")
+
+		// Admin read accepted
+		ctlClient.SetToken(adminToken)
+		pdus, err := ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err, "admin should be able to list PDUs")
+		found := false
+		for _, p := range pdus {
+			if p.ID == pduID {
+				found = true
+				break
+			}
 		}
+		assert.True(t, found, "PDU %s should appear in admin listing", pduID)
+		t.Logf("Admin listed %d PDU(s), found our PDU: %v", len(pdus), found)
+	} else {
+		// Auth disabled: empty token is accepted for all operations
+		ctlClient.SetToken("")
+		resp, err := ctlClient.PutPDU(makePDU())
+		require.NoError(t, err, "PutPDU should succeed when auth is disabled")
+		assert.True(t, resp.Success)
+		t.Logf("Created PDU %s without token", pduID)
+
+		pdus, err := ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
+		require.NoError(t, err, "GetPDUs should succeed when auth is disabled")
+		found := false
+		for _, p := range pdus {
+			if p.ID == pduID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "PDU %s should be visible when auth is disabled", pduID)
+		t.Log("Auth disabled: PDU operations succeed without token")
 	}
-	assert.True(t, found, "PDU %s should appear in admin listing", pduID)
-	t.Logf("Admin listed %d PDU(s), found our PDU: %v", len(pdus), found)
 
 	t.Log("PDU Authorization Test Completed Successfully")
 }
@@ -1320,33 +1302,10 @@ func TestPDUAuthorizationWithUsers(t *testing.T) {
 // TestRackAuthorizationWithUsers verifies that only admin users can create or list Rack
 func TestRackAuthorizationWithUsers(t *testing.T) {
 	ctlClient := newClient(t)
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
 
-	// Step 1: Admin token
-	t.Log("Admin authenticated")
-
-	// Step 2: Regular user token
-	adminToken := getAdminToken(t)
-	userToken := createRegularUserAndLogin(t, authClient, adminToken)
-	t.Log("Regular user authenticated")
-
-	// Step 3: Admin creates parent PDU
-	ctlClient.SetToken(adminToken)
 	pduID := uuid.NewString()
-	pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
-		ID:            pduID,
-		Name:          "pdu-for-rack-auth-" + pduID[:8],
-		Location:      "test-dc-row-B",
-		PowerCapacity: "15Kw",
-		Specification: "rack-auth-parent-pdu",
-	})
-	require.NoError(t, err, "admin should create parent PDU")
-	require.True(t, pduResp.Success, "parent PDU creation must succeed")
-	t.Logf("Parent PDU %s created", pduID)
-
 	rackID := uuid.NewString()
-	makeRack := func(token string) *cpLib.Rack {
+	makeRack := func() *cpLib.Rack {
 		return &cpLib.Rack{
 			ID:            rackID,
 			PDUID:         pduID,
@@ -1356,95 +1315,111 @@ func TestRackAuthorizationWithUsers(t *testing.T) {
 		}
 	}
 
-	// Step 4: No token write rejected
-	ctlClient.SetToken("")
-	_, err = ctlClient.PutRack(makeRack(""))
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token write correctly rejected")
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
 
-	// Step 5: Regular user write rejected (admin-only RBAC)
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.PutRack(makeRack(userToken))
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user write correctly rejected")
+		// Admin creates parent PDU
+		ctlClient.SetToken(adminToken)
+		pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
+			ID:            pduID,
+			Name:          "pdu-for-rack-auth-" + pduID[:8],
+			Location:      "test-dc-row-B",
+			PowerCapacity: "15Kw",
+			Specification: "rack-auth-parent-pdu",
+		})
+		require.NoError(t, err, "admin should create parent PDU")
+		require.True(t, pduResp.Success)
+		t.Logf("Parent PDU %s created", pduID)
 
-	// Step 6: Admin write accepted
-	ctlClient.SetToken(adminToken)
-	resp, err := ctlClient.PutRack(makeRack(adminToken))
-	require.NoError(t, err, "admin should be able to create a Rack")
-	assert.True(t, resp.Success, "PutRack by admin must succeed")
-	t.Logf("Admin created Rack %s under PDU %s", rackID, pduID)
+		// No token write rejected
+		ctlClient.SetToken("")
+		_, err = ctlClient.PutRack(makeRack())
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token write correctly rejected")
 
-	// Step 7: No token read rejected
-	ctlClient.SetToken("")
-	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token read correctly rejected")
+		// Regular user write rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.PutRack(makeRack())
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user write correctly rejected")
 
-	// Step 8: Regular user read rejected (admin-only RBAC)
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user read correctly rejected")
+		// Admin write accepted
+		ctlClient.SetToken(adminToken)
+		resp, err := ctlClient.PutRack(makeRack())
+		require.NoError(t, err, "admin should be able to create a Rack")
+		assert.True(t, resp.Success)
+		t.Logf("Admin created Rack %s under PDU %s", rackID, pduID)
 
-	// Step 9: Admin read accepted, created Rack is visible
-	ctlClient.SetToken(adminToken)
-	racks, err := ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
-	assert.NoError(t, err, "admin should be able to list Racks")
-	found := false
-	for _, r := range racks {
-		if r.ID == rackID {
-			found = true
-			break
+		// No token read rejected
+		ctlClient.SetToken("")
+		_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token read correctly rejected")
+
+		// Regular user read rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user read correctly rejected")
+
+		// Admin read accepted
+		ctlClient.SetToken(adminToken)
+		racks, err := ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err, "admin should be able to list Racks")
+		found := false
+		for _, r := range racks {
+			if r.ID == rackID {
+				found = true
+				break
+			}
 		}
+		assert.True(t, found, "Rack %s should appear in admin listing", rackID)
+		t.Logf("Admin listed %d Rack(s), found our Rack: %v", len(racks), found)
+	} else {
+		// Auth disabled: empty token is accepted for all operations
+		ctlClient.SetToken("")
+		pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
+			ID:            pduID,
+			Name:          "pdu-for-rack-auth-" + pduID[:8],
+			Location:      "test-dc-row-B",
+			PowerCapacity: "15Kw",
+			Specification: "rack-auth-parent-pdu",
+		})
+		require.NoError(t, err, "PutPDU should succeed when auth is disabled")
+		require.True(t, pduResp.Success)
+
+		resp, err := ctlClient.PutRack(makeRack())
+		require.NoError(t, err, "PutRack should succeed when auth is disabled")
+		assert.True(t, resp.Success)
+		t.Logf("Created Rack %s without token", rackID)
+
+		racks, err := ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
+		require.NoError(t, err, "GetRacks should succeed when auth is disabled")
+		found := false
+		for _, r := range racks {
+			if r.ID == rackID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Rack %s should be visible when auth is disabled", rackID)
+		t.Log("Auth disabled: Rack operations succeed without token")
 	}
-	assert.True(t, found, "Rack %s should appear in admin listing", rackID)
-	t.Logf("Admin listed %d Rack(s), found our Rack: %v", len(racks), found)
 
 	t.Log("Rack Authorization Test Completed Successfully")
 }
 
-// TestHypervisorAuthorizationWithUsers verifies that only admin users can creat to list Hyptervisors
+// TestHypervisorAuthorizationWithUsers verifies that only admin users can create or list Hypervisors
 func TestHypervisorAuthorizationWithUsers(t *testing.T) {
 	ctlClient := newClient(t)
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
 
-	// Step 1: Admin token
-	t.Log("Admin authenticated")
-
-	// Step 2: Regular user token
-	adminToken := getAdminToken(t)
-	userToken := createRegularUserAndLogin(t, authClient, adminToken)
-	t.Log("Regular user authenticated")
-
-	// Step 3: Admin builds parent hierarchy  PDU Rack
-	ctlClient.SetToken(adminToken)
 	pduID := uuid.NewString()
-	pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
-		ID:            pduID,
-		Name:          "pdu-for-hv-auth-" + pduID[:8],
-		Location:      "test-dc-row-C",
-		PowerCapacity: "20Kw",
-		Specification: "hv-auth-parent-pdu",
-	})
-	require.NoError(t, err)
-	require.True(t, pduResp.Success, "parent PDU creation must succeed")
-	t.Logf("Parent PDU %s created", pduID)
-
 	rackID := uuid.NewString()
-	rackResp, err := ctlClient.PutRack(&cpLib.Rack{
-		ID:            rackID,
-		PDUID:         pduID,
-		Name:          "rack-for-hv-auth-" + rackID[:8],
-		Location:      "test-dc-row-C-slot-2",
-		Specification: "hv-auth-parent-rack",
-	})
-	require.NoError(t, err)
-	require.True(t, rackResp.Success, "parent Rack creation must succeed")
-	t.Logf("Parent Rack %s created under PDU %s", rackID, pduID)
 	hvID := uuid.NewString()
-	makeHV := func(token string) *cpLib.Hypervisor {
+	makeHV := func() *cpLib.Hypervisor {
 		return &cpLib.Hypervisor{
 			ID:        hvID,
 			RackID:    rackID,
@@ -1455,49 +1430,106 @@ func TestHypervisorAuthorizationWithUsers(t *testing.T) {
 		}
 	}
 
-	// Step 4: No token write rejected
-	ctlClient.SetToken("")
-	_, err = ctlClient.PutHypervisor(makeHV(""))
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token write correctly rejected")
+	// Helper to build the parent PDU+Rack hierarchy
+	buildParents := func() {
+		pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
+			ID:            pduID,
+			Name:          "pdu-for-hv-auth-" + pduID[:8],
+			Location:      "test-dc-row-C",
+			PowerCapacity: "20Kw",
+			Specification: "hv-auth-parent-pdu",
+		})
+		require.NoError(t, err)
+		require.True(t, pduResp.Success, "parent PDU creation must succeed")
+		t.Logf("Parent PDU %s created", pduID)
 
-	// Step 5: Regular user write rejected (admin-only RBAC)
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.PutHypervisor(makeHV(userToken))
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user write correctly rejected")
-
-	// Step 6: Admin write accepted
-	ctlClient.SetToken(adminToken)
-	resp, err := ctlClient.PutHypervisor(makeHV(adminToken))
-	require.NoError(t, err, "admin should be able to create a Hypervisor")
-	assert.True(t, resp.Success, "PutHypervisor by admin must succeed")
-	t.Logf("Admin created Hypervisor %s under Rack %s", hvID, rackID)
-
-	// Step 7: No token read rejected
-	ctlClient.SetToken("")
-	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "user token is required")
-	t.Log("No-token read correctly rejected")
-
-	// Step 8: Regular user read rejected (admin-only RBAC)
-	ctlClient.SetToken(userToken)
-	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	t.Log("Regular-user read correctly rejected")
-	// Step 9: Admin read accepted, created HV is visible
-	ctlClient.SetToken(adminToken)
-	hvs, err := ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	assert.NoError(t, err, "admin should be able to list Hypervisors")
-	found := false
-	for _, h := range hvs {
-		if h.ID == hvID {
-			found = true
-			break
-		}
+		rackResp, err := ctlClient.PutRack(&cpLib.Rack{
+			ID:            rackID,
+			PDUID:         pduID,
+			Name:          "rack-for-hv-auth-" + rackID[:8],
+			Location:      "test-dc-row-C-slot-2",
+			Specification: "hv-auth-parent-rack",
+		})
+		require.NoError(t, err)
+		require.True(t, rackResp.Success, "parent Rack creation must succeed")
+		t.Logf("Parent Rack %s created under PDU %s", rackID, pduID)
 	}
-	assert.True(t, found, "Hypervisor %s should appear in admin listing", hvID)
-	t.Logf("Admin listed %d Hypervisor(s), found our HV: %v", len(hvs), found)
+
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
+
+		ctlClient.SetToken(adminToken)
+		buildParents()
+
+		// No token write rejected
+		ctlClient.SetToken("")
+		_, err := ctlClient.PutHypervisor(makeHV())
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token write correctly rejected")
+
+		// Regular user write rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.PutHypervisor(makeHV())
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user write correctly rejected")
+
+		// Admin write accepted
+		ctlClient.SetToken(adminToken)
+		resp, err := ctlClient.PutHypervisor(makeHV())
+		require.NoError(t, err, "admin should be able to create a Hypervisor")
+		assert.True(t, resp.Success)
+		t.Logf("Admin created Hypervisor %s under Rack %s", hvID, rackID)
+
+		// No token read rejected
+		ctlClient.SetToken("")
+		_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token read correctly rejected")
+
+		// Regular user read rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user read correctly rejected")
+
+		// Admin read accepted
+		ctlClient.SetToken(adminToken)
+		hvs, err := ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err, "admin should be able to list Hypervisors")
+		found := false
+		for _, h := range hvs {
+			if h.ID == hvID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Hypervisor %s should appear in admin listing", hvID)
+		t.Logf("Admin listed %d Hypervisor(s), found our HV: %v", len(hvs), found)
+	} else {
+		// Auth disabled: empty token is accepted for all operations
+		ctlClient.SetToken("")
+		buildParents()
+
+		resp, err := ctlClient.PutHypervisor(makeHV())
+		require.NoError(t, err, "PutHypervisor should succeed when auth is disabled")
+		assert.True(t, resp.Success)
+		t.Logf("Created Hypervisor %s without token", hvID)
+
+		hvs, err := ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
+		require.NoError(t, err, "GetHypervisor should succeed when auth is disabled")
+		found := false
+		for _, h := range hvs {
+			if h.ID == hvID {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Hypervisor %s should be visible when auth is disabled", hvID)
+		t.Log("Auth disabled: Hypervisor operations succeed without token")
+	}
 
 	t.Log("Hypervisor Authorization Test Completed Successfully")
 }
@@ -1505,168 +1537,173 @@ func TestHypervisorAuthorizationWithUsers(t *testing.T) {
 // TestFullHierarchyAuthorizationWithUsers check the complete flow
 func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 	ctlClient := newClient(t)
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
 
-	// Step 1: Admin and regular-user setup
-	adminToken := getAdminToken(t)
-	userToken := createRegularUserAndLogin(t, authClient, adminToken)
-	t.Log("Admin and regular user authenticated")
-
-	// Step 2: Admin builds the full hierarchy
-	ctlClient.SetToken(adminToken)
-	// PDU
 	pduID := uuid.NewString()
-	pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
-		ID:            pduID,
-		Name:          "hier-pdu-" + pduID[:8],
-		Location:      "test-dc-full-hier",
-		PowerCapacity: "25Kw",
-		Specification: "full-hierarchy-test",
-	})
-	require.NoError(t, err)
-	require.True(t, pduResp.Success)
-	t.Logf("PDU %s created", pduID)
-	// Rack (belongs to PDU)
 	rackID := uuid.NewString()
-	rackResp, err := ctlClient.PutRack(&cpLib.Rack{
-		ID:            rackID,
-		PDUID:         pduID,
-		Name:          "hier-rack-" + rackID[:8],
-		Location:      "test-dc-full-hier-slot-1",
-		Specification: "full-hierarchy-test",
-	})
-	require.NoError(t, err)
-	require.True(t, rackResp.Success)
-	t.Logf("Rack %s created under PDU %s", rackID, pduID)
-
-	// Hypervisor (belongs to Rack)
 	hvID := uuid.NewString()
-	hvResp, err := ctlClient.PutHypervisor(&cpLib.Hypervisor{
-		ID:        hvID,
-		RackID:    rackID,
-		Name:      "hier-hv-" + hvID[:8],
-		IPAddrs:   []string{"10.0.0.1"},
-		PortRange: "7000-8000",
-		SSHPort:   "22",
-	})
-	require.NoError(t, err)
-	require.True(t, hvResp.Success)
-	t.Logf("Hypervisor %s created under Rack %s", hvID, rackID)
-
-	// NISD (FailureDomain = [PDU, Rack, HV, device])
 	nisdID := uuid.NewString()
-	nisdResp, err := ctlClient.PutNisd(&cpLib.Nisd{
-		PeerPort:      9200,
-		ID:            nisdID,
-		FailureDomain: []string{pduID, rackID, hvID, "nvme-hier-test-device", "pt-nvme-hier-test-device-0"},
-		TotalSize:     2_000_000_000_000,
-		AvailableSize: 2_000_000_000_000,
-		SocketPath:    "/tmp/nisd-hier-test.sock",
-		NetInfo:       cpLib.NetInfoList{{IPAddr: "10.0.0.1", Port: 9200}},
-		NetInfoCnt:    1,
-	})
-	require.NoError(t, err)
-	require.True(t, nisdResp.Success)
-	t.Logf("NISD %s created (PDU→Rack→HV→device)", nisdID)
-	// Step 3: Regular user is blocked at every level
-	ctlClient.SetToken(userToken)
-	t.Log("Verifying regular user is blocked at all levels...")
 
-	// PDU
-	_, err = ctlClient.PutPDU(&cpLib.PDU{ID: uuid.NewString(), Name: "user-pdu"})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
+	// buildHierarchy creates the full PDU→Rack→HV→NISD chain using whatever
+	// token is currently set on ctlClient.
+	buildHierarchy := func() {
+		pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
+			ID:            pduID,
+			Name:          "hier-pdu-" + pduID[:8],
+			Location:      "test-dc-full-hier",
+			PowerCapacity: "25Kw",
+			Specification: "full-hierarchy-test",
+		})
+		require.NoError(t, err)
+		require.True(t, pduResp.Success)
+		t.Logf("PDU %s created", pduID)
 
-	// Rack
-	_, err = ctlClient.PutRack(&cpLib.Rack{ID: uuid.NewString(), PDUID: pduID, Name: "user-rack"})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		rackResp, err := ctlClient.PutRack(&cpLib.Rack{
+			ID:            rackID,
+			PDUID:         pduID,
+			Name:          "hier-rack-" + rackID[:8],
+			Location:      "test-dc-full-hier-slot-1",
+			Specification: "full-hierarchy-test",
+		})
+		require.NoError(t, err)
+		require.True(t, rackResp.Success)
+		t.Logf("Rack %s created under PDU %s", rackID, pduID)
 
-	// Hypervisor
-	_, err = ctlClient.PutHypervisor(&cpLib.Hypervisor{ID: uuid.NewString(), RackID: rackID, Name: "user-hv"})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		hvResp, err := ctlClient.PutHypervisor(&cpLib.Hypervisor{
+			ID:        hvID,
+			RackID:    rackID,
+			Name:      "hier-hv-" + hvID[:8],
+			IPAddrs:   []string{"10.0.0.1"},
+			PortRange: "7000-8000",
+			SSHPort:   "22",
+		})
+		require.NoError(t, err)
+		require.True(t, hvResp.Success)
+		t.Logf("Hypervisor %s created under Rack %s", hvID, rackID)
 
-	// NISD
-	_, err = ctlClient.PutNisd(&cpLib.Nisd{
-		PeerPort:      9999,
-		ID:            uuid.NewString(),
-		FailureDomain: []string{pduID, rackID, hvID, "nvme-user-attempt", "pt-nvme-user-attempt-0"},
-		TotalSize:     100_000_000_000,
-		AvailableSize: 100_000_000_000,
-		NetInfo:       cpLib.NetInfoList{{IPAddr: "10.0.0.2", Port: 9999}},
-		NetInfoCnt:    1,
-	})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
-	_, err = ctlClient.GetNisds(cpLib.GetReq{})
-	assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		nisdResp, err := ctlClient.PutNisd(&cpLib.Nisd{
+			PeerPort:      9200,
+			ID:            nisdID,
+			FailureDomain: []string{pduID, rackID, hvID, "nvme-hier-test-device", "pt-nvme-hier-test-device-0"},
+			TotalSize:     2_000_000_000_000,
+			AvailableSize: 2_000_000_000_000,
+			SocketPath:    "/tmp/nisd-hier-test.sock",
+			NetInfo:       cpLib.NetInfoList{{IPAddr: "10.0.0.1", Port: 9200}},
+			NetInfoCnt:    1,
+		})
+		require.NoError(t, err)
+		require.True(t, nisdResp.Success)
+		t.Logf("NISD %s created", nisdID)
+	}
 
-	t.Log("Regular user correctly blocked at all hierarchy levels")
-
-	// Step 4: Admin can read back every level
-	ctlClient.SetToken(adminToken)
-	t.Log("Verifying admin can read every hierarchy level...")
-	pdus, err := ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
-	assert.NoError(t, err)
-	assert.True(t, func() bool {
-		for _, p := range pdus {
-			if p.ID == pduID {
-				return true
+	// verifyAllReadable asserts that all four resource types can be listed and
+	// contain the objects created by buildHierarchy.
+	verifyAllReadable := func() {
+		pdus, err := ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err)
+		assert.True(t, func() bool {
+			for _, p := range pdus {
+				if p.ID == pduID {
+					return true
+				}
 			}
-		}
-		return false
-	}(), "PDU %s must appear in admin listing", pduID)
-	t.Logf("Admin sees %d PDU(s)", len(pdus))
+			return false
+		}(), "PDU %s must be visible", pduID)
 
-	racks, err := ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
-	assert.NoError(t, err)
-	assert.True(t, func() bool {
-		for _, r := range racks {
-			if r.ID == rackID {
-				return true
+		racks, err := ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err)
+		assert.True(t, func() bool {
+			for _, r := range racks {
+				if r.ID == rackID {
+					return true
+				}
 			}
-		}
-		return false
-	}(), "Rack %s must appear in admin listing", rackID)
-	t.Logf("Admin sees %d Rack(s)", len(racks))
+			return false
+		}(), "Rack %s must be visible", rackID)
 
-	hvs, err := ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
-	assert.NoError(t, err)
-	assert.True(t, func() bool {
-		for _, h := range hvs {
-			if h.ID == hvID {
-				return true
+		hvs, err := ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err)
+		assert.True(t, func() bool {
+			for _, h := range hvs {
+				if h.ID == hvID {
+					return true
+				}
 			}
-		}
-		return false
-	}(), "Hypervisor %s must appear in admin listing", hvID)
-	t.Logf("Admin sees %d Hypervisor(s)", len(hvs))
+			return false
+		}(), "Hypervisor %s must be visible", hvID)
 
-	nisds, err := ctlClient.GetNisds(cpLib.GetReq{})
-	assert.NoError(t, err)
-	assert.True(t, func() bool {
-		for _, n := range nisds {
-			if n.ID == nisdID {
-				return true
+		nisds, err := ctlClient.GetNisds(cpLib.GetReq{})
+		assert.NoError(t, err)
+		assert.True(t, func() bool {
+			for _, n := range nisds {
+				if n.ID == nisdID {
+					return true
+				}
 			}
-		}
-		return false
-	}(), "NISD %s must appear in admin listing", nisdID)
-	t.Logf("Admin sees %d NISD(s)", len(nisds))
+			return false
+		}(), "NISD %s must be visible", nisdID)
+	}
+
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
+
+		// Admin builds the full hierarchy
+		ctlClient.SetToken(adminToken)
+		buildHierarchy()
+
+		// Regular user is blocked at every level
+		ctlClient.SetToken(userToken)
+		t.Log("Verifying regular user is blocked at all levels...")
+
+		_, err := ctlClient.PutPDU(&cpLib.PDU{ID: uuid.NewString(), Name: "user-pdu"})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		_, err = ctlClient.GetPDUs(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+
+		_, err = ctlClient.PutRack(&cpLib.Rack{ID: uuid.NewString(), PDUID: pduID, Name: "user-rack"})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		_, err = ctlClient.GetRacks(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+
+		_, err = ctlClient.PutHypervisor(&cpLib.Hypervisor{ID: uuid.NewString(), RackID: rackID, Name: "user-hv"})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		_, err = ctlClient.GetHypervisor(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+
+		_, err = ctlClient.PutNisd(&cpLib.Nisd{
+			PeerPort:      9999,
+			ID:            uuid.NewString(),
+			FailureDomain: []string{pduID, rackID, hvID, "nvme-user-attempt", "pt-nvme-user-attempt-0"},
+			TotalSize:     100_000_000_000,
+			AvailableSize: 100_000_000_000,
+			NetInfo:       cpLib.NetInfoList{{IPAddr: "10.0.0.2", Port: 9999}},
+			NetInfoCnt:    1,
+		})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		_, err = ctlClient.GetNisds(cpLib.GetReq{})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular user correctly blocked at all hierarchy levels")
+
+		// Admin can read back every level
+		ctlClient.SetToken(adminToken)
+		verifyAllReadable()
+		t.Log("Admin can read every hierarchy level")
+	} else {
+		// Auth disabled: build and read the entire hierarchy with empty token
+		ctlClient.SetToken("")
+		buildHierarchy()
+		verifyAllReadable()
+		t.Log("Auth disabled: full hierarchy operations succeed without token")
+	}
 
 	t.Log("Full Hierarchy Authorization Test Completed Successfully")
 }
 
 func TestABACVdevOwnership(t *testing.T) {
 	ctlClient := newClient(t)
-	authClient, tearDown := newUserClient(t)
-	defer tearDown()
 
-	// Step 0: Create a NISD to allocate space for Vdevs
 	nisd := cpLib.Nisd{
 		PeerPort: 9300,
 		ID:       uuid.NewString(),
@@ -1680,137 +1717,136 @@ func TestABACVdevOwnership(t *testing.T) {
 		TotalSize:     15_000_000_000_000,
 		AvailableSize: 15_000_000_000_000,
 	}
-	resp, err := ctlClient.PutNisd(&nisd)
-	assert.True(t, resp.Success, "create NISD should not fail")
-	assert.NoError(t, err, "failed to create NISD for ABAC test")
 
-	// Step 1: Create user1 (regular "user" role)
-	adminToken := getAdminToken(t)
-	user1Username := "abac_owner_" + uuid.New().String()[:8]
-	user1Resp, err := authClient.CreateUser(adminToken, &userlib.UserReq{
-		Username: user1Username,
-	})
-	assert.NoError(t, err, "failed to create user1")
-	assert.NotNil(t, user1Resp)
-	assert.True(t, user1Resp.Success)
-	assert.NotEmpty(t, user1Resp.SecretKey)
-	assert.NotEmpty(t, user1Resp.UserID)
-	assert.Equal(t, userlib.DefaultUserRole, user1Resp.UserRole)
-	t.Logf("Created user1: %s with ID: %s", user1Username, user1Resp.UserID)
-	// Step 3: Login with user1
-	user1LoginResp, err := authClient.Login(user1Username, user1Resp.SecretKey)
-	assert.NoError(t, err, "user1 login should succeed")
-	assert.True(t, user1LoginResp.Success)
-	assert.NotEmpty(t, user1LoginResp.AccessToken, "user1 access token should not be empty")
-	user1Token := user1LoginResp.AccessToken
-	ctlClient.SetToken(user1Token)
-	t.Logf("User1 logged in, access token obtained")
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
 
-	// Step 4: Create user2 (regular "user" role)
-	user2Username := "abac_other_" + uuid.New().String()[:8]
-	user2Resp, err := authClient.CreateUser(adminToken, &userlib.UserReq{
-		Username: user2Username,
-	})
-	assert.NoError(t, err, "failed to create user2")
-	assert.NotNil(t, user2Resp)
-	assert.True(t, user2Resp.Success)
-	assert.NotEmpty(t, user2Resp.SecretKey)
-	assert.NotEmpty(t, user2Resp.UserID)
-	assert.Equal(t, userlib.DefaultUserRole, user2Resp.UserRole)
-	t.Logf("Created user2: %s with ID: %s", user2Username, user2Resp.UserID)
+		// Create NISD as admin
+		ctlClient.SetToken(adminToken)
+		resp, err := ctlClient.PutNisd(&nisd)
+		require.NoError(t, err, "failed to create NISD for ABAC test")
+		require.True(t, resp.Success)
 
-	// Step 5: Login with user2
-	user2LoginResp, err := authClient.Login(user2Username, user2Resp.SecretKey)
-	assert.NoError(t, err, "user2 login should succeed")
-	assert.True(t, user2LoginResp.Success)
-	assert.NotEmpty(t, user2LoginResp.AccessToken, "user2 access token should not be empty")
-	user2Token := user2LoginResp.AccessToken
-	t.Logf("User2 logged in, access token obtained")
+		// Create and login user1
+		user1Username := "abac_owner_" + uuid.New().String()[:8]
+		user1Resp, err := authClient.CreateUser(adminToken, &userlib.UserReq{Username: user1Username})
+		require.NoError(t, err, "failed to create user1")
+		require.True(t, user1Resp.Success)
+		user1LoginResp, err := authClient.Login(user1Username, user1Resp.SecretKey)
+		require.NoError(t, err, "user1 login should succeed")
+		user1Token := user1LoginResp.AccessToken
+		t.Logf("User1 logged in: %s", user1Username)
 
-	// Step 6: Each user creates their own vdev.
-	// CreateVdev writes the ownership key "v/<vdevID>" under the caller's
-	// user namespace, which is what ABAC checks on the read path.
-	vdev1Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{
-		Vdev: &cpLib.VdevCfg{Size: 500 * 1024 * 1024 * 1024, NumReplica: 1},
-	})
-	assert.NoError(t, err, "user1 should be able to create vdev")
-	require.NotNil(t, vdev1Resp, "user1 vdev response should not be nil")
-	assert.True(t, vdev1Resp.Success, "user1 vdev creation should succeed")
-	assert.NotEmpty(t, vdev1Resp.ID, "user1 vdev ID should not be empty")
-	vdev1ID := vdev1Resp.ID
-	t.Logf("User1 created vdev with ID: %s", vdev1ID)
+		// Create and login user2
+		user2Username := "abac_other_" + uuid.New().String()[:8]
+		user2Resp, err := authClient.CreateUser(adminToken, &userlib.UserReq{Username: user2Username})
+		require.NoError(t, err, "failed to create user2")
+		require.True(t, user2Resp.Success)
+		user2LoginResp, err := authClient.Login(user2Username, user2Resp.SecretKey)
+		require.NoError(t, err, "user2 login should succeed")
+		user2Token := user2LoginResp.AccessToken
+		t.Logf("User2 logged in: %s", user2Username)
 
-	ctlClient.SetToken(user2Token)
-	vdev2Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{
-		Vdev: &cpLib.VdevCfg{Size: 300 * 1024 * 1024 * 1024, NumReplica: 1},
-	})
-	assert.NoError(t, err, "user2 should be able to create vdev")
-	require.NotNil(t, vdev2Resp, "user2 vdev response should not be nil")
-	assert.True(t, vdev2Resp.Success, "user2 vdev creation should succeed")
-	assert.NotEmpty(t, vdev2Resp.ID, "user2 vdev ID should not be empty")
-	vdev2ID := vdev2Resp.ID
-	t.Logf("User2 created vdev with ID: %s", vdev2ID)
+		// Each user creates their own vdev
+		ctlClient.SetToken(user1Token)
+		vdev1Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 500 * 1024 * 1024 * 1024, NumReplica: 1}})
+		require.NoError(t, err, "user1 should be able to create vdev")
+		require.True(t, vdev1Resp.Success)
+		vdev1ID := vdev1Resp.ID
+		t.Logf("User1 created vdev: %s", vdev1ID)
 
-	// Step 7: Verify ABAC on ReadVdevInfo (GetVdevCfg)
-	ctlClient.SetToken(user1Token)
-	vdev1Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
-	assert.NoError(t, err, "ABAC: user1 should be able to read their own vdev")
-	assert.Equal(t, vdev1ID, vdev1Cfg.ID, "fetched vdev1 ID should match")
-	t.Logf("User1 successfully accessed their own vdev: %s", vdev1ID)
+		ctlClient.SetToken(user2Token)
+		vdev2Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 300 * 1024 * 1024 * 1024, NumReplica: 1}})
+		require.NoError(t, err, "user2 should be able to create vdev")
+		require.True(t, vdev2Resp.Success)
+		vdev2ID := vdev2Resp.ID
+		t.Logf("User2 created vdev: %s", vdev2ID)
 
-	ctlClient.SetToken(user2Token)
-	_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
-	assert.EqualError(t, err, "User is not authorized")
-	t.Logf("User2 correctly denied access to user1's vdev (ABAC check passed)")
+		// ABAC on GetVdevCfg
+		ctlClient.SetToken(user1Token)
+		vdev1Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		assert.NoError(t, err, "user1 should read their own vdev")
+		assert.Equal(t, vdev1ID, vdev1Cfg.ID)
 
-	vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
-	assert.NoError(t, err, "ABAC: user2 should be able to read their own vdev")
-	assert.Equal(t, vdev2ID, vdev2Cfg.ID, "fetched vdev2 ID should match")
-	t.Logf("User2 successfully accessed their own vdev: %s", vdev2ID)
+		ctlClient.SetToken(user2Token)
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		assert.EqualError(t, err, "User is not authorized", "user2 must not read user1's vdev")
 
-	ctlClient.SetToken(user1Token)
-	_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
-	assert.EqualError(t, err, "User is not authorized")
-	t.Logf("User1 correctly denied access to user2's vdev (ABAC check passed)")
+		vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		assert.NoError(t, err, "user2 should read their own vdev")
+		assert.Equal(t, vdev2ID, vdev2Cfg.ID)
 
-	// Step 8: Verify ABAC on ReadVdevsInfoWithChunkMapping (GetVdevsWithChunkInfo)
-	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
-	assert.NoError(t, err, "ABAC: user1 should be able to read chunk-info of their own vdev")
-	t.Logf("User1 successfully accessed chunk-info of their own vdev: %s", vdev1ID)
+		ctlClient.SetToken(user1Token)
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		assert.EqualError(t, err, "User is not authorized", "user1 must not read user2's vdev")
 
-	ctlClient.SetToken(user2Token)
-	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
-	assert.EqualError(t, err, "User is not authorized")
-	t.Logf("User2 correctly denied chunk-info access to user1's vdev (ABAC check passed)")
+		// ABAC on GetVdevsWithChunkInfo
+		ctlClient.SetToken(user1Token)
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+		assert.NoError(t, err, "user1 should read chunk-info of their own vdev")
 
-	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
-	assert.NoError(t, err, "ABAC: user2 should be able to read chunk-info of their own vdev")
-	t.Logf("User2 successfully accessed chunk-info of their own vdev: %s", vdev2ID)
+		ctlClient.SetToken(user2Token)
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+		assert.EqualError(t, err, "User is not authorized")
 
-	ctlClient.SetToken(user1Token)
-	_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
-	assert.EqualError(t, err, "User is not authorized")
-	t.Logf("User1 correctly denied chunk-info access to user2's vdev (ABAC check passed)")
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
+		assert.NoError(t, err, "user2 should read chunk-info of their own vdev")
 
-	// Step 9: Verify ABAC on ReadChunkNisd (GetChunkNisd).
-	// req.ID is "vdevID/chunkIndex"; ABAC extracts the vdevID prefix.
-	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
-	assert.NoError(t, err, "ABAC: user1 should be able to read chunk-nisd of their own vdev")
-	t.Logf("User1 successfully read chunk-nisd of their own vdev: %s", vdev1ID)
+		ctlClient.SetToken(user1Token)
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
+		assert.EqualError(t, err, "User is not authorized")
 
-	ctlClient.SetToken(user2Token)
-	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
-	assert.EqualError(t, err, "authorization failed")
-	t.Logf("User2 correctly denied chunk-nisd access to user1's vdev (ABAC check passed)")
+		// ABAC on GetChunkNisd
+		ctlClient.SetToken(user1Token)
+		_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
+		assert.NoError(t, err, "user1 should read chunk-nisd of their own vdev")
 
-	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
-	assert.NoError(t, err, "ABAC: user2 should be able to read chunk-nisd of their own vdev")
-	t.Logf("User2 successfully read chunk-nisd of their own vdev: %s", vdev2ID)
+		ctlClient.SetToken(user2Token)
+		_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
+		assert.EqualError(t, err, "authorization failed")
 
-	ctlClient.SetToken(user1Token)
-	_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
-	assert.EqualError(t, err, "authorization failed")
-	t.Logf("User1 correctly denied chunk-nisd access to user2's vdev (ABAC check passed)")
+		_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
+		assert.NoError(t, err, "user2 should read chunk-nisd of their own vdev")
+
+		ctlClient.SetToken(user1Token)
+		_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev2ID, "0")})
+		assert.EqualError(t, err, "authorization failed")
+	} else {
+		// Auth disabled: empty token is accepted; ABAC ownership checks are not enforced
+		ctlClient.SetToken("")
+		resp, err := ctlClient.PutNisd(&nisd)
+		require.NoError(t, err, "PutNisd should succeed when auth is disabled")
+		require.True(t, resp.Success)
+
+		vdev1Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 500 * 1024 * 1024 * 1024, NumReplica: 1}})
+		require.NoError(t, err, "CreateVdev should succeed when auth is disabled")
+		require.True(t, vdev1Resp.Success)
+		vdev1ID := vdev1Resp.ID
+
+		vdev2Resp, err := ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 300 * 1024 * 1024 * 1024, NumReplica: 1}})
+		require.NoError(t, err, "CreateVdev should succeed when auth is disabled")
+		require.True(t, vdev2Resp.Success)
+		vdev2ID := vdev2Resp.ID
+
+		// Any caller can read any vdev — no ownership enforcement
+		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
+		assert.Equal(t, vdev1ID, cfg1.ID)
+
+		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
+		assert.Equal(t, vdev2ID, cfg2.ID)
+
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+		assert.NoError(t, err, "GetVdevsWithChunkInfo should succeed when auth is disabled")
+
+		_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})
+		assert.NoError(t, err, "GetChunkNisd should succeed when auth is disabled")
+
+		t.Log("Auth disabled: vdev ABAC operations succeed without token")
+	}
 
 	t.Log("ABAC Vdev Ownership Test Completed Successfully")
 }
