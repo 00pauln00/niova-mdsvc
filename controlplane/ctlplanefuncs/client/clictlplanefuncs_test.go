@@ -125,6 +125,7 @@ func newClient(t testing.TB) *CliCFuncs {
 		uuid.New().String(),
 		testClusterID,
 		testConfigPath,
+		"",
 	)
 	if c == nil {
 		t.Fatal("failed to init client funcs")

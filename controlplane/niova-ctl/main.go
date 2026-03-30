@@ -384,6 +384,9 @@ func createIPInput() textinput.Model {
 }
 
 func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) model {
+	if logFile == "" {
+		logFile = ctlplfl.DefaultLogPath()
+	}
 	// Initialize text inputs (expanded for all form types)
 	var inputs []textinput.Model
 	for i := 0; i < 9; i++ {
@@ -483,7 +486,7 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 	userTokenInput.CharLimit = 2048
 
 	isConnected := false
-	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
+	cpClient := initControlPlane(cpRaftUUID, cpGossipPath, logFile)
 	if cpClient != nil {
 		isConnected = true
 	}
@@ -535,7 +538,7 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 }
 
 // initControlPlane initializes the control plane client if enabled
-func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
+func initControlPlane(raftUUID, gossipPath, logFile string) *ctlplcl.CliCFuncs {
 
 	log.Info("initControlPlane")
 	if raftUUID == "" || gossipPath == "" {
@@ -547,7 +550,7 @@ func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 	appUUID := uuid.New().String()
 
 	// Initialize control plane client
-	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath)
+	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath, logFile)
 
 	// Set connected status - InitCliCFuncs starts async connection
 	log.Info("Control plane client initialized with UUID: ", appUUID)
@@ -561,23 +564,13 @@ func initUserClient(raftUUID, gossipPath, logFile string) (*usercl.Client, func(
 		return nil, func() {}
 	}
 
-	userLogFile := "niova-ctl-user.log"
-	if logFile != "" {
-		userLogFile = filepath.Join(filepath.Dir(logFile), userLogFile)
-	} else {
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			userLogFile = filepath.Join(homeDir, userLogFile)
-		}
-	}
-
 	appUUID := uuid.New().String()
 	cfg := usercl.Config{
 		AppUUID:          appUUID,
 		RaftUUID:         raftUUID,
 		GossipConfigPath: gossipPath,
 		LogLevel:         "Info",
-		LogFile:          userLogFile,
+		LogFile:          logFile,
 	}
 
 	client, teardown := usercl.New(cfg)

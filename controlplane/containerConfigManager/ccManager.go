@@ -82,7 +82,7 @@ func main() {
 	}
 
 	// Initialize control plane client
-	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath)
+	c := cpClient.InitCliCFuncs(uuid.New().String(), *raftID, *configPath, "")
 
 	// Initialize user client for authentication
 	userCfg := userClient.Config{

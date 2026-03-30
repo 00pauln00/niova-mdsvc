@@ -45,6 +45,9 @@ func New(cfg Config) (*Client, func()) {
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = defaultLogLevel
 	}
+	if cfg.LogFile == "" {
+		cfg.LogFile = cpLib.DefaultLogPath()
+	}
 	if cfg.EncodingFormat == "" {
 		cfg.EncodingFormat = defaultEncodingFmt
 	}
