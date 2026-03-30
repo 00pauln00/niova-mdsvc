@@ -800,7 +800,7 @@ func (clientObj *clientHandler) ensureUserToken() error {
 
 // regenerateNISDUUIDs generates a fresh UUID for every NISD in pdus and calls PutNisd.
 // The topology JSON is used only as a structural reference.
-func regenerateNISDUUIDs(pdus []cpLib.PDU, c *ctlplcl.CliCFuncs, userToken string) error {
+func regenerateNISDUUIDs(pdus []cpLib.PDU, c *ctlplcl.CliCFuncs) error {
 	port := 13000
 	for i := range pdus {
 		for j := range pdus[i].Racks {
@@ -817,7 +817,6 @@ func regenerateNISDUUIDs(pdus []cpLib.PDU, c *ctlplcl.CliCFuncs, userToken strin
 							FailureDomain: []string{pdus[i].ID, pdus[i].Racks[j].ID, hv.ID, dev.ID, p.PartitionID},
 							TotalSize:     p.Size,
 							AvailableSize: p.Size,
-							UserToken:     userToken,
 							NetInfo: cpLib.NetInfoList{
 								{IPAddr: hv.IPAddrs[0], Port: uint16(port)},
 								{IPAddr: hv.IPAddrs[1], Port: uint16(port)},
@@ -865,13 +864,12 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 	log.Info("Loaded topology JSON from ", jsonPath)
 
 	if clientObj.regenerateNISDUUIDs {
-		if err := regenerateNISDUUIDs(pdus, c, clientObj.userToken); err != nil {
+		if err := regenerateNISDUUIDs(pdus, c); err != nil {
 			return fmt.Errorf("failed to regenerate NISD UUIDs: %v", err)
 		}
 	} else {
 		port := 13000
 		for _, pdu := range pdus {
-			pdu.UserToken = clientObj.userToken
 			resp, err := c.PutPDU(&pdu)
 			if err != nil || resp == nil || !resp.Success {
 				log.Errorf("Failed to insert PDU %s: %v", pdu.ID, err)
@@ -880,7 +878,6 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 			log.Infof("Inserted PDU %s", pdu.Name)
 
 			for _, rack := range pdu.Racks {
-				rack.UserToken = clientObj.userToken
 				resp, err := c.PutRack(&rack)
 				if err != nil || resp == nil || !resp.Success {
 					log.Errorf("Failed to insert Rack %s: %v", rack.ID, err)
@@ -889,7 +886,6 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 				log.Infof("Inserted Rack %s, under PDU %s", rack.Name, pdu.Name)
 
 				for _, hv := range rack.Hypervisors {
-					hv.UserToken = clientObj.userToken
 					resp, err := c.PutHypervisor(&hv)
 					if err != nil || resp == nil || !resp.Success {
 						log.Errorf("Failed to insert Hypervisor %s: %v", hv.ID, err)
@@ -898,7 +894,6 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 					log.Infof("Inserted Hypervisor %s, under Rack %s", hv.Name, rack.Name)
 
 					for _, dev := range hv.Dev {
-						dev.UserToken = clientObj.userToken
 						resp, err := c.PutDevice(&dev)
 						if err != nil || resp == nil || !resp.Success {
 							log.Errorf("Failed to insert Device %s: %v", dev.ID, err)
@@ -913,8 +908,6 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 								FailureDomain: []string{pdu.ID, rack.ID, hv.ID, dev.ID, part.PartitionID},
 								TotalSize:     part.Size,
 								AvailableSize: part.Size,
-								// SocketPath: ,
-								UserToken: clientObj.userToken,
 								NetInfo: cpLib.NetInfoList{
 									{IPAddr: hv.IPAddrs[0], Port: uint16(port)},
 									{IPAddr: hv.IPAddrs[1], Port: uint16(port)},
@@ -1082,7 +1075,6 @@ func main() {
 			log.Error("failed to unmarshal nisd json string:", err)
 			os.Exit(-1)
 		}
-		nisd.UserToken = clientObj.userToken
 		log.Debug("writing nisd details to pmdb: ", nisd)
 		resp, err := c.PutNisd(&nisd)
 		if err != nil {
@@ -1097,7 +1089,6 @@ func main() {
 			log.Error("failed to unmarshal nisd json string:", err)
 			os.Exit(-1)
 		}
-		dev.UserToken = clientObj.userToken
 		log.Debug("writing device info into pmdb", dev)
 		resp, err := c.PutDevice(&dev)
 		if err != nil {
@@ -1111,8 +1102,7 @@ func main() {
 			Size: vdevSize,
 		}}
 		req := &cpLib.VdevReq{
-			Vdev:      &vdev.Cfg,
-			UserToken: clientObj.userToken,
+			Vdev: &vdev.Cfg,
 		}
 		resp, err := c.CreateVdev(req)
 		if err != nil {
@@ -1121,9 +1111,7 @@ func main() {
 		}
 		log.Info("Vdev created successfully with UUID:", resp)
 	case "GetVdevs":
-		req := &cpLib.GetReq{
-			UserToken: clientObj.userToken,
-		}
+		req := &cpLib.GetReq{}
 		vdevs, err := c.GetVdevCfgs(req)
 		if err != nil {
 			log.Error("failed to get vdev info:", err)
