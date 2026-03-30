@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"hash/fnv"
 
@@ -45,6 +46,7 @@ const (
 	GET_ALL_VDEV        = "get_all_vdev"
 	GET_CHUNK_NISD      = "get_chunk_nisd"
 	GET_NISD_INFO       = "get_nisd_info"
+	MOUNT_VDEV          = "MountVdev"
 
 	PUT_NISD_ARGS  = "PutNisdArgs"
 	GET_NISD_ARGS  = "GetNisdArgs"
@@ -71,6 +73,12 @@ const (
 	HASH_SIZE = 8
 
 	PmdbColumnFamily = "PMDBTS_CF"
+
+	VDEV_MOUNT_LIMIT = 30 * time.Second
+
+	MntKey           = "m"
+	MOUNT_COUNTER    = "mc"
+	LAST_UPDATED_LTS = "lu"
 )
 
 type FD int
@@ -277,6 +285,17 @@ type GetReq struct {
 	GetAll bool
 }
 
+type MountVdevRequest struct {
+	VdevID string
+}
+
+type VdevMountInfo struct {
+	Vdev           VdevCfg
+	MountCounter   uint64
+	LastUpdatedLTS time.Time
+	AccessToken    string
+}
+
 func (vdev *VdevCfg) Init() error {
 
 	id, err := uuid.NewV7()
@@ -388,6 +407,8 @@ func RegisterGOBStructs() {
 	gob.Register(userlib.UserResp{})
 	gob.Register([]userlib.UserResp{})
 	gob.Register(userlib.LoginResp{})
+	gob.Register(MountVdevRequest{})
+	gob.Register(VdevMountInfo{})
 }
 
 func (req *GetReq) ValidateRequest() error {
