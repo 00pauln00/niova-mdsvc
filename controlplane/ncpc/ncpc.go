@@ -1006,7 +1006,6 @@ func main() {
 		log.Fatal("admin login failed: no access token received")
 	}
 	adminToken := loginResp.AccessToken
-	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath)
 
 	var passNext bool
 	var rdata []byte
@@ -1135,7 +1134,7 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Info("Vdev created successfully with UUID:", resp)
-	case "GetVdevs":
+	case "GetVdevCfg":
 		req := &cpLib.GetReq{}
 		vdevs, err := c.GetVdevCfgs(req)
 		if err != nil {
@@ -1209,8 +1208,7 @@ func main() {
 		}
 
 		vdev, err := c.GetVdevsWithChunkInfo(&cpLib.GetReq{
-			ID:        *vdevID,
-			UserToken: adminToken,
+			ID: *vdevID,
 		})
 		if err != nil {
 			log.Errorf("Failed to fetch Vdev details for VdevID=%s: %v", *vdevID, err)
@@ -1229,8 +1227,7 @@ func main() {
 		reqID := *vdevID + "/" + *chunk
 
 		vdev, err := c.GetChunkNisd(&cpLib.GetReq{
-			ID:        reqID,
-			UserToken: adminToken,
+			ID: reqID,
 		})
 		if err != nil {
 			log.Errorf("Failed to fetch Chunk info for VdevID=%s Chunk=%s: %v", *vdevID, *chunk, err)
