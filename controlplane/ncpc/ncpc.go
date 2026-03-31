@@ -951,7 +951,6 @@ func main() {
 	flag.StringVar(&nisdDetails, "nd", "", "enter nisd details in json format")
 	flag.Int64Var(&vdevSize, "vds", 100*1024*1024*1024, "enter vdev size in bytes")
 	flag.StringVar(&vdevOutputFile, "vo", "vdev-config.json", "Path to the output JSON file where VDEV configuration will be written")
-	adminSecret := flag.String("as", "", "admin secret key for authentication")
 	vdevID := flag.String("vdev", "", "enter a valid VDEV ID")
 	chunk := flag.String("chunk", "", "enter a valid Chunk Number")
 
@@ -996,16 +995,6 @@ func main() {
 		log.Fatal("failed to initialize user client for authentication")
 	}
 	defer tearDown()
-
-	// Login as admin to get UserToken
-	loginResp, err := authClient.Login(userlib.AdminUsername, *adminSecret)
-	if err != nil {
-		log.Fatalf("admin login failed: %v", err)
-	}
-	if !loginResp.Success || loginResp.AccessToken == "" {
-		log.Fatal("admin login failed: no access token received")
-	}
-	adminToken := loginResp.AccessToken
 
 	var passNext bool
 	var rdata []byte
