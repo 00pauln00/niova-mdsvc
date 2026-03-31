@@ -952,7 +952,7 @@ func main() {
 	flag.Int64Var(&vdevSize, "vds", 100*1024*1024*1024, "enter vdev size in bytes")
 	flag.StringVar(&vdevOutputFile, "vo", "vdev-config.json", "Path to the output JSON file where VDEV configuration will be written")
 	vdevID := flag.String("vdev", "", "enter a valid VDEV ID")
-	chunk := flag.String("chunk", "", "enter a valid Chunk Number")
+	chunkNum := flag.String("chunk", "", "enter a valid Chunk Number")
 
 	//Get commandline parameters.
 	clientObj.getCmdParams()
@@ -1112,14 +1112,13 @@ func main() {
 			os.Exit(-1)
 		}
 		log.Info("Vdev created successfully with UUID:", resp)
-	case "GetVdevCfg":
+	case "GetVdevCfgs":
 		req := &cpLib.GetReq{}
 		vdevs, err := c.GetVdevCfgs(req)
 		if err != nil {
 			log.Errorf("Failed to fetch Vdev configurations: %v", err)
 			os.Exit(1)
 		}
-
 		log.Infof("Successfully retrieved %d Vdev configurations", len(vdevs))
 		DumpVdevCfgsToJSON(vdevs, vdevOutputFile)
 	case "PopulateTopology":
@@ -1184,7 +1183,6 @@ func main() {
 			log.Error("Missing required flag: -vdev")
 			os.Exit(1)
 		}
-
 		vdev, err := c.GetVdevsWithChunkInfo(&cpLib.GetReq{
 			ID: *vdevID,
 		})
@@ -1192,27 +1190,22 @@ func main() {
 			log.Errorf("Failed to fetch Vdev details for VdevID=%s: %v", *vdevID, err)
 			os.Exit(1)
 		}
-
 		log.Infof("Successfully retrieved Vdev details for VdevID=%s", *vdevID)
 		fmt.Printf("Vdev Details: %+v\n", vdev)
-
 	case "GetChunk":
-		if *vdevID == "" || *chunk == "" {
+		if *vdevID == "" || *chunkNum == "" {
 			log.Error("Missing required flags: -vdev and -chunk")
 			os.Exit(1)
 		}
-
-		reqID := *vdevID + "/" + *chunk
-
+		reqID := *vdevID + "/" + *chunkNum
 		vdev, err := c.GetChunkNisd(&cpLib.GetReq{
 			ID: reqID,
 		})
 		if err != nil {
-			log.Errorf("Failed to fetch Chunk info for VdevID=%s Chunk=%s: %v", *vdevID, *chunk, err)
+			log.Errorf("Failed to fetch Chunk info for VdevID=%s Chunk=%s: %v", *vdevID, *chunkNum, err)
 			os.Exit(1)
 		}
-
-		log.Infof("Successfully retrieved Chunk info for VdevID=%s Chunk=%s", *vdevID, *chunk)
+		log.Infof("Successfully retrieved Chunk info for VdevID=%s Chunk=%s", *vdevID, *chunkNum)
 		fmt.Printf("Chunk Details: %+v\n", vdev)
 	}
 
