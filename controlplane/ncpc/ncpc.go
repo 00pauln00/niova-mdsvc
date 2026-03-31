@@ -985,17 +985,6 @@ func main() {
 	//Wait till client API Object is ready
 	clientObj.waitServiceInit("")
 
-	userCfg := userClient.Config{
-		AppUUID:          uuid.NewV4().String(),
-		RaftUUID:         clientObj.raftUUID,
-		GossipConfigPath: clientObj.configPath,
-	}
-	authClient, tearDown := userClient.New(userCfg)
-	if authClient == nil {
-		log.Fatal("failed to initialize user client for authentication")
-	}
-	defer tearDown()
-
 	var passNext bool
 	var rdata []byte
 
