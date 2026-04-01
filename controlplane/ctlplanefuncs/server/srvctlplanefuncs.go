@@ -624,10 +624,6 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		return ctlplfl.WPFuncError(fmt.Errorf("vdev name %q is invalid: must be non-empty and contain only letters and digits", req.Vdev.Name))
 	}
 
-	if !isAlphanumeric(req.Vdev.Name) {
-		return nil, fmt.Errorf("vdev name %q is invalid: must be non-empty and contain only letters and digits", req.Vdev.Name)
-	}
-
 	err = req.Vdev.Init()
 	if err != nil {
 		log.Errorf("failed to initialize vdev: %v", err)
