@@ -12,29 +12,29 @@ const (
 
 // CPError carries a human-readable error message from the server.
 type CPError struct {
-	Message string
-	Code    CPErrCode
+	Message string    `xml:"Message"`
+	Code    CPErrCode `xml:"Code"`
 }
 
 // Pagination holds cursor-based pagination parameters for read requests.
 type Pagination struct {
-	SeqNo      uint64 // Seq number of the last read record
-	Consistent bool   // If true, the read is consistent with the last read
+	SeqNo      uint64 `xml:"SeqNo"`      // Seq number of the last read record
+	Consistent bool   `xml:"Consistent"` // If true, the read is consistent with the last read
 }
 
 // CPReq is the unified request envelope for all control plane operations.
 // It separates auth, pagination, and function-specific payload.
 type CPReq struct {
-	Token   string      // Auth JWT token
-	Page    *Pagination // Pagination parameters (used only for list/read operations)
-	Payload any         // Function-specific request struct (Nisd, Rack, GetReq, etc.)
+	Token   string      `xml:"Token"`   // Auth JWT token
+	Page    *Pagination `xml:"Page"`    // Pagination parameters (used only for list/read operations)
+	Payload any         `xml:"Payload"` // Function-specific request struct (Nisd, Rack, GetReq, etc.)
 }
 
 // CPResp is the unified response envelope for all control plane operations.
 type CPResp struct {
-	Error   *CPError    // nil on success
-	Page    *Pagination // Pagination metadata (returned on list operations)
-	Payload any         // Function-specific response
+	Error   *CPError    `xml:"Error"`   // nil on success
+	Page    *Pagination `xml:"Page"`    // Pagination metadata (returned on list operations)
+	Payload any         `xml:"Payload"` // Function-specific response
 }
 
 // Err returns a Go error from the response, or nil on success.
