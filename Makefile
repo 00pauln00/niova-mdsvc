@@ -8,9 +8,9 @@ export CGO_CFLAGS
 export LD_LIBRARY_PATH
 export PATH
 
-install_all: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl ccManager monitor install
+install_all: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
 
-install_only: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl install
+install_only: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
 
 compile:
 	echo "Compiling controlPlane"
@@ -18,28 +18,28 @@ compile:
 	go mod tidy
 
 pmdbserver:
-	go build -o libexec/CTLPlane_pmdbServer controlplane/pmdbServer/pmdbServer.go 
+	go build -o libexec/CTLPlane_pmdbServer ./controlplane/pmdbServer/
 
 proxyserver:
-	go build -o libexec/CTLPlane_proxy controlplane/proxy/proxy.go	controlplane/proxy/translator.go
+	go build -o libexec/CTLPlane_proxy ./controlplane/proxy/
 
 ncpcclient:
-	go build -o libexec/ncpc controlplane/ncpc/ncpc.go 
+	go build -o libexec/ncpc ./controlplane/ncpc/
 
 configapp:
-	go build -o libexec/cfgApp controlplane/configApplication/configApplication.go 
+	go build -o libexec/cfgApp ./controlplane/configApplication/
 
 testapp:
-	go build -o libexec/testApp controlplane/testApplication/testApplication.go
+	go build -o libexec/testApp ./controlplane/testApplication/
 
 niova-ctl:
-	cd controlplane/niova-ctl && go build -o ../../libexec/niova-ctl
+	go build -o libexec/niova-ctl ./controlplane/niova-ctl/
 
 monitor: 
-	cd controlplane/monitor && go build -o ../../libexec/cp-monitor
+	go build -o libexec/cp-monitor ./controlplane/monitor/
 
 ccManager: 
-	cd controlplane/containerConfigManager && go build -o ../../libexec/cc-manager
+	go build -o libexec/cc-manager ./controlplane/containerConfigManager/
 
 install:
 	cp libexec/CTLPlane_pmdbServer ${DIR}/libexec/niova/CTLPlane_pmdbServer
@@ -54,6 +54,5 @@ install:
 	cp scripts/docker/controlplane.sh ${DIR}
 	cp scripts/docker/raft-config.sh ${DIR}
 	cp scripts/docker/run-cpcontainer.sh ${DIR}	
-	cp controlplane/authorizer/ctlauth.yaml ${DIR}
 clean:
 	rm -rf libexec

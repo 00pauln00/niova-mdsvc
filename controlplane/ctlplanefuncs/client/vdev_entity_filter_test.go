@@ -119,6 +119,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 
 	nisdID := 1
 
+	c.SetToken(adminToken)
 	for p := 0; p < pduCount; p++ {
 		pdu := pdus[p]
 
@@ -147,7 +148,6 @@ func TestCreateLargeHierarchy(t *testing.T) {
 							},
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
-							UserToken:     adminToken,
 						}
 
 						mockNisd = append(mockNisd, nisd)
@@ -220,7 +220,7 @@ func TestCreateVdevWithFilters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			log.Infof("[TEST START] %s", tc.name)
 			log.Infof("FilterType=%v FilterID=%q ExpectErr=%v", tc.filterType, tc.filterID, tc.expectErr)
-
+			c.SetToken(adminToken)
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
 					Size:       16 * 1024 * 1024 * 1024,
@@ -230,7 +230,6 @@ func TestCreateVdevWithFilters(t *testing.T) {
 					Type: tc.filterType,
 					ID:   tc.filterID,
 				},
-				UserToken: adminToken,
 			}
 
 			resp, err := c.CreateVdev(vdevReq)
@@ -244,7 +243,7 @@ func TestCreateVdevWithFilters(t *testing.T) {
 
 			log.Infof("Created Vdev ID=%s", resp.ID)
 
-			getReq := &cpLib.GetReq{ID: resp.ID, UserToken: adminToken}
+			getReq := &cpLib.GetReq{ID: resp.ID}
 
 			vdevs, err := c.GetVdevsWithChunkInfo(getReq)
 			log.Infof("GetVdevsWithChunkInfo response: count=%d err=%v", len(vdevs), err)
@@ -343,6 +342,7 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 			log.Infof("[TEST START] %s", tc.name)
 			log.Infof("FilterType=%v FilterID=%q", tc.filterType, tc.filterID)
 
+			c.SetToken(adminToken)
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
 					Size:       1 * 1024 * 1024 * 1024,
@@ -352,7 +352,6 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 					Type: tc.filterType,
 					ID:   tc.filterID,
 				},
-				UserToken: adminToken,
 			}
 
 			resp, err := c.CreateVdev(vdevReq)

@@ -53,7 +53,6 @@ type UserReq struct {
 	NewSecretKey string   `xml:"NewSecretKey,omitempty" json:"newSecretKey,omitempty"` // For updating secret key (admin only)
 	IsUpdate     bool     `xml:"IsUpdate,omitempty" json:"isUpdate,omitempty"`         // true for update, false for create
 	IsAdmin      bool     `xml:"IsAdmin,omitempty" json:"isAdmin,omitempty"`
-	UserToken    string   `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 }
 
 // User represents the internal user entity stored in RocksDB
@@ -80,9 +79,8 @@ type UserResp struct {
 
 // GetReq represents the request struct for GetUser API, empty means get all users
 type GetReq struct {
-	UserID    string `xml:"UserID" json:"userID"`
-	Username  string `xml:"Username" json:"username"`
-	UserToken string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
+	UserID   string `xml:"UserID" json:"userID"`
+	Username string `xml:"Username" json:"username"`
 }
 
 // Validate validates UserReq structure

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+
 	"sort"
 	"strconv"
 	"strings"
-	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -128,8 +128,8 @@ const (
 )
 
 type model struct {
-	state state
-	logFile    string
+	state   state
+	logFile string
 
 	// Terminal dimensions for dynamic pagination
 	termWidth  int
@@ -260,6 +260,7 @@ type model struct {
 	cpHypervisorRefresh bool                 // Flag to trigger Hypervisor refresh from CP
 
 	// User Management
+	authEnabled        bool // true when the server has authentication enabled
 	userClient         *usercl.Client
 	userUsernameInput  textinput.Model
 	userSecretKeyInput textinput.Model
@@ -312,7 +313,6 @@ type userLoggedInMsg struct {
 	resp *userlib.LoginResp
 	err  error
 }
-
 
 // userClientTeardownFn holds the teardown function for the lazily-initialized
 // user client. It's package-level because Bubbletea copies the model by value,
@@ -396,6 +396,9 @@ func createIPInput() textinput.Model {
 }
 
 func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) model {
+	if logFile == "" {
+		logFile = ctlplfl.DefaultLogPath()
+	}
 	// Initialize text inputs (expanded for all form types)
 	var inputs []textinput.Model
 	for i := 0; i < 9; i++ {
@@ -427,21 +430,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 
 	// Initialize IP address inputs (start with one)
 	ipInputs := []textinput.Model{createIPInput()}
-
-	// Initialize menu items
-	menuItems := []menuItem{
-		{"Login", "Login with username and secret key"},
-		{"Create User", "Create admin or regular users"},
-		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
-		{"Manage Racks", "Add, edit, or delete server racks"},
-		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
-		{"Manage Devices", "Initialize devices on hypervisors"},
-		{"Manage Partitions", "Create, view, and delete NISD partitions"},
-		{"Manage NISDs", "Initialize NISD instances on device partitions"},
-		{"Manage Vdevs", "Create and manage virtual devices"},
-		{"View Configuration", "Display current hierarchical configuration from control plane"},
-		{"Exit", "Exit"},
-	}
 
 	// Initialize device list
 	deviceList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
@@ -511,10 +499,38 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 	userTokenInput.CharLimit = 2048
 
 	isConnected := false
-	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
+	cpClient := initControlPlane(cpRaftUUID, cpGossipPath, logFile)
 	if cpClient != nil {
 		isConnected = true
 	}
+
+	// Probe the server to determine whether authentication is enabled.
+	// When auth is disabled the server grants admin access for any token
+	var loggedInUser *userlib.LoginResp
+	// Initialize menu items
+	authDetected := cpClient != nil && probeServerAuth(cpClient)
+	if authDetected {
+		log.Info("niova-ctl: server authentication is enabled")
+	} else {
+		log.Warn("niova-ctl: server authentication is disabled")
+	}
+	menuItems := []menuItem{}
+	if authDetected {
+		menuItems = append(menuItems, menuItem{"Login", "Login with username and secret key"})
+		menuItems = append(menuItems, menuItem{"Create User", "Create admin or regular users"})
+	}
+
+	menuItems = append(menuItems, []menuItem{
+		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
+		{"Manage Racks", "Add, edit, or delete server racks"},
+		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
+		{"Manage Devices", "Initialize devices on hypervisors"},
+		{"Manage Partitions", "Create, view, and delete NISD partitions"},
+		{"Manage NISDs", "Initialize NISD instances on device partitions"},
+		{"Manage Vdevs", "Create and manage virtual devices"},
+		{"View Configuration", "Display current hierarchical configuration from control plane"},
+		{"Exit", "Exit"},
+	}...)
 
 	return model{
 		state:            stateMenu,
@@ -559,14 +575,34 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 		cpClient:     cpClient,
 		cpConnected:  isConnected,
 		// User management
+		authEnabled:        authDetected,
 		userUsernameInput:  userUsernameInput,
 		userSecretKeyInput: userSecretKeyInput,
 		userTokenInput:     userTokenInput,
+		loggedInUser:       loggedInUser,
 	}
 }
 
+// probeServerAuth reports whether the server has authentication enabled.
+// It sends a GetPDUs request with an empty token: if the server rejects it
+// with an auth error, auth is enabled (returns true); if the request succeeds,
+// auth is disabled (returns false).
+func probeServerAuth(cpClient *ctlplcl.CliCFuncs) bool {
+	_, err := cpClient.GetNisds(ctlplfl.GetReq{ID: uuid.NewString()})
+	if err == nil {
+		log.Infof("Auth probe: server has authentication disabled error: %v\n", err)
+		return false
+	}
+	if strings.Contains(err.Error(), "Failed to lookup for key") {
+		log.Info("Auth probe: server has authentication disabled (no key lookup)")
+		return false
+	}
+	log.Info("Auth probe: server has authentication enabled (", err, ")")
+	return true
+}
+
 // initControlPlane initializes the control plane client if enabled
-func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
+func initControlPlane(raftUUID, gossipPath, logFile string) *ctlplcl.CliCFuncs {
 
 	log.Info("initControlPlane")
 	if raftUUID == "" || gossipPath == "" {
@@ -578,7 +614,7 @@ func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 	appUUID := uuid.New().String()
 
 	// Initialize control plane client
-	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath)
+	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath, logFile)
 
 	// Set connected status - InitCliCFuncs starts async connection
 	log.Info("Control plane client initialized with UUID: ", appUUID)
@@ -592,23 +628,13 @@ func initUserClient(raftUUID, gossipPath, logFile string) (*usercl.Client, func(
 		return nil, func() {}
 	}
 
-	userLogFile := "niova-ctl-user.log"
-	if logFile != "" {
-		userLogFile = filepath.Join(filepath.Dir(logFile), userLogFile)
-	} else {
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			userLogFile = filepath.Join(homeDir, userLogFile)
-		}
-	}
-
 	appUUID := uuid.New().String()
 	cfg := usercl.Config{
 		AppUUID:          appUUID,
 		RaftUUID:         raftUUID,
 		GossipConfigPath: gossipPath,
 		LogLevel:         "Info",
-		LogFile:          userLogFile,
+		LogFile:          logFile,
 	}
 
 	client, teardown := usercl.New(cfg)
@@ -624,34 +650,35 @@ func (m *model) refreshCPData() {
 	token := m.userToken()
 
 	// Fetch flat lists from CP
-	pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	m.cpClient.SetToken(token)
+	pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetPDUs failed: ", err)
 		pdus = []ctlplfl.PDU{}
 	}
 
-	racks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	racks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetRacks failed: ", err)
 		racks = []ctlplfl.Rack{}
 	}
 	m.cpRacks = racks
 
-	hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: token})
+	hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetHypervisor failed: ", err)
 		hvs = []ctlplfl.Hypervisor{}
 	}
 
 	// Fetch devices and stitch into Hypervisors
-	devices, err := m.cpClient.GetDevices(ctlplfl.GetReq{GetAll: true, UserToken: token})
+	devices, err := m.cpClient.GetDevices(ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetDevices failed: ", err)
 		devices = []ctlplfl.Device{}
 	}
 
 	// Fetch partitions and stitch into Devices
-	partitions, err := m.cpClient.GetPartition(ctlplfl.GetReq{GetAll: true, UserToken: token})
+	partitions, err := m.cpClient.GetPartition(ctlplfl.GetReq{GetAll: true})
 	if err != nil {
 		log.Error("refreshCPData: GetPartition failed: ", err)
 		partitions = []ctlplfl.DevicePartition{}
@@ -1098,7 +1125,12 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.menuCursor++
 			}
 		case "enter", " ":
-			switch m.menuCursor {
+			// When auth is disabled the Login and Create User items are absent.
+			effectiveCase := m.menuCursor
+			if !m.authEnabled {
+				effectiveCase += 2
+			}
+			switch effectiveCase {
 			case 0: // Login
 				var err error
 				m, err = m.ensureUserClient()
@@ -1130,7 +1162,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.userUsernameInput.Focus()
 				return m, textinput.Blink
 			case 2: // Manage PDUs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1140,7 +1172,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 3: // Manage Racks
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1151,7 +1183,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 4: // Manage Hypervisors
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1162,7 +1194,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 5: // Manage Devices
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1174,7 +1206,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 6: // Manage Partitions
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1185,7 +1217,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 7: // Manage NISDs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1199,7 +1231,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.refreshCPData()
 				return m, nil
 			case 8: // Manage Vdevs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1209,7 +1241,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = ""
 				return m, nil
 			case 9: // View Configuration
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -1244,7 +1276,8 @@ func (m model) fetchDeviceStatesFromCP() tea.Msg {
 	if m.cpClient == nil || !m.cpConnected {
 		return deviceStateRefreshMsg{err: fmt.Errorf("not connected")}
 	}
-	req := ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()}
+	req := ctlplfl.GetReq{GetAll: true}
+	m.cpClient.SetToken(m.userToken())
 	devices, err := m.cpClient.GetDevices(req)
 	if err != nil {
 		return deviceStateRefreshMsg{err: err}
@@ -1330,14 +1363,13 @@ func (m model) updateUserCreateForm(msg tea.Msg) (model, tea.Cmd) {
 			// Regular user creation: use stored token if logged in
 			if m.loggedInUser != nil {
 				req := &userlib.UserReq{
-					Username:  username,
-					UserToken: m.loggedInUser.AccessToken,
+					Username: username,
 				}
 				client := m.userClient
 				m.userUsernameInput.Blur()
 				m.message = "Creating user..."
 				return m, func() tea.Msg {
-					resp, err := client.CreateUser(req)
+					resp, err := client.CreateUser(m.userToken(), req)
 					return userCreatedMsg{resp: resp, err: err}
 				}
 			}
@@ -1389,14 +1421,13 @@ func (m model) updateUserCreateToken(msg tea.Msg) (model, tea.Cmd) {
 			}
 			username := strings.TrimSpace(m.userUsernameInput.Value())
 			req := &userlib.UserReq{
-				Username:  username,
-				UserToken: token,
+				Username: username,
 			}
 			client := m.userClient
 			m.userTokenInput.Blur()
 			m.message = "Creating user..."
 			return m, func() tea.Msg {
-				resp, err := client.CreateUser(req)
+				resp, err := client.CreateUser(token, req)
 				return userCreatedMsg{resp: resp, err: err}
 			}
 		}
@@ -1973,7 +2004,7 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			if m.selectedRackIdx >= 0 && m.selectedRackIdx < len(allRacks) {
 				log.Info("Adding Hypervisor with devices: ", m.currentHv)
 				// Add the hypervisor with devices to pumiceDB
-				m.currentHv.UserToken = m.userToken()
+				m.cpClient.SetToken(m.userToken())
 				hvResp, err := m.cpClient.PutHypervisor(&m.currentHv)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
@@ -1995,9 +2026,9 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 						Size:          dev.Size,
 						HypervisorID:  m.currentHv.ID,
 						FailureDomain: dev.FailureDomain,
-						UserToken:     m.userToken(),
 					}
 					validateDeviceInfo(&deviceInfo)
+					m.cpClient.SetToken(m.userToken())
 					devResp, err := m.cpClient.PutDevice(&deviceInfo)
 					if err != nil {
 						log.Warn("Failed to initialize device in control plane: ", err)
@@ -2290,6 +2321,70 @@ func (m model) updateDeviceDelete(msg tea.Msg) (model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			failureDomain := strings.TrimSpace(m.deviceFailureDomain.Value())
+			if failureDomain == "" {
+				m.message = "Failure domain is required for device initialization"
+				return m, nil
+			}
+
+			if m.selectedHypervisorIdx < 0 || m.selectedHypervisorIdx >= len(m.cpHypervisors) {
+				m.message = "No hypervisor selected"
+				return m, nil
+			}
+			hv := m.cpHypervisors[m.selectedHypervisorIdx]
+			if m.selectedDeviceIdx < 0 || m.selectedDeviceIdx >= len(hv.Dev) {
+				m.message = "No device selected"
+				return m, nil
+			}
+			device := hv.Dev[m.selectedDeviceIdx]
+
+			m.message = fmt.Sprintf("Device %s initialized successfully", device.ID)
+
+			// Send to control plane if available
+			if m.cpClient != nil {
+				deviceInfo := ctlplfl.Device{
+					ID:            device.ID,
+					SerialNumber:  device.SerialNumber,
+					State:         ctlplfl.INITIALIZED,
+					HypervisorID:  hv.ID,
+					FailureDomain: failureDomain,
+				}
+				log.Info("Put device info: ", deviceInfo)
+
+				devResp, cpErr := m.cpClient.PutDevice(&deviceInfo)
+				if cpErr != nil {
+					log.Warn("Failed to sync device to control plane: ", cpErr)
+					m.message += " (Control plane sync failed)"
+				} else if devResp != nil && !devResp.Success {
+					log.Warn("Control plane rejected device sync: ", devResp.Error)
+					m.message += fmt.Sprintf(" (Control plane: %s)", devResp.Error)
+				} else {
+					log.Info("Successfully synced device to control plane")
+					m.message += " and synced to control plane"
+					m.refreshCPData()
+				}
+			} else {
+				log.Error("Failed to write DeviceInfo in CP")
+			}
+
+			m.state = stateDeviceManagement
+			m.selectedDeviceIdx = -1
+			return m, nil
+		}
+	}
+
+	m.deviceFailureDomain, cmd = m.deviceFailureDomain.Update(msg)
+	return m, cmd
+}
+
 // DeviceInfo holds device and its location in the config
 type DeviceInfo struct {
 	Device   ctlplfl.Device
@@ -2431,7 +2526,7 @@ func (m model) getNISDsList() ([]ctlplfl.Nisd, error) {
 	if m.cpClient == nil {
 		return nil, fmt.Errorf("control plane client is not initialized")
 	}
-	return m.cpClient.GetNisds(ctlplfl.GetReq{UserToken: m.userToken()})
+	return m.cpClient.GetNisds(ctlplfl.GetReq{})
 }
 
 // Helper function to get partition name for NISD display
@@ -3084,19 +3179,21 @@ func (m model) viewMenu() string {
 		s.WriteString(fmt.Sprintf("Control Plane: %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Disabled")))
 	}
 
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+
 	// Login status
-	if m.loggedInUser != nil {
+	if !m.authEnabled {
+		s.WriteString(dimStyle.Render("Authentication: Disabled") + "\n\n")
+	} else if m.loggedInUser != nil {
 		s.WriteString(successStyle.Render(fmt.Sprintf("Logged in as: %s (role: %s)", m.loggedInUser.Username, m.loggedInUser.UserRole)) + "\n\n")
 	} else {
 		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Not logged in") + "\n\n")
 	}
 
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
-
 	s.WriteString("Select an option:\n\n")
 	for i, item := range m.menuItems {
 		// Items 2-9 are locked when not logged in
-		locked := m.loggedInUser == nil && i >= 2 && i <= 9
+		locked := m.authEnabled && m.loggedInUser == nil && i >= 2 && i <= 9
 		cursor := "  "
 		if m.menuCursor == i {
 			cursor = "▶ "
@@ -3755,7 +3852,7 @@ func (m model) updateViewHypervisor(msg tea.Msg) (model, tea.Cmd) {
 
 		if m.cpClient != nil {
 			log.Info("Calling GetHypervisor with GetAll=true")
-			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query Hypervisors from Control Plane: ", err)
@@ -5005,7 +5102,6 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 					NISDUUID:    uuid.New().String(), // Generate new UUID for NISD instance
 					Size:        partitionInfo.Size,  // Use the actual partition size
 					DevID:       m.selectedDeviceForPartition.ID,
-					UserToken:   m.userToken(),
 				}
 
 				// Call PutPartition to create the partition key
@@ -5200,7 +5296,6 @@ func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 		NISDUUID:    uuid.New().String(),
 		Size:        m.selectedDeviceForPartition.Size, // Store the entire device size
 		DevID:       m.selectedDeviceForPartition.ID,
-		UserToken:   m.userToken(),
 	}
 
 	// Try to call PutPartition if control plane is enabled
@@ -5331,7 +5426,6 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 				PowerCapacity: powerCapacity,
 				Specification: description,
 				Racks:         []Rack{},
-				UserToken:     m.userToken(),
 			}
 
 			log.Info("Adding PDU: ", pdu)
@@ -5426,7 +5520,7 @@ func (m model) updateViewPDU(msg tea.Msg) (model, tea.Cmd) {
 		// If control plane client is available, fetch PDU data from CP
 		if m.cpClient != nil {
 			log.Info("Calling GetPDUs with GetAll=true")
-			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query PDUs from Control Plane: ", err)
@@ -5614,7 +5708,6 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 				PDUID:         pdu.ID,
 				Location:      location,
 				Specification: description,
-				UserToken:     m.userToken(),
 			}
 
 			log.Info("Adding Rack: ", rack)
@@ -5719,7 +5812,7 @@ func (m model) updateViewRack(msg tea.Msg) (model, tea.Cmd) {
 		// If control plane client is available, fetch Rack data from CP
 		if m.cpClient != nil {
 			log.Info("Calling GetRacks with GetAll=true")
-			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query Racks from Control Plane: ", err)
@@ -6882,7 +6975,6 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 		SerialNumber:  m.writeDeviceInputs[2].Value(),
 		HypervisorID:  m.writeDeviceInputs[4].Value(),
 		FailureDomain: m.writeDeviceInputs[5].Value(),
-		UserToken:     m.userToken(),
 	}
 
 	// Parse status field
@@ -7338,7 +7430,6 @@ func (m *model) initializeNISD() error {
 			m.selectedPartitionForNISD.PartitionID,
 		},
 		NetInfoCnt: len(netInfos),
-		UserToken:  m.userToken(),
 	}
 
 	// Call PutNisd
@@ -7419,7 +7510,6 @@ func (m *model) initializeSelectedNISDs() error {
 				partitionInfo.Partition.PartitionID,
 			},
 			NetInfoCnt: len(netInfos),
-			UserToken:  m.userToken(),
 		}
 
 		// Call PutNisd
@@ -8183,7 +8273,7 @@ func (m model) updateVdevDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			// Get devices from control plane for navigation
 			var deviceCount int
 			if m.cpClient != nil && m.cpConnected {
-				req := ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+				req := ctlplfl.GetReq{ID: "", GetAll: true}
 				devices, err := m.cpClient.GetDevices(req)
 				if err == nil {
 					deviceCount = len(devices)
@@ -8508,7 +8598,7 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
 				if err == nil && len(vdevs) > 0 {
 					// Sort to ensure consistent ordering for navigation bounds
 					sort.Slice(vdevs, func(i, j int) bool {
@@ -8546,7 +8636,7 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -8633,7 +8723,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+				req := &ctlplfl.GetReq{ID: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err == nil {
 					// Sort to ensure consistent ordering for navigation bounds
@@ -8648,7 +8738,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			// Delete selected Vdev
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+				req := &ctlplfl.GetReq{ID: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to query Vdevs: %v", err)
@@ -8699,7 +8789,7 @@ func (m model) viewDeleteVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+		req := &ctlplfl.GetReq{ID: "", GetAll: true}
 		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
@@ -9002,8 +9092,7 @@ func (m model) createSingleVdev(size int64, replica int, index int) VdevCreation
 			Size:       size,
 			NumReplica: uint8(replica),
 		},
-		Filter:    filter,
-		UserToken: m.userToken(),
+		Filter: filter,
 	}
 
 	if m.cpClient != nil && m.cpConnected {
@@ -9129,6 +9218,195 @@ func validateDeviceInfo(device *ctlplfl.Device) {
 	if device.FailureDomain == "" {
 		device.FailureDomain = "default"
 	}
+}
+
+// updateInitializeDeviceForm handles the Initialize Device form
+func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
+	// Check if control plane is connected
+	if m.cpClient == nil || !m.cpConnected {
+		m.message = "Control plane not connected. Please connect to control plane first."
+		m.state = stateDeviceManagement
+		return m, nil
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.state = stateDeviceManagement
+			m.message = ""
+			return m, nil
+		case "enter", " ":
+			// Call PutDevice for all devices
+			deviceCount := 0
+			errorCount := 0
+
+			// Initialize configured devices
+			for _, hv := range m.cpHypervisors {
+				for _, device := range hv.Dev {
+					deviceInfo := ctlplfl.Device{
+						ID:            device.ID,
+						Name:          device.Name,
+						DevicePath:    device.DevicePath,
+						SerialNumber:  device.SerialNumber,
+						State:         ctlplfl.INITIALIZED, // Default status
+						Size:          device.Size,
+						HypervisorID:  hv.ID,
+						FailureDomain: device.FailureDomain,
+					}
+
+					// Validate and fix device info
+					validateDeviceInfo(&deviceInfo)
+
+					log.Info("Sending device to CP - ID: ", deviceInfo.ID,
+						", Name: ", deviceInfo.Name,
+						", Path: ", deviceInfo.DevicePath,
+						", Size: ", deviceInfo.Size,
+						", Serial: ", deviceInfo.SerialNumber,
+						", HV: ", deviceInfo.HypervisorID)
+
+					devResp, err := m.cpClient.PutDevice(&deviceInfo)
+					if err != nil {
+						log.Warn("Failed to initialize device in control plane: ", err)
+						errorCount++
+					} else if devResp != nil && !devResp.Success {
+						log.Warn("Control plane rejected device init: ", devResp.Error)
+						errorCount++
+					} else {
+						deviceCount++
+					}
+				}
+			}
+
+			// Initialize discovered devices if any
+			if len(m.discoveredDevs) > 0 && m.currentHv.ID != "" {
+				for _, device := range m.discoveredDevs {
+					deviceInfo := ctlplfl.Device{
+						ID:            device.ID,
+						Name:          device.Name,
+						DevicePath:    device.DevicePath,
+						SerialNumber:  device.SerialNumber,
+						State:         ctlplfl.INITIALIZED, // Default status
+						Size:          device.Size,
+						HypervisorID:  m.currentHv.ID,
+						FailureDomain: device.FailureDomain,
+					}
+
+					// Validate and fix device info
+					validateDeviceInfo(&deviceInfo)
+
+					log.Info("Sending device to CP - ID: ", deviceInfo.ID,
+						", Name: ", deviceInfo.Name,
+						", Path: ", deviceInfo.DevicePath,
+						", Size: ", deviceInfo.Size,
+						", Serial: ", deviceInfo.SerialNumber,
+						", HV: ", deviceInfo.HypervisorID)
+
+					devResp, err := m.cpClient.PutDevice(&deviceInfo)
+					if err != nil {
+						log.Warn("Failed to initialize discovered device in control plane: ", err)
+						errorCount++
+					} else if devResp != nil && !devResp.Success {
+						log.Warn("Control plane rejected discovered device init: ", devResp.Error)
+						errorCount++
+					} else {
+						deviceCount++
+					}
+				}
+			}
+
+			if errorCount > 0 {
+				m.message = fmt.Sprintf("Initialized %d devices with %d errors", deviceCount, errorCount)
+			} else {
+				m.message = fmt.Sprintf("Successfully initialized %d devices in control plane", deviceCount)
+			}
+			m.refreshCPData()
+
+			m.state = stateDeviceManagement
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+// viewInitializeDeviceForm displays the Initialize Device form
+func (m model) viewInitializeDeviceForm() string {
+	title := titleStyle.Render("Initialize Device")
+
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	// Check if control plane is connected
+	if m.cpClient == nil || !m.cpConnected {
+		s.WriteString(errorStyle.Render("Control plane not connected. Please connect to control plane first.") + "\n\n")
+		s.WriteString(helpStyle.Render("esc: back to Device Management"))
+		return s.String()
+	}
+
+	// Count devices from both local config and discovered devices
+	deviceCount := 0
+	for _, hv := range m.cpHypervisors {
+		deviceCount += len(hv.Dev)
+	}
+
+	// Also check if there are any discovered devices not yet in config
+	if len(m.discoveredDevs) > 0 {
+		s.WriteString("Note: Found discovered devices that can be initialized.\n\n")
+	}
+
+	if deviceCount == 0 && len(m.discoveredDevs) == 0 {
+		s.WriteString("This function initializes devices to the Control Plane.\n\n")
+		s.WriteString("Options:\n")
+		s.WriteString("• Use Hypervisor Management → Device Discovery to find devices\n")
+		s.WriteString("• Manually configure devices in hypervisor settings\n\n")
+		s.WriteString("Current status:\n")
+		s.WriteString(fmt.Sprintf("• Configured devices: %d\n", deviceCount))
+		s.WriteString(fmt.Sprintf("• Discovered devices: %d\n", len(m.discoveredDevs)))
+		s.WriteString("\n" + helpStyle.Render("esc: back to Device Management"))
+		return s.String()
+	}
+
+	totalDevices := deviceCount + len(m.discoveredDevs)
+	s.WriteString(fmt.Sprintf("This will initialize %d devices to the Control Plane using PutDevice().\n\n", totalDevices))
+
+	// Show device summary
+	s.WriteString("Devices to be initialized:\n")
+
+	// Show configured devices
+	for _, hv := range m.cpHypervisors {
+		if len(hv.Dev) > 0 {
+			s.WriteString(fmt.Sprintf("\nHypervisor: %s (%s) - Configured Devices\n", hv.Name, hv.ID))
+			for _, device := range hv.Dev {
+				status := "✓"
+				if device.State != ctlplfl.INITIALIZED {
+					status = "○"
+				}
+				s.WriteString(fmt.Sprintf("  %s %s - %s (Size: %d GB)\n",
+					status, device.Name, device.ID, device.Size/(1024*1024*1024)))
+			}
+		}
+	}
+
+	// Show discovered devices
+	if len(m.discoveredDevs) > 0 && m.currentHv.ID != "" {
+		s.WriteString(fmt.Sprintf("\nHypervisor: %s (%s) - Discovered Devices\n", m.currentHv.Name, m.currentHv.ID))
+		for _, device := range m.discoveredDevs {
+			s.WriteString(fmt.Sprintf("  ○ %s - %s (Size: %d GB) [Discovered]\n",
+				device.Name, device.ID, device.Size/(1024*1024*1024)))
+		}
+	}
+
+	s.WriteString("\n" + helpStyle.Render("enter: Initialize all devices, esc: back to Device Management"))
+
+	return s.String()
 }
 
 func main() {
