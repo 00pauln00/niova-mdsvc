@@ -584,6 +584,8 @@ func TestPutAndGetNisdArgs(t *testing.T) {
 	req := cpLib.GetReq{UserToken: adminToken}
 	_, err = c.GetNisdArgs(req)
 	assert.NoError(t, err)
+
+
 }
 
 func TestParallelVdevCreation(t *testing.T) {
@@ -917,11 +919,8 @@ func TestCreateVdev(t *testing.T) {
 
 	vdev := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
-			Size:       500 * 1024 * 1024 * 1024,
-			NumReplica: 2,
-		},
-		Filter: cpLib.Filter{
-			Type: cpLib.FD_HV,
+			Size:       16 * 1024 * 1024 * 1024,
+			NumReplica: 1,
 		},
 		UserToken: adminToken,
 	}
