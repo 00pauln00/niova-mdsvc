@@ -8990,6 +8990,7 @@ func (m model) viewVdevCreationSummary() string {
 			s.WriteString(fmt.Sprintf("   Vdev ID: %s\n", vdev.ID))
 			s.WriteString(fmt.Sprintf("   Size:    %s (%d bytes)\n", formatSize(vdev.Size), vdev.Size))
 			s.WriteString(fmt.Sprintf("   Chunks:  %d\n", vdev.NumChunks))
+			s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
 			s.WriteString(fmt.Sprintf("   Status:  Active\n\n"))
 		}
 	}
@@ -9116,6 +9117,7 @@ func (m model) createSingleVdev(size int64, replica int, index int) VdevCreation
 		}
 		log.Info("Vdev created successfully: ", resp.ID)
 		vdev.Vdev.ID = resp.ID
+		vdev.Vdev.NumChunks = uint32(ctlplfl.Count8GBChunks(size))
 		return VdevCreationMsg{
 			Index:   index,
 			Success: true,
