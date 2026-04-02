@@ -1974,3 +1974,31 @@ func TestMultipleVdevMount(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(1), info2.MountCounter)
 }
+
+func TestCreateMountDeleteVdevClient(t *testing.T) {
+	c := newClient(t)
+
+	// Step 0: Setup NISD for allocation
+	setupNisd(t, c, 8004, 100*1024*1024*1024)
+
+	// Step 1: Create Vdev
+	vdevID := setupVdev(t, c, 10*1024*1024*1024)
+	assert.NotEmpty(t, vdevID)
+
+	// Step 2: Mount Vdev
+	mountReq := &cpLib.MountVdevRequest{VdevID: vdevID}
+	mountInfo, err := c.MountVdev(mountReq)
+	assert.NoError(t, err)
+	assert.Equal(t, vdevID, mountInfo.Vdev.ID)
+	assert.Equal(t, uint64(1), mountInfo.MountCounter)
+
+	// Step 3: Delete Vdev
+	deleteReq := &cpLib.DeleteVdevReq{ID: vdevID}
+	deleteResp, err := c.DeleteVdev(deleteReq)
+	assert.NoError(t, err)
+	assert.True(t, deleteResp.Success)
+
+	// Step 4: Verify deletion (GetVdevCfg should fail)
+	_, err = c.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+	assert.Error(t, err)
+}

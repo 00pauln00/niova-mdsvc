@@ -635,6 +635,54 @@ func TestAPDeleteVdev(t *testing.T) {
 				t.Log("Verification completed")
 			},
 		},
+		{
+			name: "DeleteVdev_WithMountInfo",
+			setupData: func(ds storageiface.DataStore) {
+				ds.Write(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "8589934592", "")
+				// Setup mount counter and last updated LTS
+				mcKey := fmt.Sprintf("v/%s/%s/%s", testVdevUUID, ctlplfl.MntKey, ctlplfl.MOUNT_COUNTER)
+				luKey := fmt.Sprintf("v/%s/%s/%s", testVdevUUID, ctlplfl.MntKey, ctlplfl.LAST_UPDATED_LTS)
+				ds.Write(mcKey, "5", "")
+				ds.Write(luKey, time.Now().Format(time.RFC3339), "")
+
+				// ownership key
+				ownershipKey := fmt.Sprintf("/u/%s/v/%s", testAdminID, testVdevUUID)
+				ds.Write(ownershipKey, "1", "")
+			},
+			setupHR: func() {
+				HR.Init()
+			},
+			vdevID:      testVdevUUID,
+			expectError: false,
+			verify: func(t *testing.T, ds storageiface.DataStore) {
+				// Verify Vdev metadata is deleted
+				_, err := ds.Read(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "")
+				if err == nil {
+					t.Error("Vdev metadata should be deleted")
+				}
+
+				// Verify mount counter is deleted
+				mcKey := fmt.Sprintf("v/%s/%s/%s", testVdevUUID, ctlplfl.MntKey, ctlplfl.MOUNT_COUNTER)
+				_, err = ds.Read(mcKey, "")
+				if err == nil {
+					t.Error("Mount counter should be deleted")
+				}
+
+				// Verify last updated LTS is deleted
+				luKey := fmt.Sprintf("v/%s/%s/%s", testVdevUUID, ctlplfl.MntKey, ctlplfl.LAST_UPDATED_LTS)
+				_, err = ds.Read(luKey, "")
+				if err == nil {
+					t.Error("Last updated LTS should be deleted")
+				}
+
+				// Verify ownership key is deleted
+				ownershipKey := fmt.Sprintf("/u/%s/v/%s", testAdminID, testVdevUUID)
+				_, err = ds.Read(ownershipKey, "")
+				if err == nil {
+					t.Error("Ownership key should be deleted")
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
