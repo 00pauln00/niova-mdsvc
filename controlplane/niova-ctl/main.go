@@ -232,7 +232,7 @@ type model struct {
 	vdevSearchInput        textinput.Model
 	vdevSearchResult       *ctlplfl.Vdev
 	vdevSearchErr          string
-	vdevSearchChunkPage int
+	vdevSearchChunkPage    int
 	vdevNameInput          textinput.Model
 	vdevReplicaInput       textinput.Model
 	vdevSizeInput          textinput.Model
@@ -8060,8 +8060,8 @@ func (m model) viewVdevManagement() string {
 // Step 2: GetVdevsWithChunkInfo with the specific ID to fetch chunk mapping.
 func (m model) doVdevSearch(query string) VdevSearchMsg {
 	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{
-		GetAll:    true,
-		UserToken: m.userToken(),
+		GetAll: true,
+		// UserToken: m.userToken(),
 	})
 	if err != nil {
 		return VdevSearchMsg{err: fmt.Sprintf("Failed to query vdevs: %v", err)}
@@ -8080,9 +8080,9 @@ func (m model) doVdevSearch(query string) VdevSearchMsg {
 
 	// Fetch chunk mapping for the specific vdev (no admin role required).
 	vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetReq{
-		ID:        matchedID,
-		GetAll:    false,
-		UserToken: m.userToken(),
+		ID:     matchedID,
+		GetAll: false,
+		// UserToken: m.userToken(),
 	})
 	if err != nil {
 		return VdevSearchMsg{err: fmt.Sprintf("Failed to get chunk info: %v", err)}
