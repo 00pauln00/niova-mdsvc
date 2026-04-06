@@ -1,18 +1,17 @@
-DIR=/tmp/
-CGO_LDFLAGS=-L/${DIR}/lib/
-CGO_CFLAGS=-I/${DIR}/include/
-LD_LIBRARY_PATH=/${DIR}/niova-core/lib/
+DIR ?= /tmp
+CGO_LDFLAGS=-L$(DIR)/lib/ -L/usr/local/lib -llz4
+CGO_CFLAGS=-I$(DIR)/include/ -I/usr/local/include/
+LD_LIBRARY_PATH=$(DIR)/niova-core/lib/:$(DIR)/lib/
 
 export CGO_LDFLAGS
 export CGO_CFLAGS
 export LD_LIBRARY_PATH
-export PATH
 
 install_all: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
 
-install_only: compile pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
+install_only: pmdbserver proxyserver ncpcclient configapp testapp niova-ctl monitor ccManager install
 
-compile:
+compile: vet
 	echo "Compiling controlPlane"
 	mkdir -p libexec
 	go mod tidy
@@ -42,17 +41,39 @@ ccManager:
 	go build -o libexec/cc-manager ./controlplane/containerConfigManager/
 
 install:
-	cp libexec/CTLPlane_pmdbServer ${DIR}/libexec/niova/CTLPlane_pmdbServer
-	cp libexec/CTLPlane_proxy ${DIR}/libexec/niova/CTLPlane_proxy
-	cp libexec/ncpc ${DIR}/libexec/niova/ncpc
-	cp libexec/cfgApp ${DIR}/libexec/niova/cfgApp
-	cp libexec/testApp ${DIR}/libexec/niova/testApp
-	cp libexec/cp-monitor ${DIR}/libexec/niova/cp-monitor
-	cp libexec/cc-manager ${DIR}/libexec/niova/cc-manager
-	cp libexec/niova-ctl ${DIR}/libexec/niova/niova-ctl
-	cp scripts/docker/Dockerfile ${DIR}
-	cp scripts/docker/controlplane.sh ${DIR}
-	cp scripts/docker/raft-config.sh ${DIR}
-	cp scripts/docker/run-cpcontainer.sh ${DIR}	
+	cp libexec/CTLPlane_pmdbServer $(DIR)/libexec/niova/CTLPlane_pmdbServer
+	cp libexec/CTLPlane_proxy $(DIR)/libexec/niova/CTLPlane_proxy
+	cp libexec/ncpc $(DIR)/libexec/niova/ncpc
+	cp libexec/cfgApp $(DIR)/libexec/niova/cfgApp
+	cp libexec/testApp $(DIR)/libexec/niova/testApp
+	cp libexec/cp-monitor $(DIR)/libexec/niova/cp-monitor
+	cp libexec/cc-manager $(DIR)/libexec/niova/cc-manager
+	cp libexec/niova-ctl $(DIR)/libexec/niova/niova-ctl
+	cp scripts/docker/Dockerfile $(DIR)
+	cp scripts/docker/controlplane.sh $(DIR)
+	cp scripts/docker/raft-config.sh $(DIR)
+	cp scripts/docker/run-cpcontainer.sh $(DIR)	
 clean:
 	rm -rf libexec
+
+# Auto-format all Go source files under controlplane/
+fmt:
+	gofmt -w ./controlplane/
+	@echo "gofmt done."
+
+# Run go vet (uses the same CGO env set at the top of this file)
+vet:
+	go vet ./controlplane/...
+	@echo "go vet done."
+
+# golangci-lint must be installed: https://golangci-lint.run/docs/welcome/install/
+lint: fmt vet
+	GOTOOLCHAIN=local golangci-lint run --config .golangci.yml --timeout 10m ./controlplane/...
+	@echo "All lint checks done."
+
+help:
+	@echo "Targets: install_all install_only compile fmt vet lint clean"
+
+.PHONY: install_all install_only compile pmdbserver proxyserver ncpcclient \
+        configapp testapp niova-ctl monitor ccManager install clean \
+        fmt vet lint

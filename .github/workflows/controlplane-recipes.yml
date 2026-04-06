@@ -95,7 +95,7 @@ jobs:
            export GOCOVERDIR=/work/niovad/niovad/code_cov
 
     - name:  run recipes for controlplane application
-      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
+      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov &&
             cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
            ../run-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon'
                              '/home/runner/work/niovad/niovad/build_dir'
