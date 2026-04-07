@@ -866,8 +866,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
 		existing, readErr := cbArgs.Store.Read(reverseNameKey, colmfamily)
 		if readErr == nil && len(existing) > 0 {
-			resp.Error = fmt.Sprintf("vdev with name %q already exists (ID: %s)", req.Vdev.Name, string(existing))
-			return pmCmn.Encoder(pmCmn.GOB, resp)
+			return ctlplfl.FuncError(fmt.Errorf("vdev with name %q already exists (ID: %s)", req.Vdev.Name, string(existing)))
 		}
 	}
 

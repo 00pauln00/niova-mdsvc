@@ -232,7 +232,7 @@ type model struct {
 	vdevSearchInput        textinput.Model
 	vdevSearchResult       *ctlplfl.Vdev
 	vdevSearchErr          string
-	vdevSearchChunkPage int
+	vdevSearchChunkPage    int
 	vdevNameInput          textinput.Model
 	vdevReplicaInput       textinput.Model
 	vdevSizeInput          textinput.Model
@@ -8061,6 +8061,7 @@ func (m model) viewVdevManagement() string {
 func (m model) doVdevSearch(query string) VdevSearchMsg {
 	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{
 		GetAll:    true,
+		// UserToken: m.userToken(),
 	})
 	if err != nil {
 		return VdevSearchMsg{err: fmt.Sprintf("Failed to query vdevs: %v", err)}
