@@ -3,6 +3,8 @@ package srvctlplanefuncs
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,11 +19,66 @@ import (
 	"github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/memstore"
 )
 
+type testDataStore struct {
+	data map[string]string
+}
+
+func newTestDataStore() *testDataStore {
+	return &testDataStore{data: make(map[string]string)}
+}
+
+func (s *testDataStore) Read(key, selector string) ([]byte, error) {
+	val, ok := s.data[key]
+	if !ok {
+		return nil, fmt.Errorf("key not found: %s", key)
+	}
+	return []byte(val), nil
+}
+
+func (s *testDataStore) Write(key, value, selector string) error {
+	s.data[key] = value
+	return nil
+}
+
+func (s *testDataStore) Delete(key, selector string) error {
+	delete(s.data, key)
+	return nil
+}
+
+// RangeRead returns all keys whose string representation starts with args.Prefix.
+func (s *testDataStore) RangeRead(args storageiface.RangeReadArgs) (*storageiface.RangeReadResult, error) {
+	result := &storageiface.RangeReadResult{
+		ResultMap: make(map[string][]byte),
+	}
+	for k, v := range s.data {
+		if strings.HasPrefix(k, args.Prefix) {
+			result.ResultMap[k] = []byte(v)
+		}
+	}
+	return result, nil
+}
+
+const (
+	testVdevUUID = "28061cd0-1e01-11f1-a069-032bff036f03"
+	testNisdUUID = "59ee0460-1e01-11f1-9566-83949aa998ea"
+
+	testPDU  = "acdef556-1ea3-11f1-848b-9f6e716afc46"
+	testRack = "b1b89a50-1ea3-11f1-b397-d76191bdb3d2"
+	testHV   = "b726b99a-1ea3-11f1-95da-436ff27bf77e"
+	testDev  = "nvme-001"
+	testPT   = "nvme-001-01"
+
+	testNisdAvailableSize = 1000000000
+	testVdevSize          = 1073741824
+)
+
 // TestMain initializes the test environment
 func TestMain(m *testing.M) {
 	// Initialize xlog to prevent nil pointer errors
 	logLevel := "INFO"
 	log.InitXlog("/tmp/test.log", &logLevel)
+
+	ctlplfl.RegisterGOBStructs()
 
 	// Run tests
 	code := m.Run()
@@ -100,25 +157,24 @@ func setupVdevData(ds storageiface.DataStore, vdevID string) error {
 
 func TestWPCreateVdev(t *testing.T) {
 	// Initialize test authorizer
-	authorizer = &authz.Authorizer{
-		Config: authz.Config{
-			"WPCreateVdev": authz.FunctionPolicy{
-				RBAC: []string{"admin", "user"},
-			},
+	authorizer = authz.NewAuthorizerWithConfig(authz.Config{
+		authz.WPCreateVdev: authz.FunctionPolicy{
+			RBAC: []string{"admin", "user"},
 		},
-	}
+	})
 	defer func() { authorizer = nil }()
 
 	testCases := []struct {
-		name           string
-		setupToken     func() string
-		vdevSize       int64
-		numChunks      int
-		numReplica     int
-		expectError    bool
-		errorContains  string
-		checkOwnership bool
-		expectedUserID string
+		name            string
+		setupToken      func() string
+		vdevSize        int64
+		numChunks       int
+		numReplica      int
+		expectError     bool
+		errorContains   string
+		expectedErrCode ctlplfl.CPErrCode
+		checkOwnership  bool
+		expectedUserID  string
 	}{
 		{
 			name: "SuccessfulCreation_UserRole",
@@ -151,11 +207,12 @@ func TestWPCreateVdev(t *testing.T) {
 			setupToken: func() string {
 				return ""
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "user token is required",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "user token is required",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "MissingUserIDClaim",
@@ -165,11 +222,12 @@ func TestWPCreateVdev(t *testing.T) {
 				token, _ := tc.CreateToken(claims)
 				return token
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "missing userID",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "missing userID",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "MissingRoleClaim",
@@ -179,11 +237,12 @@ func TestWPCreateVdev(t *testing.T) {
 				token, _ := tc.CreateToken(claims)
 				return token
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "missing role",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "missing role",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "UnauthorizedRole",
@@ -191,37 +250,53 @@ func TestWPCreateVdev(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "viewer", testSecret)
 				return token
 			},
-			vdevSize:      1073741824,
-			numChunks:     4,
-			numReplica:    3,
-			expectError:   true,
-			errorContains: "authorization failed",
+			vdevSize:        1073741824,
+			numChunks:       4,
+			numReplica:      3,
+			expectError:     true,
+			errorContains:   "authorization failed",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create test vdev
-			vdev := ctlplfl.Vdev{
-				Cfg: ctlplfl.VdevCfg{
-					Size:       tc.vdevSize,
-					NumChunks:  uint32(tc.numChunks),
-					NumReplica: uint8(tc.numReplica),
+			cpReq := ctlplfl.CPReq{
+				Token: tc.setupToken(),
+				Payload: ctlplfl.VdevReq{
+					Vdev: &ctlplfl.VdevCfg{
+						Size:       tc.vdevSize,
+						NumChunks:  uint32(tc.numChunks),
+						NumReplica: uint8(tc.numReplica),
+					},
 				},
-				UserToken: tc.setupToken(),
 			}
 
 			// Call WPCreateVdev
-			result, err := WPCreateVdev(vdev)
+			result, err := WPCreateVdev(cpReq)
 
 			// Check error expectations
 			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error containing '%s', but got no error", tc.errorContains)
+				if result == nil {
+					t.Error("Expected non-nil result for encoded error response")
 					return
 				}
-				if tc.errorContains != "" && !contains(err.Error(), tc.errorContains) {
-					t.Errorf("Expected error containing '%s', but got '%s'", tc.errorContains, err.Error())
+				// WP functions return FuncIntrm; decode it first, then extract CPResp.
+				var intrm funclib.FuncIntrm
+				if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &intrm); decErr != nil {
+					t.Fatalf("Failed to decode FuncIntrm: %v", decErr)
+				}
+				cpResp, ok := intrm.Response.(ctlplfl.CPResp)
+				if !ok || cpResp.Error == nil {
+					t.Errorf("Expected CPResp with error in FuncIntrm.Response, got %T", intrm.Response)
+					return
+				}
+				if tc.errorContains != "" && !strings.Contains(cpResp.Error.Message, tc.errorContains) {
+					t.Errorf("Expected error message containing %q, got %q", tc.errorContains, cpResp.Error.Message)
+				}
+				if tc.expectedErrCode != "" && cpResp.Error.Code != tc.expectedErrCode {
+					t.Errorf("Expected error code %q, got %q", tc.expectedErrCode, cpResp.Error.Code)
 				}
 				return
 			}
@@ -252,7 +327,7 @@ func TestWPCreateVdev(t *testing.T) {
 
 				for _, chg := range funcIntrm.Changes {
 					key := string(chg.Key)
-					if contains(key, expectedOwnershipKey) && string(chg.Value) == "1" {
+					if strings.Contains(key, expectedOwnershipKey) && string(chg.Value) == "1" {
 						foundOwnership = true
 						break
 					}
@@ -272,17 +347,19 @@ func TestWPCreateVdev_NilAuthorizer(t *testing.T) {
 	defer func() { authorizer = nil }()
 
 	token, _ := createTestToken(testUserID1, "user", testSecret)
-	vdev := ctlplfl.Vdev{
-		Cfg: ctlplfl.VdevCfg{
-			Size:       1073741824,
-			NumChunks:  4,
-			NumReplica: 3,
+	cpReq := ctlplfl.CPReq{
+		Token: token,
+		Payload: ctlplfl.VdevReq{
+			Vdev: &ctlplfl.VdevCfg{
+				Size:       1073741824,
+				NumChunks:  4,
+				NumReplica: 3,
+			},
 		},
-		UserToken: token,
 	}
 
 	// Should succeed even without authorizer (graceful degradation)
-	result, err := WPCreateVdev(vdev)
+	result, err := WPCreateVdev(cpReq)
 	if err != nil {
 		t.Errorf("Expected success with nil authorizer, but got error: %v", err)
 	}
@@ -293,25 +370,24 @@ func TestWPCreateVdev_NilAuthorizer(t *testing.T) {
 
 func TestReadVdevInfo(t *testing.T) {
 	// Initialize test authorizer
-	authorizer = &authz.Authorizer{
-		Config: authz.Config{
-			"ReadVdevInfo": authz.FunctionPolicy{
-				RBAC: []string{"admin", "user"},
-				ABAC: []authz.ABACRule{
-					{Argument: "vdev", Prefix: "v/"},
-				},
+	authorizer = authz.NewAuthorizerWithConfig(authz.Config{
+		authz.ReadVdevInfo: authz.FunctionPolicy{
+			RBAC: []string{"admin", "user"},
+			ABAC: []authz.ABACRule{
+				{Argument: "vdev", Prefix: "v/"},
 			},
 		},
-	}
+	})
 	defer func() { authorizer = nil }()
 
 	testCases := []struct {
-		name          string
-		setupData     func(storageiface.DataStore)
-		setupToken    func() string
-		vdevID        string
-		expectError   bool
-		errorContains string
+		name            string
+		setupData       func(storageiface.DataStore)
+		setupToken      func() string
+		vdevID          string
+		expectError     bool
+		errorContains   string
+		expectedErrCode ctlplfl.CPErrCode
 	}{
 		{
 			name: "SuccessfulRead_Owner",
@@ -337,9 +413,10 @@ func TestReadVdevInfo(t *testing.T) {
 			setupToken: func() string {
 				return ""
 			},
-			vdevID:        testVdevID,
-			expectError:   true,
-			errorContains: "user token is required",
+			vdevID:          testVdevID,
+			expectError:     true,
+			errorContains:   "Invalid Token",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "UnauthorizedRole_RBAC",
@@ -350,9 +427,10 @@ func TestReadVdevInfo(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "viewer", testSecret)
 				return token
 			},
-			vdevID:        testVdevID,
-			expectError:   true,
-			errorContains: "authorization failed",
+			vdevID:          testVdevID,
+			expectError:     true,
+			errorContains:   "User is not authorized",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "UnauthorizedUser_NotOwner",
@@ -366,9 +444,10 @@ func TestReadVdevInfo(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "user", testSecret)
 				return token
 			},
-			vdevID:        testVdevID,
-			expectError:   true,
-			errorContains: "authorization failed",
+			vdevID:          testVdevID,
+			expectError:     true,
+			errorContains:   "User is not authorized",
+			expectedErrCode: ctlplfl.ErrAuth,
 		},
 		{
 			name: "InvalidRequest_EmptyID",
@@ -379,9 +458,10 @@ func TestReadVdevInfo(t *testing.T) {
 				token, _ := createTestToken(testUserID1, "user", testSecret)
 				return token
 			},
-			vdevID:        "",
-			expectError:   true,
-			errorContains: "Recieved empty ID",
+			vdevID:          "",
+			expectError:     true,
+			errorContains:   "Invalid Request",
+			expectedErrCode: ctlplfl.ErrFunc,
 		},
 	}
 
@@ -401,24 +481,38 @@ func TestReadVdevInfo(t *testing.T) {
 				ReplySize: 4096,
 			}
 
-			// Create GetReq
+			// Build CPReq with GetReq as payload
 			req := ctlplfl.GetReq{
-				ID:        tc.vdevID,
-				GetAll:    false,
-				UserToken: tc.setupToken(),
+				ID:     tc.vdevID,
+				GetAll: false,
+			}
+			cpReq := ctlplfl.CPReq{
+				Token:   tc.setupToken(),
+				Payload: req,
 			}
 
 			// Call ReadVdevInfo
-			result, err := ReadVdevInfo(cbArgs, req)
+			result, err := ReadVdevInfo(cbArgs, cpReq)
 
 			// Check error expectations
 			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error containing '%s', but got no error", tc.errorContains)
+				if result == nil {
+					t.Error("Expected non-nil result for encoded error response")
 					return
 				}
-				if tc.errorContains != "" && !contains(err.Error(), tc.errorContains) {
-					t.Errorf("Expected error containing '%s', but got '%s'", tc.errorContains, err.Error())
+				var cpResp ctlplfl.CPResp
+				if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &cpResp); decErr != nil {
+					t.Fatalf("Failed to decode response: %v", decErr)
+				}
+				if cpResp.Error == nil {
+					t.Errorf("Expected error response, got success")
+					return
+				}
+				if tc.errorContains != "" && !strings.Contains(cpResp.Error.Message, tc.errorContains) {
+					t.Errorf("Expected error message containing %q, got %q", tc.errorContains, cpResp.Error.Message)
+				}
+				if tc.expectedErrCode != "" && cpResp.Error.Code != tc.expectedErrCode {
+					t.Errorf("Expected error code %q, got %q", tc.expectedErrCode, cpResp.Error.Code)
 				}
 				return
 			}
@@ -431,22 +525,167 @@ func TestReadVdevInfo(t *testing.T) {
 
 			if result == nil {
 				t.Error("Expected non-nil result")
+				return
+			}
+
+			var cpResp ctlplfl.CPResp
+			if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &cpResp); decErr != nil {
+				t.Fatalf("Failed to decode response: %v", decErr)
+			}
+			if cpResp.Error != nil {
+				t.Errorf("Expected success response, got error: %s", cpResp.Err())
 			}
 		})
 	}
 }
 
-// Helper function to check if string contains substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
-}
+func TestAPDeleteVdev(t *testing.T) {
 
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	t.Log("Starting TestAPDeleteVdev")
+
+	testVdevUUID := "28061cd0-1e01-11f1-a069-032bff036f03"
+	testNisdUUID := "59ee0460-1e01-11f1-9566-83949aa998ea"
+
+	testCases := []struct {
+		name          string
+		setupData     func(storageiface.DataStore)
+		setupHR       func()
+		vdevID        string
+		expectError   bool
+		errorContains string
+		verify        func(t *testing.T, ds storageiface.DataStore)
+	}{
+		{
+			name: "SuccessfulDelete_WithChunks",
+
+			setupData: func(ds storageiface.DataStore) {
+				t.Log("Setting up datastore for SuccessfulDelete_WithChunks")
+
+				ds.Write(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "8589934592", "")
+				ds.Write(fmt.Sprintf("v/%s/c/0/R.0", testVdevUUID), testNisdUUID, "")
+				ds.Write(fmt.Sprintf("n/%s/%s", testNisdUUID, testVdevUUID), "R.0.0", "")
+
+				// n_cfg entries similar to logs
+				ds.Write(fmt.Sprintf("n_cfg/%s/d", testNisdUUID), testDev, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/pp", testNisdUUID), "8160", "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/hv", testNisdUUID), testHV, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/ts", testNisdUUID), "1000000000000", "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/as", testNisdUUID), "1000000000000", "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/p", testNisdUUID), testPDU, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/r", testNisdUUID), testRack, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/pt", testNisdUUID), testPT, "")
+				ds.Write(fmt.Sprintf("n_cfg/%s/nic", testNisdUUID), "0", "")
+			},
+
+			setupHR: func() {
+				t.Log("Initializing HR")
+
+				HR.Init()
+
+				nisd := &ctlplfl.Nisd{
+					ID:            testNisdUUID,
+					AvailableSize: 1073741824,
+					FailureDomain: []string{testPDU, testRack, testHV, testDev, testPT},
+				}
+
+				HR.AddNisd(nisd)
+
+				t.Log("Added NISD to HR:", nisd.ID)
+			},
+
+			vdevID:      testVdevUUID,
+			expectError: false,
+
+			verify: func(t *testing.T, ds storageiface.DataStore) {
+
+				t.Log("Starting verification")
+
+				_, err := ds.Read(fmt.Sprintf("v/%s/cfg/size", testVdevUUID), "")
+
+				if err == nil {
+					t.Error("Vdev metadata should be deleted")
+				}
+
+				_, err = ds.Read(fmt.Sprintf("v/%s/c/0/R.0", testVdevUUID), "")
+
+				if err == nil {
+					t.Error("Chunk allocation should be deleted")
+				}
+
+				_, err = ds.Read(fmt.Sprintf("n/%s/%s", testNisdUUID, testVdevUUID), "")
+
+				if err == nil {
+					t.Error("NISD reverse mapping should be deleted")
+				}
+
+				res, err := ds.Read(fmt.Sprintf("n_cfg/%s/as", testNisdUUID), "")
+
+				expectedAS := 1000000000000 + 8589934592
+
+				if err != nil || string(res) != strconv.FormatInt(int64(expectedAS), 10) {
+					t.Errorf("Expected NISD AS %d, got %s", expectedAS, string(res))
+				}
+
+				nisd, _ := HR.GetNisdByPDUID(testPDU, testNisdUUID)
+
+				if nisd == nil || nisd.AvailableSize != int64(expectedAS) {
+					t.Errorf("HR NISD AS not updated properly")
+				}
+
+				t.Log("Verification completed")
+			},
+		},
 	}
-	return false
+
+	for _, tc := range testCases {
+
+		t.Run(tc.name, func(t *testing.T) {
+
+			t.Log("Running test case:", tc.name)
+
+			ds := newTestDataStore()
+			if tc.setupData != nil {
+				tc.setupData(ds)
+			}
+			if tc.setupHR != nil {
+				tc.setupHR()
+			}
+
+			cbArgs := &PumiceDBServer.PmdbCbArgs{
+				Store:     ds,
+				ReplySize: 4096,
+			}
+
+			token, _ := createTestToken(testAdminID, "admin", testSecret)
+			cpReq := ctlplfl.CPReq{
+				Token:   token,
+				Payload: ctlplfl.DeleteVdevReq{ID: tc.vdevID},
+			}
+
+			result, err := APDeleteVdev(cpReq, cbArgs)
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			var cpResp ctlplfl.CPResp
+
+			if decErr := pmCmn.Decoder(pmCmn.GOB, result.([]byte), &cpResp); decErr != nil {
+				t.Fatalf("Failed to decode response: %v", decErr)
+			}
+
+			t.Log("Decoded CPResp errorMsg:", cpResp.Err())
+
+			if cpResp.Error != nil {
+				t.Errorf("Expected success response, got error: %s", cpResp.Err())
+			}
+
+			if tc.verify != nil {
+				t.Log("Running verify")
+				tc.verify(t, ds)
+			}
+
+			t.Log("Test case finished:", tc.name)
+		})
+	}
 }

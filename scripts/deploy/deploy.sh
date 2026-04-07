@@ -45,8 +45,7 @@ if [[ "$FRESH" =~ ^[Yy]$ ]]; then
     ./gen_raft_cfgs.sh "$CFG_FILE"
 
     cp -r configs "${BASE_DIR}/"
-    cp ctlauth.yaml "${BASE_DIR}/"
     cp -r lib libexec start_pumice.sh "${BASE_DIR}/"
 fi
 
-pdsh -w "${PDSH_HOSTS}" "cd ${BASE_DIR} && ${BASE_DIR}/start_pumice.sh" "$CFG_FILE"
+pdsh -w "${PDSH_HOSTS}" "cd ${BASE_DIR} && AUTH_ENABLED=${AUTH_ENABLED:-true} ${BASE_DIR}/start_pumice.sh" "$CFG_FILE"

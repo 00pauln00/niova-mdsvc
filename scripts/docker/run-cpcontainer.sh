@@ -4,6 +4,12 @@ if [ "$2" = "init" ]; then
         rm -rf rocksdb configs ctl-interface logs
 fi
 
+# Set AUTH_ENABLED to false only if explicitly requested
+AUTH_OPT=""
+if [ "$3" = "false" ]; then
+    AUTH_OPT="-e AUTH_ENABLED=false"
+fi
+
 docker build -t controlplane .
 curdir=$(pwd)
-docker run -it -v "${curdir}:/controlplane" --network=host controlplane $1 $2
+docker run -it ${AUTH_OPT} -v "${curdir}:/controlplane" --network=host controlplane $1 $2

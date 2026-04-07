@@ -42,6 +42,8 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var limiter chan int
+
 // Structure for proxy
 type proxyHandler struct {
 	//Other
@@ -508,6 +510,28 @@ func encode(data interface{}) []byte {
 }
 
 /*
+Func      : writeErrorCPResp
+Arguments : pumicecommon.Format, *[]byte, error
+Return(s) : error
+
+Description : Helper to format and serialize internal proxy errors into CPResp
+*/
+func writeErrorCPResp(encType PumiceDBCommon.Format, response *[]byte, origErr error) error {
+	errorCpResp := &cpLib.CPResp{
+		Error: &cpLib.CPError{
+			Message: origErr.Error(),
+			Code:    cpLib.ErrInternal,
+		},
+	}
+	errBytes, encErr := PumiceDBCommon.Encoder(encType, errorCpResp)
+	if encErr != nil {
+		return encErr
+	}
+	*response = errBytes
+	return nil
+}
+
+/*
 Structure : proxyHandler
 Method    : ReadHandlerCB
 Arguments : string,
@@ -516,19 +540,26 @@ Return(s) : error
 Description : Call back for PMDB read func requests to HTTP server.
 */
 func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
+	limiter <- 1
+	defer func() {
+		<-limiter
+	}()
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
 	encType := GetEncodingType(reader)
-	var res any = nil
+	var cpReq *cpLib.CPReq
 	var err error
 	if len(body) > 0 {
-		res, err = DecodeRequest(encType, name, body)
+		cpReq, err = DecodeCPReq(encType, name, body)
 		if err != nil {
-			log.Error("RHCB:failed to decode request: ", err)
-			return err
+			log.Error("RHCB:failed to decode CPReq: ", err)
+			return writeErrorCPResp(encType, response, err)
 		}
+	} else {
+		log.Error("RHCB:empty body")
+		return writeErrorCPResp(encType, response, fmt.Errorf("empty body"))
 	}
 
-	r := &funclib.FuncReq{Name: name, Args: res}
+	r := &funclib.FuncReq{Name: name, Args: *cpReq}
 	reqArgs := &pmdbClient.PmdbReq{
 		Request:  encode(r),
 		ReqType:  PumiceDBCommon.FUNC_REQ,
@@ -538,12 +569,12 @@ func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response
 	err = handler.pmdbClientObj.Get(reqArgs)
 	if err != nil {
 		log.Error("Error in GetEncoded and Response: ", err)
-		return err
+		return writeErrorCPResp(encType, response, err)
 	}
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
 		log.Error("RHCB:failed to encode response: ", err)
-		return err
+		return writeErrorCPResp(encType, response, err)
 	}
 	return nil
 }
@@ -558,28 +589,21 @@ Description : Call back for PMDB write func requests to HTTP server.
 */
 func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64,
 	body []byte, response *[]byte, reader *http.Request) error {
-
+	limiter <- 1
+	defer func() {
+		<-limiter
+	}()
 	log.Tracef("FuncHandlerCB called | name=%s rncui=%s wsn=%d bodySize=%d",
 		name, rncui, wsn, len(body))
 
 	// Detect encoding type used by the client (json/xml/etc)
 	encType := GetEncodingType(reader)
-
-	// Decode incoming request
-	res, err := DecodeRequest(encType, name, body)
+	cpReq, err := DecodeCPReq(encType, name, body)
 	if err != nil {
-		log.Error("WHCB: failed to decode request:", err)
-		return err
+		log.Error("WHCB:failed to decode CPReq: ", err)
+		return writeErrorCPResp(encType, response, err)
 	}
-
-	log.Tracef("Decoded request for %s: %+v", name, res)
-
-	// Build function request
-	r := &funclib.FuncReq{
-		Name: name,
-		Args: res,
-	}
-
+	r := &funclib.FuncReq{Name: name, Args: *cpReq}
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:       rncui,
 		Request:     encode(r),
@@ -597,21 +621,19 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 		log.Error("Error in WriteEncoded and Response:", err)
 
 		// Encode structured error so client can decode it
-		errBytes := EncodeErrorResponse(name, err.Error())
-		if errBytes == nil {
-			return err
+		encErr := writeErrorCPResp(encType, response, err)
+		if encErr != nil {
+			return encErr
 		}
 
-		log.Tracef("Returning encoded error response | size=%d", len(errBytes))
-
-		*response = errBytes
+		log.Tracef("Returning encoded error response | size=%d", len(*response))
 		return nil
 	}
 
 	// Validate reply buffer before decoding
 	if reqArgs.Reply == nil {
 		log.Error("pmdb returned nil reply for function:", name)
-		return fmt.Errorf("nil reply received from pmdb")
+		return writeErrorCPResp(encType, response, fmt.Errorf("nil reply received from pmdb"))
 	}
 
 	log.Tracef("Reply received from pmdb | size=%d bytes", len(*reqArgs.Reply))
@@ -620,7 +642,7 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
 		log.Error("WHCB: failed to encode response:", err)
-		return err
+		return writeErrorCPResp(encType, response, err)
 	}
 
 	log.Tracef("Response encoded successfully | finalSize=%d", len(*reqArgs.Reply))
@@ -743,6 +765,7 @@ func main() {
 
 	var err error
 	var i int
+	limiter = make(chan int, 10)
 	cpLib.RegisterGOBStructs()
 	proxyObj := proxyHandler{}
 	//Get commandline paraameters.

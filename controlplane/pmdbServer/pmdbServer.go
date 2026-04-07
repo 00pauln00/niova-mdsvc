@@ -64,6 +64,7 @@ type pmdbServerHandler struct {
 	servicePortRangeE uint16
 	hport             uint16
 	prometheus        bool
+	authEnabled       bool
 	nodeAddr          net.IP
 	addrList          []net.IP
 	GossipData        map[string]string
@@ -120,13 +121,15 @@ func main() {
 	serverHandler := pmdbServerHandler{}
 	cpLib.RegisterGOBStructs()
 
-	// Initialize auth encryption (required for secret key encryption/decryption)
-	userlib.MustInitialize()
-
 	nso, err := serverHandler.parseArgs()
 	if err != nil {
 		defaultLogger.Println("failed to parse arguments", err)
 		return
+	}
+
+	// Initialize auth encryption only when authentication is enabled.
+	if serverHandler.authEnabled {
+		userlib.MustInitialize()
 	}
 
 	log.InitXlog(serverHandler.logDir, &serverHandler.logLevel)
@@ -191,6 +194,7 @@ func main() {
 	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, srvctlplanefuncs.ReadVdevInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_ALL_VDEV, srvctlplanefuncs.ReadAllVdevInfo)
 	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, srvctlplanefuncs.ReadChunkNisd)
+	cpAPI.RegisterApplyFunc(cpLib.DELETE_VDEV, srvctlplanefuncs.APDeleteVdev)
 
 	cpAPI.RegisterWritePrepFunc(userlib.PutUserAPI, userserver.PutUser)
 	cpAPI.RegisterReadFunc(userlib.GetUserAPI, userserver.GetUser)
@@ -228,9 +232,12 @@ func main() {
 		log.Warn("failed to create hierarchy struct:", err)
 	}
 
-	err = srvctlplanefuncs.InitAuthorizer("ctlauth.yaml")
-	if err != nil {
-		log.Fatal("failed to initialize authorizer:", err)
+	srvctlplanefuncs.SetAuthEnabled(serverHandler.authEnabled)
+	if serverHandler.authEnabled {
+		srvctlplanefuncs.InitAuthorizer()
+		log.Info("Authentication and authorization: enabled")
+	} else {
+		log.Warn("Authentication and authorization: DISABLED - all requests will be granted admin access")
 	}
 
 	serverHandler.checkPMDBLiveness()
@@ -332,6 +339,7 @@ func (handler *pmdbServerHandler) parseArgs() (*NiovaKVServer, error) {
 	flag.StringVar(&handler.gossipClusterFile, "g", "NULL", "Serf agent port")
 	flag.BoolVar(&handler.prometheus, "p", false, "Enable prometheus")
 	flag.Parse()
+	handler.authEnabled = os.Getenv("AUTH_ENABLED") != "false" // true unless explicitly "false"
 
 	handler.raftUUID, _ = uuid.FromString(tempRaftUUID)
 	handler.peerUUID, _ = uuid.FromString(tempPeerUUID)

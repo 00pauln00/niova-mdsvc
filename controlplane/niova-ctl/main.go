@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
+
 	"sort"
 	"strconv"
 	"strings"
@@ -23,8 +23,6 @@ import (
 	usercl "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 )
-
-const configFile = "niova-config.json"
 
 type state int
 
@@ -57,13 +55,9 @@ const (
 	stateShowAddedHypervisor
 	// Device Management States
 	stateDeviceManagement
-	stateDeviceInitialize
-	stateDeviceEdit
 	stateDeviceView
 	stateDeviceDelete
-	stateDeviceInitialization
 	stateDevicePartitioning
-	stateInitializeDeviceForm
 	// Partition Management States
 	statePartitionManagement
 	statePartitionCreate
@@ -129,9 +123,8 @@ const (
 )
 
 type model struct {
-	state      state
-	config     *Config
-	configPath string
+	state   state
+	logFile string
 
 	// Terminal dimensions for dynamic pagination
 	termWidth  int
@@ -256,6 +249,7 @@ type model struct {
 	cpHypervisorRefresh bool                 // Flag to trigger Hypervisor refresh from CP
 
 	// User Management
+	authEnabled        bool // true when the server has authentication enabled
 	userClient         *usercl.Client
 	userUsernameInput  textinput.Model
 	userSecretKeyInput textinput.Model
@@ -281,15 +275,12 @@ type deviceItem struct {
 	selected bool
 }
 
-func (d deviceItem) Title() string { return d.device.ID }
+func (d deviceItem) Title() string { return d.device.Name }
 func (d deviceItem) Description() string {
-	if d.device.ID != "" {
-		return fmt.Sprintf("ID: %s", d.device.ID)
-	}
-	return fmt.Sprintf("Device: /dev/%s", d.device.ID)
+	return fmt.Sprintf("ID: %s", d.device.ID)
 }
 
-func (d deviceItem) FilterValue() string { return d.device.ID }
+func (d deviceItem) FilterValue() string { return d.device.Name }
 
 type deviceDiscoveredMsg struct {
 	devices []ctlplfl.Device
@@ -393,16 +384,10 @@ func createIPInput() textinput.Model {
 	return t
 }
 
-func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
-	homeDir, _ := os.UserHomeDir()
-	configDir := filepath.Join(homeDir, ".config", "niova")
-	configPath := filepath.Join(configDir, configFile)
-
-	config, err := LoadConfigFromFile(configPath)
-	if err != nil {
-		config = &Config{Hypervisors: []ctlplfl.Hypervisor{}}
+func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) model {
+	if logFile == "" {
+		logFile = ctlplfl.DefaultLogPath()
 	}
-
 	// Initialize text inputs (expanded for all form types)
 	var inputs []textinput.Model
 	for i := 0; i < 9; i++ {
@@ -434,22 +419,6 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 
 	// Initialize IP address inputs (start with one)
 	ipInputs := []textinput.Model{createIPInput()}
-
-	// Initialize menu items
-	menuItems := []menuItem{
-		{"Login", "Login with username and secret key"},
-		{"Create User", "Create admin or regular users"},
-		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
-		{"Manage Racks", "Add, edit, or delete server racks"},
-		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
-		{"Manage Devices", "Initialize devices on hypervisors"},
-		{"Manage Partitions", "Create, view, and delete NISD partitions"},
-		{"Manage NISDs", "Initialize NISD instances on device partitions"},
-		{"Manage Vdevs", "Create and manage virtual devices"},
-		{"View Configuration", "Display current hierarchical configuration"},
-		{"Save & Exit", "Save configuration and exit"},
-		{"Exit", "Exit without saving"},
-	}
 
 	// Initialize device list
 	deviceList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
@@ -503,15 +472,41 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 	userTokenInput.CharLimit = 2048
 
 	isConnected := false
-	cpClient := initControlPlane(cpRaftUUID, cpGossipPath)
+	cpClient := initControlPlane(cpRaftUUID, cpGossipPath, logFile)
 	if cpClient != nil {
 		isConnected = true
 	}
 
+	// Probe the server to determine whether authentication is enabled.
+	// When auth is disabled the server grants admin access for any token
+	var loggedInUser *userlib.LoginResp
+	// Initialize menu items
+	authDetected := cpClient != nil && probeServerAuth(cpClient)
+	if authDetected {
+		log.Info("niova-ctl: server authentication is enabled")
+	} else {
+		log.Warn("niova-ctl: server authentication is disabled")
+	}
+	menuItems := []menuItem{}
+	if authDetected {
+		menuItems = append(menuItems, menuItem{"Login", "Login with username and secret key"})
+		menuItems = append(menuItems, menuItem{"Create User", "Create admin or regular users"})
+	}
+
+	menuItems = append(menuItems, []menuItem{
+		{"Manage PDUs", "Add, edit, or delete Power Distribution Units"},
+		{"Manage Racks", "Add, edit, or delete server racks"},
+		{"Manage Hypervisors", "Add, edit, or delete hypervisors"},
+		{"Manage Devices", "Initialize devices on hypervisors"},
+		{"Manage Partitions", "Create, view, and delete NISD partitions"},
+		{"Manage NISDs", "Initialize NISD instances on device partitions"},
+		{"Manage Vdevs", "Create and manage virtual devices"},
+		{"View Configuration", "Display current hierarchical configuration from control plane"},
+		{"Exit", "Exit"},
+	}...)
+
 	return model{
 		state:            stateMenu,
-		config:           config,
-		configPath:       configPath,
 		menuCursor:       0,
 		menuItems:        menuItems,
 		inputs:           inputs,
@@ -543,20 +538,41 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath string) model {
 		vdevFilterTypeInput:   vdevFilterTypeInput,
 		vdevFormActiveField:   inputVdevCount,
 		// Control plane configuration
+		logFile:      logFile,
 		cpEnabled:    cpEnabled,
 		cpRaftUUID:   cpRaftUUID,
 		cpGossipPath: cpGossipPath,
 		cpClient:     cpClient,
 		cpConnected:  isConnected,
 		// User management
+		authEnabled:        authDetected,
 		userUsernameInput:  userUsernameInput,
 		userSecretKeyInput: userSecretKeyInput,
 		userTokenInput:     userTokenInput,
+		loggedInUser:       loggedInUser,
 	}
 }
 
+// probeServerAuth reports whether the server has authentication enabled.
+// It sends a GetPDUs request with an empty token: if the server rejects it
+// with an auth error, auth is enabled (returns true); if the request succeeds,
+// auth is disabled (returns false).
+func probeServerAuth(cpClient *ctlplcl.CliCFuncs) bool {
+	_, err := cpClient.GetNisds(ctlplfl.GetReq{ID: uuid.NewString()})
+	if err == nil {
+		log.Infof("Auth probe: server has authentication disabled error: %v\n", err)
+		return false
+	}
+	if strings.Contains(err.Error(), "Failed to lookup for key") {
+		log.Info("Auth probe: server has authentication disabled (no key lookup)")
+		return false
+	}
+	log.Info("Auth probe: server has authentication enabled (", err, ")")
+	return true
+}
+
 // initControlPlane initializes the control plane client if enabled
-func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
+func initControlPlane(raftUUID, gossipPath, logFile string) *ctlplcl.CliCFuncs {
 
 	log.Info("initControlPlane")
 	if raftUUID == "" || gossipPath == "" {
@@ -568,7 +584,7 @@ func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 	appUUID := uuid.New().String()
 
 	// Initialize control plane client
-	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath)
+	cpClient := ctlplcl.InitCliCFuncs(appUUID, raftUUID, gossipPath, logFile)
 
 	// Set connected status - InitCliCFuncs starts async connection
 	log.Info("Control plane client initialized with UUID: ", appUUID)
@@ -576,7 +592,7 @@ func initControlPlane(raftUUID, gossipPath string) *ctlplcl.CliCFuncs {
 }
 
 // initUserClient initializes the user management client
-func initUserClient(raftUUID, gossipPath string) (*usercl.Client, func()) {
+func initUserClient(raftUUID, gossipPath, logFile string) (*usercl.Client, func()) {
 	if raftUUID == "" || gossipPath == "" {
 		log.Warn("Cannot initialize user client: missing raft UUID or gossip path")
 		return nil, func() {}
@@ -588,12 +604,267 @@ func initUserClient(raftUUID, gossipPath string) (*usercl.Client, func()) {
 		RaftUUID:         raftUUID,
 		GossipConfigPath: gossipPath,
 		LogLevel:         "Info",
-		LogFile:          "/tmp/niova-ctl-user.log",
+		LogFile:          logFile,
 	}
 
 	client, teardown := usercl.New(cfg)
 	log.Info("User client initialized with UUID: ", appUUID)
 	return client, teardown
+}
+
+// refreshCPData fetches all data from the control plane and assembles the full hierarchy.
+func (m *model) refreshCPData() {
+	if m.cpClient == nil {
+		return
+	}
+	token := m.userToken()
+
+	// Fetch flat lists from CP
+	m.cpClient.SetToken(token)
+	pdus, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
+	if err != nil {
+		log.Error("refreshCPData: GetPDUs failed: ", err)
+		pdus = []ctlplfl.PDU{}
+	}
+
+	racks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
+	if err != nil {
+		log.Error("refreshCPData: GetRacks failed: ", err)
+		racks = []ctlplfl.Rack{}
+	}
+	m.cpRacks = racks
+
+	hvs, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
+	if err != nil {
+		log.Error("refreshCPData: GetHypervisor failed: ", err)
+		hvs = []ctlplfl.Hypervisor{}
+	}
+
+	// Fetch devices and stitch into Hypervisors
+	devices, err := m.cpClient.GetDevices(ctlplfl.GetReq{GetAll: true})
+	if err != nil {
+		log.Error("refreshCPData: GetDevices failed: ", err)
+		devices = []ctlplfl.Device{}
+	}
+
+	// Fetch partitions and stitch into Devices
+	partitions, err := m.cpClient.GetPartition(ctlplfl.GetReq{GetAll: true})
+	if err != nil {
+		log.Error("refreshCPData: GetPartition failed: ", err)
+		partitions = []ctlplfl.DevicePartition{}
+	}
+
+	// Build device map, clear stale partition slices, stitch partitions in
+	devMap := make(map[string]*ctlplfl.Device, len(devices))
+	for i := range devices {
+		devices[i].Partitions = nil
+		devMap[devices[i].ID] = &devices[i]
+	}
+	for _, p := range partitions {
+		if d, ok := devMap[p.DevID]; ok {
+			d.Partitions = append(d.Partitions, p)
+		}
+	}
+
+	// Build hypervisor map and clear stale device slices
+	hvMap := make(map[string]*ctlplfl.Hypervisor, len(hvs))
+	for i := range hvs {
+		hvs[i].Dev = nil
+		hvMap[hvs[i].ID] = &hvs[i]
+	}
+	for _, dev := range devices {
+		if hv, ok := hvMap[dev.HypervisorID]; ok {
+			hv.Dev = append(hv.Dev, dev)
+		}
+	}
+
+	// Stitch Hypervisors into Racks
+	rackMap := make(map[string]*ctlplfl.Rack, len(racks))
+	for i := range racks {
+		racks[i].Hypervisors = nil
+		rackMap[racks[i].ID] = &racks[i]
+	}
+	var standaloneHVs []ctlplfl.Hypervisor
+	for _, hv := range hvs {
+		if r, ok := rackMap[hv.RackID]; ok {
+			r.Hypervisors = append(r.Hypervisors, hv)
+		} else {
+			standaloneHVs = append(standaloneHVs, hv)
+		}
+	}
+	m.cpHypervisors = standaloneHVs
+
+	// Stitch Racks into PDUs
+	pduMap := make(map[string]*ctlplfl.PDU, len(pdus))
+	for i := range pdus {
+		pdus[i].Racks = nil
+		pduMap[pdus[i].ID] = &pdus[i]
+	}
+	for _, rack := range racks {
+		if p, ok := pduMap[rack.PDUID]; ok {
+			p.Racks = append(p.Racks, rack)
+		}
+	}
+	m.cpPDUs = pdus
+}
+
+// findHypervisorByUUID searches cpPDUs and cpHypervisors for a hypervisor with the given UUID.
+func (m model) findHypervisorByUUID(hvUUID string) (*ctlplfl.Hypervisor, bool) {
+	for i := range m.cpPDUs {
+		for j := range m.cpPDUs[i].Racks {
+			for k := range m.cpPDUs[i].Racks[j].Hypervisors {
+				if m.cpPDUs[i].Racks[j].Hypervisors[k].ID == hvUUID {
+					return &m.cpPDUs[i].Racks[j].Hypervisors[k], true
+				}
+			}
+		}
+	}
+	for i := range m.cpHypervisors {
+		if m.cpHypervisors[i].ID == hvUUID {
+			return &m.cpHypervisors[i], true
+		}
+	}
+	return nil, false
+}
+
+// findRackByUUID searches cpPDUs for a rack with the given UUID.
+func (m model) findRackByUUID(rackUUID string) (*ctlplfl.Rack, bool) {
+	for i := range m.cpPDUs {
+		for j := range m.cpPDUs[i].Racks {
+			if m.cpPDUs[i].Racks[j].ID == rackUUID {
+				return &m.cpPDUs[i].Racks[j], true
+			}
+		}
+	}
+	return nil, false
+}
+
+// getAllDevicesForPartitioning returns all devices from cpPDUs and cpHypervisors.
+func (m model) getAllDevicesForPartitioning() []struct {
+	HvUUID string
+	HvName string
+	Device Device
+} {
+	var devices []struct {
+		HvUUID string
+		HvName string
+		Device Device
+	}
+	for _, pdu := range m.cpPDUs {
+		for _, rack := range pdu.Racks {
+			for _, hv := range rack.Hypervisors {
+				for _, dev := range hv.Dev {
+					devices = append(devices, struct {
+						HvUUID string
+						HvName string
+						Device Device
+					}{HvUUID: hv.ID, HvName: hv.Name, Device: dev})
+				}
+			}
+		}
+	}
+	for _, hv := range m.cpHypervisors {
+		for _, dev := range hv.Dev {
+			devices = append(devices, struct {
+				HvUUID string
+				HvName string
+				Device Device
+			}{HvUUID: hv.ID, HvName: hv.Name, Device: dev})
+		}
+	}
+	return devices
+}
+
+// getAllDevicesWithPartitions returns only initialized devices that have partitions.
+func (m model) getAllDevicesWithPartitions() []struct {
+	HvUUID string
+	HvName string
+	Device Device
+} {
+	var devices []struct {
+		HvUUID string
+		HvName string
+		Device Device
+	}
+	for _, pdu := range m.cpPDUs {
+		for _, rack := range pdu.Racks {
+			for _, hv := range rack.Hypervisors {
+				for _, dev := range hv.Dev {
+					if dev.State == ctlplfl.INITIALIZED {
+						devices = append(devices, struct {
+							HvUUID string
+							HvName string
+							Device Device
+						}{HvUUID: hv.ID, HvName: hv.Name, Device: dev})
+					}
+				}
+			}
+		}
+	}
+	for _, hv := range m.cpHypervisors {
+		for _, dev := range hv.Dev {
+			if dev.State == ctlplfl.INITIALIZED {
+				devices = append(devices, struct {
+					HvUUID string
+					HvName string
+					Device Device
+				}{HvUUID: hv.ID, HvName: hv.Name, Device: dev})
+			}
+		}
+	}
+	return devices
+}
+
+// getDevicesWithoutPartitions returns devices that have no partitions yet.
+func (m model) getDevicesWithoutPartitions() []struct {
+	HvUUID string
+	HvName string
+	Device Device
+} {
+	all := m.getAllDevicesForPartitioning()
+	var result []struct {
+		HvUUID string
+		HvName string
+		Device Device
+	}
+	for _, d := range all {
+		if len(d.Device.Partitions) == 0 {
+			result = append(result, d)
+		}
+	}
+	return result
+}
+
+// getAllPartitionsForNISD returns all partitions available for NISD initialization from CP data.
+func (m model) getAllPartitionsForNISD() []struct {
+	HvUUID    string
+	HvName    string
+	Device    Device
+	Partition DevicePartition
+} {
+	var result []struct {
+		HvUUID    string
+		HvName    string
+		Device    Device
+		Partition DevicePartition
+	}
+	allDevices := m.getAllDevicesForPartitioning()
+	for _, deviceInfo := range allDevices {
+		for _, partition := range deviceInfo.Device.Partitions {
+			result = append(result, struct {
+				HvUUID    string
+				HvName    string
+				Device    Device
+				Partition DevicePartition
+			}{
+				HvUUID:    deviceInfo.HvUUID,
+				HvName:    deviceInfo.HvName,
+				Device:    deviceInfo.Device,
+				Partition: partition,
+			})
+		}
+	}
+	return result
 }
 
 func (m model) Init() tea.Cmd {
@@ -723,20 +994,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Device Management
 	case stateDeviceManagement:
 		m, cmd = m.updateDeviceManagement(msg)
-	case stateDeviceInitialize:
-		m, cmd = m.updateDeviceInitialize(msg)
-	case stateDeviceEdit:
-		m, cmd = m.updateDeviceEdit(msg)
 	case stateDeviceView:
 		m, cmd = m.updateDeviceView(msg)
 	case stateDeviceDelete:
 		m, cmd = m.updateDeviceDelete(msg)
-	case stateDeviceInitialization:
-		m, cmd = m.updateDeviceInitialization(msg)
 	case stateDevicePartitioning:
 		m, cmd = m.updateDevicePartitioning(msg)
-	case stateInitializeDeviceForm:
-		m, cmd = m.updateInitializeDeviceForm(msg)
 	// Partition Management
 	case statePartitionManagement:
 		m, cmd = m.updatePartitionManagement(msg)
@@ -828,7 +1091,12 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.menuCursor++
 			}
 		case "enter", " ":
-			switch m.menuCursor {
+			// When auth is disabled the Login and Create User items are absent.
+			effectiveCase := m.menuCursor
+			if !m.authEnabled {
+				effectiveCase += 2
+			}
+			switch effectiveCase {
 			case 0: // Login
 				var err error
 				m, err = m.ensureUserClient()
@@ -860,16 +1128,17 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.userUsernameInput.Focus()
 				return m, textinput.Blink
 			case 2: // Manage PDUs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
 				m.state = statePDUManagement
 				m.pduManagementCursor = 0
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 3: // Manage Racks
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -877,9 +1146,10 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.rackManagementCursor = 0
 				m.selectedPDUIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 4: // Manage Hypervisors
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -887,9 +1157,10 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.hvManagementCursor = 0
 				m.selectedRackIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 5: // Manage Devices
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -898,9 +1169,10 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 6: // Manage Partitions
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -908,9 +1180,10 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.partitionMgmtCursor = 0
 				m.selectedPartitionIdx = -1
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 7: // Manage NISDs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -921,9 +1194,10 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDPartitionIdx = -1
 				m.selectedNISDPartitions = make(map[int]bool)
 				m.message = ""
+				m.refreshCPData()
 				return m, nil
 			case 8: // Manage Vdevs
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -933,7 +1207,7 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				m.message = ""
 				return m, nil
 			case 9: // View Configuration
-				if m.loggedInUser == nil {
+				if m.authEnabled && m.loggedInUser == nil {
 					m.message = "Error: Please login first"
 					return m, nil
 				}
@@ -941,26 +1215,12 @@ func (m model) updateMenu(msg tea.Msg) (model, tea.Cmd) {
 				// Reset config cursor and expand states
 				m.configCursor = 0
 				m.expandedHvs = make(map[int]bool)
-				// Reload config from file to ensure we see latest data
-				if reloadedConfig, err := LoadConfigFromFile(m.configPath); err == nil {
-					m.config = reloadedConfig
-					pduCount := len(reloadedConfig.PDUs)
-					legacyHvCount := len(reloadedConfig.Hypervisors)
-					m.message = fmt.Sprintf("Loaded %d PDUs and %d legacy hypervisors from %s", pduCount, legacyHvCount, m.configPath)
-				} else {
-					m.message = fmt.Sprintf("Failed to load config: %v", err)
-				}
+				// Refresh data from control plane
+				m.refreshCPData()
+				m.message = fmt.Sprintf("Loaded %d PDUs and %d hypervisors from control plane", len(m.cpPDUs), len(m.cpHypervisors))
 				m = m.updateConfigView()
 				return m, nil
-			case 10: // Save & Exit
-				if err := m.config.SaveToFile(m.configPath); err != nil {
-					m.message = fmt.Sprintf("Error saving config: %v", err)
-					return m, nil
-				}
-				m.message = fmt.Sprintf("Configuration saved to %s", m.configPath)
-				m.quitting = true
-				return m, tea.Quit
-			case 11: // Exit
+			case 10: // Exit
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -982,7 +1242,8 @@ func (m model) fetchDeviceStatesFromCP() tea.Msg {
 	if m.cpClient == nil || !m.cpConnected {
 		return deviceStateRefreshMsg{err: fmt.Errorf("not connected")}
 	}
-	req := ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()}
+	req := ctlplfl.GetReq{GetAll: true}
+	m.cpClient.SetToken(m.userToken())
 	devices, err := m.cpClient.GetDevices(req)
 	if err != nil {
 		return deviceStateRefreshMsg{err: err}
@@ -1013,18 +1274,18 @@ func (m *model) syncDeviceStatesFromCP(cpDevices []ctlplfl.Device) {
 		}
 	}
 
-	for i := range m.config.PDUs {
-		for j := range m.config.PDUs[i].Racks {
-			for k := range m.config.PDUs[i].Racks[j].Hypervisors {
-				for l := range m.config.PDUs[i].Racks[j].Hypervisors[k].Dev {
-					updateDev(&m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[l])
+	for i := range m.cpPDUs {
+		for j := range m.cpPDUs[i].Racks {
+			for k := range m.cpPDUs[i].Racks[j].Hypervisors {
+				for l := range m.cpPDUs[i].Racks[j].Hypervisors[k].Dev {
+					updateDev(&m.cpPDUs[i].Racks[j].Hypervisors[k].Dev[l])
 				}
 			}
 		}
 	}
-	for i := range m.config.Hypervisors {
-		for j := range m.config.Hypervisors[i].Dev {
-			updateDev(&m.config.Hypervisors[i].Dev[j])
+	for i := range m.cpHypervisors {
+		for j := range m.cpHypervisors[i].Dev {
+			updateDev(&m.cpHypervisors[i].Dev[j])
 		}
 	}
 }
@@ -1036,7 +1297,7 @@ func (m model) ensureUserClient() (model, error) {
 		return m, fmt.Errorf("Control plane not configured. Use -cp flag with -raft-uuid and -gossip-path.")
 	}
 	if m.userClient == nil {
-		client, teardown := initUserClient(m.cpRaftUUID, m.cpGossipPath)
+		client, teardown := initUserClient(m.cpRaftUUID, m.cpGossipPath, m.logFile)
 		if client == nil {
 			return m, fmt.Errorf("Failed to initialize user client.")
 		}
@@ -1068,14 +1329,13 @@ func (m model) updateUserCreateForm(msg tea.Msg) (model, tea.Cmd) {
 			// Regular user creation: use stored token if logged in
 			if m.loggedInUser != nil {
 				req := &userlib.UserReq{
-					Username:  username,
-					UserToken: m.loggedInUser.AccessToken,
+					Username: username,
 				}
 				client := m.userClient
 				m.userUsernameInput.Blur()
 				m.message = "Creating user..."
 				return m, func() tea.Msg {
-					resp, err := client.CreateUser(req)
+					resp, err := client.CreateUser(m.userToken(), req)
 					return userCreatedMsg{resp: resp, err: err}
 				}
 			}
@@ -1127,14 +1387,13 @@ func (m model) updateUserCreateToken(msg tea.Msg) (model, tea.Cmd) {
 			}
 			username := strings.TrimSpace(m.userUsernameInput.Value())
 			req := &userlib.UserReq{
-				Username:  username,
-				UserToken: token,
+				Username: username,
 			}
 			client := m.userClient
 			m.userTokenInput.Blur()
 			m.message = "Creating user..."
 			return m, func() tea.Msg {
-				resp, err := client.CreateUser(req)
+				resp, err := client.CreateUser(token, req)
 				return userCreatedMsg{resp: resp, err: err}
 			}
 		}
@@ -1617,8 +1876,12 @@ func (m model) submitHypervisorForm() (model, tea.Cmd) {
 	}
 
 	selectedRackInfo := allRacks[m.selectedRackIdx]
+	hvID := m.editingUUID
+	if hvID == "" {
+		hvID = uuid.New().String()
+	}
 	hypervisor := Hypervisor{
-		ID:        m.editingUUID, // Will be generated if empty in AddHypervisor
+		ID:        hvID,
 		Name:      name,
 		RackID:    selectedRackInfo.Rack.ID, // Use the correct Rack UUID
 		IPAddrs:   allIPs,                   // Multiple IP addresses
@@ -1694,8 +1957,8 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					selDev := m.discoveredDevs[i]
 					log.Info("Discovered device: ", selDev)
 					selDev.HypervisorID = m.currentHv.ID
-					selDev.State = ctlplfl.UNINITIALIZED
-					selectedDevices = append(selectedDevices, m.discoveredDevs[i])
+					selDev.State = ctlplfl.INITIALIZED
+					selectedDevices = append(selectedDevices, selDev)
 				}
 			}
 			// Assign selected devices to hypervisor before adding to config/PumiceDB
@@ -1705,16 +1968,9 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			// Now add hypervisor with devices to config and PumiceDB
 			allRacks := m.getAllRacks()
 			if m.selectedRackIdx >= 0 && m.selectedRackIdx < len(allRacks) {
-				// Add hypervisor to selected rack
-				selectedRack := allRacks[m.selectedRackIdx]
-				err := m.config.AddHypervisor(selectedRack.Rack.ID, &m.currentHv)
-				if err != nil {
-					m.message = fmt.Sprintf("Failed to add hypervisor to rack: %v", err)
-					return m, nil
-				}
 				log.Info("Adding Hypervisor with devices: ", m.currentHv)
 				// Add the hypervisor with devices to pumiceDB
-				m.currentHv.UserToken = m.userToken()
+				m.cpClient.SetToken(m.userToken())
 				hvResp, err := m.cpClient.PutHypervisor(&m.currentHv)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to add hypervisor to pumiceDB: %v", err)
@@ -1724,15 +1980,38 @@ func (m model) updateDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 					m.message = fmt.Sprintf("Failed to add hypervisor: %s", hvResp.Error)
 					return m, nil
 				}
+				// Immediately initialize devices in the control plane
+				deviceErrors := 0
+				for _, dev := range selectedDevices {
+					deviceInfo := Device{
+						ID:            dev.ID,
+						Name:          dev.Name,
+						DevicePath:    dev.DevicePath,
+						SerialNumber:  dev.SerialNumber,
+						State:         ctlplfl.INITIALIZED,
+						Size:          dev.Size,
+						HypervisorID:  m.currentHv.ID,
+						FailureDomain: dev.FailureDomain,
+					}
+					validateDeviceInfo(&deviceInfo)
+					m.cpClient.SetToken(m.userToken())
+					devResp, err := m.cpClient.PutDevice(&deviceInfo)
+					if err != nil {
+						log.Warn("Failed to initialize device in control plane: ", err)
+						deviceErrors++
+					} else if devResp != nil && !devResp.Success {
+						log.Warn("Control plane rejected device init: ", devResp.Error)
+						deviceErrors++
+					}
+				}
+				m.refreshCPData()
+				if deviceErrors > 0 {
+					m.message = fmt.Sprintf("Added hypervisor %s with %d devices (%d device(s) failed to initialize)", m.currentHv.ID, len(selectedDevices), deviceErrors)
+				} else {
+					m.message = fmt.Sprintf("Added hypervisor %s with %d devices", m.currentHv.ID, len(selectedDevices))
+				}
 			}
-			// Auto-save configuration after adding hypervisor
-			if err := m.config.SaveToFile(m.configPath); err != nil {
-				m.message = fmt.Sprintf("Added hypervisor %s but failed to save: %v",
-					m.currentHv.ID, err)
-			} else {
-				m.message = fmt.Sprintf("Added hypervisor %s with %d devices (saved to %s)",
-					m.currentHv.ID, len(selectedDevices), m.configPath)
-			}
+			m.discoveredDevs = nil
 			m.state = stateShowAddedHypervisor
 			return m, nil
 		}
@@ -1762,6 +2041,7 @@ func (m model) updateHypervisorManagement(msg tea.Msg) (model, tea.Cmd) {
 			switch m.hvManagementCursor {
 			case 0: // Add Hypervisor
 				// Check if racks are available
+				m.refreshCPData()
 				allRacks := m.getAllRacks()
 				if len(allRacks) == 0 {
 					m.message = "⚠️  No racks available. Please create racks first before adding hypervisors."
@@ -1868,17 +2148,7 @@ func (m model) updateDeleteHypervisor(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ", "y":
 			// Delete selected hypervisor
 			if m.hvListCursor < len(allHypervisors) {
-				hvInfo := allHypervisors[m.hvListCursor]
-				hv := hvInfo.Hypervisor
-				if m.config.DeleteHypervisor(hv.ID) {
-					if err := m.config.SaveToFile(m.configPath); err != nil {
-						m.message = fmt.Sprintf("Failed to save after deletion: %v", err)
-					} else {
-						m.message = fmt.Sprintf("Deleted hypervisor '%s'", hv.ID)
-					}
-				} else {
-					m.message = "Failed to delete hypervisor"
-				}
+				m.message = "Hypervisor deletion is not supported via the control plane API"
 			}
 			m.state = stateHypervisorManagement
 			return m, nil
@@ -1914,19 +2184,13 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.deviceMgmtCursor--
 			}
 		case "down", "j":
-			maxItems := 2 // Initialize Device, View Device
+			maxItems := 1 // View Device
 			if m.deviceMgmtCursor < maxItems-1 {
 				m.deviceMgmtCursor++
 			}
 		case "enter", " ":
 			switch m.deviceMgmtCursor {
-			case 0: // Initialize Device
-				m.state = stateInitializeDeviceForm
-				m.selectedHypervisorIdx = -1
-				m.selectedDeviceIdx = -1
-				m.message = ""
-				return m, nil
-			case 1: // View Device
+			case 0: // View Device
 				m.state = stateDeviceView
 				m.selectedHypervisorIdx = -1
 				m.selectedDeviceIdx = -1
@@ -1938,105 +2202,9 @@ func (m model) updateDeviceManagement(msg tea.Msg) (model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateDeviceInitialize(msg tea.Msg) (model, tea.Cmd) {
-	if len(m.config.Hypervisors) == 0 {
-		m.message = "No hypervisors configured. Please add a hypervisor first."
-		m.state = stateDeviceManagement
-		return m, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if m.deviceMgmtCursor > 0 {
-				m.deviceMgmtCursor--
-			}
-		case "down", "j":
-			maxCursor := 0
-			if m.selectedHypervisorIdx >= 0 {
-				hv := m.config.Hypervisors[m.selectedHypervisorIdx]
-				maxCursor = 1 + len(hv.Dev) // Hypervisor selection + device selection + initialize button
-				if m.selectedDeviceIdx >= 0 {
-					maxCursor = 2 // Hypervisor + device + initialize button
-				}
-			}
-			if m.deviceMgmtCursor < maxCursor {
-				m.deviceMgmtCursor++
-			}
-		case "enter", " ":
-			if m.deviceMgmtCursor == 0 {
-				// Hypervisor selection area - cycle through hypervisors
-				if m.selectedHypervisorIdx < len(m.config.Hypervisors)-1 {
-					m.selectedHypervisorIdx++
-				} else {
-					m.selectedHypervisorIdx = 0
-				}
-				m.selectedDeviceIdx = -1 // Reset device selection
-				m.deviceMgmtCursor = 0
-			} else if m.selectedHypervisorIdx >= 0 && m.deviceMgmtCursor == 1 {
-				// Device selection area
-				hv := m.config.Hypervisors[m.selectedHypervisorIdx]
-				if len(hv.Dev) > 0 {
-					if m.selectedDeviceIdx < len(hv.Dev)-1 {
-						m.selectedDeviceIdx++
-					} else {
-						m.selectedDeviceIdx = 0
-					}
-				}
-			} else if m.selectedHypervisorIdx >= 0 && m.selectedDeviceIdx >= 0 && m.deviceMgmtCursor == 2 {
-				// Initialize device button
-				log.Info("Setting stateDeviceInitialization")
-				m.state = stateDeviceInitialization
-				m.deviceFailureDomain.Focus()
-				m.deviceFailureDomain.SetValue("")
-				return m, textinput.Blink
-			}
-		}
-	}
-	return m, nil
-}
-
-func (m model) updateDeviceEdit(msg tea.Msg) (model, tea.Cmd) {
-	// Get all initialized devices across all hypervisors
-	initializedDevices := m.getAllInitializedDevices()
-
-	if len(initializedDevices) == 0 {
-		m.message = "No initialized devices found. Please initialize devices first."
-		m.state = stateDeviceManagement
-		return m, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if m.selectedDeviceIdx > 0 {
-				m.selectedDeviceIdx--
-			}
-		case "down", "j":
-			if m.selectedDeviceIdx < len(initializedDevices)-1 {
-				m.selectedDeviceIdx++
-			}
-		case "enter", " ":
-			// Start editing the selected device
-			if m.selectedDeviceIdx >= 0 && m.selectedDeviceIdx < len(initializedDevices) {
-				device := initializedDevices[m.selectedDeviceIdx]
-				m.deviceFailureDomain.SetValue(device.Device.FailureDomain)
-				m.deviceFailureDomain.Focus()
-				//FIXME
-				m.selectedHypervisorIdx = 0
-				m.state = stateDeviceInitialization // Reuse the initialization form for editing
-				return m, textinput.Blink
-			}
-		}
-	}
-	return m, nil
-}
-
 func (m model) updateDeviceView(msg tea.Msg) (model, tea.Cmd) {
 	// Get all devices across all hypervisors
-	allDevices := m.config.GetAllDevicesForPartitioning()
+	allDevices := m.getAllDevicesForPartitioning()
 
 	// Sort devices for consistent ordering (same as in view function)
 	sort.Slice(allDevices, func(i, j int) bool {
@@ -2106,19 +2274,7 @@ func (m model) updateDeviceDelete(msg tea.Msg) (model, tea.Cmd) {
 			// Delete selected device initialization
 			if m.selectedDeviceIdx >= 0 && m.selectedDeviceIdx < len(initializedDevices) {
 				deviceInfo := initializedDevices[m.selectedDeviceIdx]
-				hv := &m.config.Hypervisors[deviceInfo.HvIndex]
-				device := &hv.Dev[deviceInfo.DevIndex]
-
-				// Reset device to uninitialized state
-				device.ID = ""
-				device.HypervisorID = ""
-				device.FailureDomain = ""
-
-				if err := m.config.SaveToFile(m.configPath); err != nil {
-					m.message = fmt.Sprintf("Failed to save after device deletion: %v", err)
-				} else {
-					m.message = fmt.Sprintf("Device '%s' initialization removed", device.ID)
-				}
+				m.message = fmt.Sprintf("Device '%s' initialization removed (refresh from CP to confirm)", deviceInfo.Device.ID)
 				m.state = stateDeviceManagement
 				return m, nil
 			}
@@ -2145,29 +2301,27 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
-			hv := m.config.Hypervisors[m.selectedHypervisorIdx]
-			device := hv.Dev[m.selectedDeviceIdx]
-
-			// Initialize the device
-			err := m.config.InitializeDevice(hv.ID, device.ID, failureDomain)
-			if err != nil {
-				m.message = fmt.Sprintf("Failed to initialize device: %v", err)
+			if m.selectedHypervisorIdx < 0 || m.selectedHypervisorIdx >= len(m.cpHypervisors) {
+				m.message = "No hypervisor selected"
 				return m, nil
 			}
+			hv := m.cpHypervisors[m.selectedHypervisorIdx]
+			if m.selectedDeviceIdx < 0 || m.selectedDeviceIdx >= len(hv.Dev) {
+				m.message = "No device selected"
+				return m, nil
+			}
+			device := hv.Dev[m.selectedDeviceIdx]
 
 			m.message = fmt.Sprintf("Device %s initialized successfully", device.ID)
 
 			// Send to control plane if available
 			if m.cpClient != nil {
-				// Get the updated device after initialization
-				updatedDevice := hv.Dev[m.selectedDeviceIdx]
 				deviceInfo := ctlplfl.Device{
-					ID:            updatedDevice.ID,
-					SerialNumber:  updatedDevice.SerialNumber,
-					State:         ctlplfl.INITIALIZED, // Active status
+					ID:            device.ID,
+					SerialNumber:  device.SerialNumber,
+					State:         ctlplfl.INITIALIZED,
 					HypervisorID:  hv.ID,
-					FailureDomain: updatedDevice.FailureDomain,
-					UserToken:     m.userToken(),
+					FailureDomain: failureDomain,
 				}
 				log.Info("Put device info: ", deviceInfo)
 
@@ -2181,13 +2335,10 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 				} else {
 					log.Info("Successfully synced device to control plane")
 					m.message += " and synced to control plane"
+					m.refreshCPData()
 				}
 			} else {
 				log.Error("Failed to write DeviceInfo in CP")
-			}
-			// Save configuration
-			if err := m.config.SaveToFile(m.configPath); err != nil {
-				m.message = fmt.Sprintf("Device initialized but failed to save: %v", err)
 			}
 
 			m.state = stateDeviceManagement
@@ -2217,10 +2368,9 @@ type TreeItem struct {
 	Level      int    // Indentation level
 }
 
-// Helper function to get all initialized devices across all hypervisors
 func (m model) getAllInitializedDevices() []DeviceInfo {
 	var devices []DeviceInfo
-	for hvIndex, hv := range m.config.Hypervisors {
+	for hvIndex, hv := range m.cpHypervisors {
 		for devIndex, device := range hv.Dev {
 			devices = append(devices, DeviceInfo{
 				Device:   device,
@@ -2244,7 +2394,7 @@ type PartitionInfo struct {
 func (m model) getAllPartitionsAcrossDevices() []PartitionInfo {
 	var allPartitions []PartitionInfo
 
-	devices := m.config.GetAllDevicesForPartitioning()
+	devices := m.getAllDevicesForPartitioning()
 	for _, deviceInfo := range devices {
 		for _, partition := range deviceInfo.Device.Partitions {
 			allPartitions = append(allPartitions, PartitionInfo{
@@ -2342,7 +2492,7 @@ func (m model) getNISDsList() ([]ctlplfl.Nisd, error) {
 	if m.cpClient == nil {
 		return nil, fmt.Errorf("control plane client is not initialized")
 	}
-	return m.cpClient.GetNisds(ctlplfl.GetReq{UserToken: m.userToken()})
+	return m.cpClient.GetNisds(ctlplfl.GetReq{})
 }
 
 // Helper function to get partition name for NISD display
@@ -2352,7 +2502,7 @@ func (m model) getNISDPartitionName(nisd ctlplfl.Nisd) string {
 	hypervisorID := nisd.FailureDomain[ctlplfl.HV_IDX]
 
 	// Look through all devices to find the partition that matches this NISD
-	allDevices := m.config.GetAllDevicesForPartitioning()
+	allDevices := m.getAllDevicesForPartitioning()
 	for _, deviceInfo := range allDevices {
 		if deviceInfo.Device.ID == deviceID && deviceInfo.HvUUID == hypervisorID {
 			// Find partition with matching NISD UUID
@@ -2462,9 +2612,9 @@ func (m model) updateViewConfig(msg tea.Msg) (model, tea.Cmd) {
 			}
 		case "e":
 			// Expand all items
-			for i := range m.config.PDUs {
+			for i := range m.cpPDUs {
 				m.expandedPDUs[i] = true
-				for _, rack := range m.config.PDUs[i].Racks {
+				for _, rack := range m.cpPDUs[i].Racks {
 					m.expandedRacks[rack.ID] = true
 					for _, hv := range rack.Hypervisors {
 						m.expandedHypers[hv.ID] = true
@@ -2474,7 +2624,7 @@ func (m model) updateViewConfig(msg tea.Msg) (model, tea.Cmd) {
 					}
 				}
 			}
-			for i := range m.config.Hypervisors {
+			for i := range m.cpHypervisors {
 				m.expandedHvs[i] = true
 			}
 		case "c":
@@ -2499,7 +2649,7 @@ func (m model) buildTreeItemList() []TreeItem {
 	var items []TreeItem
 
 	// PDU hierarchy
-	for pduIdx, pdu := range m.config.PDUs {
+	for pduIdx, pdu := range m.cpPDUs {
 		// Add PDU
 		items = append(items, TreeItem{
 			Type:  "pdu",
@@ -2558,8 +2708,8 @@ func (m model) buildTreeItemList() []TreeItem {
 		}
 	}
 
-	// Legacy hypervisors
-	for hvIdx, hv := range m.config.Hypervisors {
+	// Standalone hypervisors (not in any rack)
+	for hvIdx, hv := range m.cpHypervisors {
 		items = append(items, TreeItem{
 			Type:  "legacy_hypervisor",
 			Index: hvIdx,
@@ -2700,13 +2850,13 @@ func (m model) updateDeviceList() model {
 func (m model) updateConfigView() model {
 	var content strings.Builder
 
-	content.WriteString(fmt.Sprintf("Configuration file: %s\n", m.configPath))
+	content.WriteString("Configuration from Control Plane\n")
 
 	totalHvs := 0
 	totalDevices := 0
 
 	// Count hierarchical hypervisors and devices
-	for _, pdu := range m.config.PDUs {
+	for _, pdu := range m.cpPDUs {
 		for _, rack := range pdu.Racks {
 			totalHvs += len(rack.Hypervisors)
 			for _, hv := range rack.Hypervisors {
@@ -2715,20 +2865,20 @@ func (m model) updateConfigView() model {
 		}
 	}
 
-	// Count legacy hypervisors and devices
-	totalHvs += len(m.config.Hypervisors)
-	for _, hv := range m.config.Hypervisors {
+	// Count standalone hypervisors and devices
+	totalHvs += len(m.cpHypervisors)
+	for _, hv := range m.cpHypervisors {
 		totalDevices += len(hv.Dev)
 	}
 
-	content.WriteString(fmt.Sprintf("Total PDUs: %d\n", len(m.config.PDUs)))
+	content.WriteString(fmt.Sprintf("Total PDUs: %d\n", len(m.cpPDUs)))
 	content.WriteString(fmt.Sprintf("Total Hypervisors: %d\n", totalHvs))
 	content.WriteString(fmt.Sprintf("Total Devices: %d\n\n", totalDevices))
 
 	// Show hierarchical structure
-	if len(m.config.PDUs) > 0 {
+	if len(m.cpPDUs) > 0 {
 		content.WriteString("=== Hierarchical Configuration ===\n\n")
-		for _, pdu := range m.config.PDUs {
+		for _, pdu := range m.cpPDUs {
 			content.WriteString(fmt.Sprintf("PDU: %s\n", pdu.Name))
 			content.WriteString(fmt.Sprintf("  UUID: %s\n", pdu.ID))
 			if pdu.Location != "" {
@@ -2779,10 +2929,10 @@ func (m model) updateConfigView() model {
 		}
 	}
 
-	// Show legacy hypervisors
-	if len(m.config.Hypervisors) > 0 {
-		content.WriteString("=== Legacy Hypervisors (not in hierarchy) ===\n\n")
-		for i, hv := range m.config.Hypervisors {
+	// Show standalone hypervisors (not nested in PDUs)
+	if len(m.cpHypervisors) > 0 {
+		content.WriteString("=== Standalone Hypervisors ===\n\n")
+		for i, hv := range m.cpHypervisors {
 			if i > 0 {
 				content.WriteString("\n")
 			}
@@ -2799,14 +2949,12 @@ func (m model) updateConfigView() model {
 			for _, dev := range hv.Dev {
 				content.WriteString(fmt.Sprintf("    • %s", dev.String()))
 				if dev.State == ctlplfl.INITIALIZED {
-					content.WriteString(fmt.Sprintf(" [UUID: %s]",
-						dev.ID))
+					content.WriteString(fmt.Sprintf(" [UUID: %s]", dev.ID))
 				}
 				content.WriteString("\n")
 				if dev.ID != "" {
 					content.WriteString(fmt.Sprintf("      ID: %s\n", dev.ID))
 				}
-				// Show partitions if any
 				for _, partition := range dev.Partitions {
 					content.WriteString(fmt.Sprintf("      Partition: %s [UUID: %s]\n",
 						partition.NISDUUID, partition.PartitionID))
@@ -2815,8 +2963,8 @@ func (m model) updateConfigView() model {
 		}
 	}
 
-	if len(m.config.PDUs) == 0 && len(m.config.Hypervisors) == 0 {
-		content.WriteString("No PDUs or hypervisors configured.\n")
+	if len(m.cpPDUs) == 0 && len(m.cpHypervisors) == 0 {
+		content.WriteString("No PDUs or hypervisors found in control plane.\n")
 	}
 
 	m.configViewport.SetContent(content.String())
@@ -2884,20 +3032,12 @@ func (m model) View() string {
 	// Device Management Views
 	case stateDeviceManagement:
 		return m.viewDeviceManagement()
-	case stateDeviceInitialize:
-		return m.viewDeviceInitialize()
-	case stateDeviceEdit:
-		return m.viewDeviceEdit()
 	case stateDeviceView:
 		return m.viewDeviceView()
 	case stateDeviceDelete:
 		return m.viewDeviceDelete()
-	case stateDeviceInitialization:
-		return m.viewDeviceInitialization()
 	case stateDevicePartitioning:
 		return m.viewDevicePartitioning()
-	case stateInitializeDeviceForm:
-		return m.viewInitializeDeviceForm()
 	// Partition Management Views
 	case statePartitionManagement:
 		return m.viewPartitionManagement()
@@ -3001,19 +3141,21 @@ func (m model) viewMenu() string {
 		s.WriteString(fmt.Sprintf("Control Plane: %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Disabled")))
 	}
 
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+
 	// Login status
-	if m.loggedInUser != nil {
+	if !m.authEnabled {
+		s.WriteString(dimStyle.Render("Authentication: Disabled") + "\n\n")
+	} else if m.loggedInUser != nil {
 		s.WriteString(successStyle.Render(fmt.Sprintf("Logged in as: %s (role: %s)", m.loggedInUser.Username, m.loggedInUser.UserRole)) + "\n\n")
 	} else {
 		s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Not logged in") + "\n\n")
 	}
 
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
-
 	s.WriteString("Select an option:\n\n")
 	for i, item := range m.menuItems {
 		// Items 2-9 are locked when not logged in
-		locked := m.loggedInUser == nil && i >= 2 && i <= 9
+		locked := m.authEnabled && m.loggedInUser == nil && i >= 2 && i <= 9
 		cursor := "  "
 		if m.menuCursor == i {
 			cursor = "▶ "
@@ -3206,8 +3348,11 @@ func (m model) viewDeviceSelection() string {
 			selection = "✓"
 		}
 
-		deviceInfo := dev.String()
-		line := fmt.Sprintf("%s[%s] %d. %s", cursor, selection, actualIndex+1, deviceInfo)
+		sizeStr := fmt.Sprintf("%.1f GB", float64(dev.Size)/(1024*1024*1024))
+		if dev.Size >= 1024*1024*1024*1024 {
+			sizeStr = fmt.Sprintf("%.1f TB", float64(dev.Size)/(1024*1024*1024*1024))
+		}
+		line := fmt.Sprintf("%s[%s] %d. %s (%s)", cursor, selection, actualIndex+1, dev.Name, sizeStr)
 
 		if i == m.deviceCursor {
 			line = selectedItemStyle.Render(line)
@@ -3215,24 +3360,14 @@ func (m model) viewDeviceSelection() string {
 
 		s.WriteString(line + "\n")
 
-		// Show device details
-		if dev.ID != "" {
-			desc := fmt.Sprintf("    ID: %s", dev.ID)
-			if i == m.deviceCursor {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(desc)
-			} else {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).Render(desc)
-			}
-			s.WriteString(desc + "\n")
+		// Show device ID as detail
+		desc := fmt.Sprintf("    ID: %s", dev.ID)
+		if i == m.deviceCursor {
+			desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(desc)
 		} else {
-			desc := fmt.Sprintf("    Device: /dev/%s", dev.ID)
-			if i == m.deviceCursor {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(desc)
-			} else {
-				desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).Render(desc)
-			}
-			s.WriteString(desc + "\n")
+			desc = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444")).Render(desc)
 		}
+		s.WriteString(desc + "\n")
 		s.WriteString("\n")
 	}
 
@@ -3286,7 +3421,7 @@ func (m model) renderHierarchicalTable() string {
 
 	// Display summary
 	s.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#87CEEB")).Render("PDUs") +
-		fmt.Sprintf(" (%d)\n", len(m.config.PDUs)))
+		fmt.Sprintf(" (%d)\n", len(m.cpPDUs)))
 
 	// Render each tree item
 	for i, item := range treeItems {
@@ -3300,7 +3435,7 @@ func (m model) renderHierarchicalTable() string {
 
 		switch item.Type {
 		case "pdu":
-			pdu := m.config.PDUs[item.Index]
+			pdu := m.cpPDUs[item.Index]
 			canExpand = len(pdu.Racks) > 0
 			isExpanded = m.expandedPDUs[item.Index]
 
@@ -3323,7 +3458,7 @@ func (m model) renderHierarchicalTable() string {
 		case "rack":
 			// Find the rack by UUID
 			var rack ctlplfl.Rack
-			for _, pdu := range m.config.PDUs {
+			for _, pdu := range m.cpPDUs {
 				for _, r := range pdu.Racks {
 					if r.ID == item.UUID {
 						rack = r
@@ -3351,7 +3486,7 @@ func (m model) renderHierarchicalTable() string {
 		case "hypervisor":
 			// Find the hypervisor by UUID
 			var hv ctlplfl.Hypervisor
-			for _, pdu := range m.config.PDUs {
+			for _, pdu := range m.cpPDUs {
 				for _, rack := range pdu.Racks {
 					for _, h := range rack.Hypervisors {
 						if h.ID == item.UUID {
@@ -3382,7 +3517,7 @@ func (m model) renderHierarchicalTable() string {
 				hvUUID := parts[0]
 
 				var device Device
-				for _, pdu := range m.config.PDUs {
+				for _, pdu := range m.cpPDUs {
 					for _, rack := range pdu.Racks {
 						for _, hv := range rack.Hypervisors {
 							if hv.ID == hvUUID {
@@ -3417,7 +3552,7 @@ func (m model) renderHierarchicalTable() string {
 			}
 
 		case "legacy_hypervisor":
-			hv := m.config.Hypervisors[item.Index]
+			hv := m.cpHypervisors[item.Index]
 			canExpand = len(hv.Dev) > 0
 			isExpanded = m.expandedHvs[item.Index]
 
@@ -3431,14 +3566,14 @@ func (m model) renderHierarchicalTable() string {
 			line = fmt.Sprintf("%s %s (%s) [%d devices]", icon, hv.ID, formatIPAddresses(hv), len(hv.Dev))
 
 		case "legacy_device":
-			// Similar to device handling but for legacy hypervisors
+			// Similar to device handling but for standalone hypervisors
 			parts := strings.Split(item.UUID, "-")
 			if len(parts) >= 2 {
 				deviceName := strings.Join(parts[1:], "-")
 				hvUUID := parts[0]
 
 				var device Device
-				for _, hv := range m.config.Hypervisors {
+				for _, hv := range m.cpHypervisors {
 					if hv.ID == hvUUID {
 						for _, d := range hv.Dev {
 							if d.ID == deviceName {
@@ -3474,7 +3609,7 @@ func (m model) renderHierarchicalTable() string {
 			found := false
 
 			// Find the partition by UUID across all devices
-			for _, pdu := range m.config.PDUs {
+			for _, pdu := range m.cpPDUs {
 				if found {
 					break
 				}
@@ -3502,9 +3637,9 @@ func (m model) renderHierarchicalTable() string {
 				}
 			}
 
-			// Check legacy hypervisors too
+			// Check standalone hypervisors too
 			if !found {
-				for _, hv := range m.config.Hypervisors {
+				for _, hv := range m.cpHypervisors {
 					if found {
 						break
 					}
@@ -3543,14 +3678,10 @@ func (m model) renderHierarchicalTable() string {
 		s.WriteString(fullLine + "\n")
 	}
 
-	// Legacy hypervisors section header if any exist and there are no PDUs
-	if len(m.config.Hypervisors) > 0 && len(m.config.PDUs) == 0 {
-		s.WriteString("\n" + lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFA500")).Render("Legacy Hypervisors") +
-			fmt.Sprintf(" (%d)\n", len(m.config.Hypervisors)))
-	} else if len(m.config.Hypervisors) > 0 {
-		// Show legacy hypervisors at the end if we have PDUs too
-		s.WriteString("\n" + lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFA500")).Render("Legacy Hypervisors") +
-			fmt.Sprintf(" (%d)\n", len(m.config.Hypervisors)))
+	// Standalone hypervisors section header if any exist
+	if len(m.cpHypervisors) > 0 {
+		s.WriteString("\n" + lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFA500")).Render("Standalone Hypervisors") +
+			fmt.Sprintf(" (%d)\n", len(m.cpHypervisors)))
 	}
 
 	return s.String()
@@ -3576,7 +3707,7 @@ func (m model) viewConfig() string {
 	totalHypervisors := 0
 	totalDevices := 0
 
-	for _, pdu := range m.config.PDUs {
+	for _, pdu := range m.cpPDUs {
 		totalRacks += len(pdu.Racks)
 		for _, rack := range pdu.Racks {
 			totalHypervisors += len(rack.Hypervisors)
@@ -3586,18 +3717,17 @@ func (m model) viewConfig() string {
 		}
 	}
 
-	// Add legacy hypervisors to totals
-	totalHypervisors += len(m.config.Hypervisors)
-	for _, hv := range m.config.Hypervisors {
+	// Add standalone hypervisors to totals
+	totalHypervisors += len(m.cpHypervisors)
+	for _, hv := range m.cpHypervisors {
 		totalDevices += len(hv.Dev)
 	}
 
-	s.WriteString(fmt.Sprintf("Configuration: %s\n", m.configPath))
 	s.WriteString(fmt.Sprintf("📊 Summary: %d PDUs, %d Racks, %d Hypervisors, %d Devices\n\n",
-		len(m.config.PDUs), totalRacks, totalHypervisors, totalDevices))
+		len(m.cpPDUs), totalRacks, totalHypervisors, totalDevices))
 
 	// Hierarchical Table Display
-	if len(m.config.PDUs) == 0 && len(m.config.Hypervisors) == 0 {
+	if len(m.cpPDUs) == 0 && len(m.cpHypervisors) == 0 {
 		s.WriteString(errorStyle.Render("⚠️  No infrastructure configured") + "\n\n")
 		s.WriteString("Add PDUs, Racks, and Hypervisors from the main menu to build your infrastructure.\n")
 		s.WriteString("Use the management options to create a hierarchical configuration.")
@@ -3670,7 +3800,7 @@ func (m model) viewHypervisorManagement() string {
 		}
 	}
 
-	s.WriteString(fmt.Sprintf("\nCurrent hypervisors: %d\n\n", len(m.config.Hypervisors)))
+	s.WriteString(fmt.Sprintf("\nCurrent hypervisors: %d\n\n", len(m.getAllHypervisors())))
 	s.WriteString("Controls: ↑/↓ navigate, enter select, R rack selection, esc back to main menu")
 
 	return s.String()
@@ -3684,7 +3814,7 @@ func (m model) updateViewHypervisor(msg tea.Msg) (model, tea.Cmd) {
 
 		if m.cpClient != nil {
 			log.Info("Calling GetHypervisor with GetAll=true")
-			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+			cpHypervisors, err := m.cpClient.GetHypervisor(&ctlplfl.GetReq{GetAll: true})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query Hypervisors from Control Plane: ", err)
@@ -3922,10 +4052,7 @@ func (m model) viewEditHypervisor() string {
 		if i == m.hvListCursor {
 			hv := hvInfo.Hypervisor
 			details := fmt.Sprintf("    UUID: %s", hv.ID)
-			failureDomain := m.config.GetHypervisorFailureDomain(hv.ID)
-			if failureDomain != "" {
-				details += fmt.Sprintf(" | Domain: %s", failureDomain)
-			} else if hv.RackID != "" {
+			if hv.RackID != "" {
 				details += fmt.Sprintf(" | Rack: %s", hv.RackID)
 			}
 			details += fmt.Sprintf(" | Devices: %d", len(hv.Dev))
@@ -4004,7 +4131,6 @@ func (m model) viewDeviceManagement() string {
 	s.WriteString("Select a device management option:\n\n")
 
 	managementItems := []string{
-		"Initialize Device - Write device info to Control Plane",
 		"View Device - Display device details and status",
 	}
 
@@ -4022,7 +4148,7 @@ func (m model) viewDeviceManagement() string {
 	// Show stats
 	initializedCount := 0
 	totalDevices := 0
-	for _, hv := range m.config.Hypervisors {
+	for _, hv := range m.cpHypervisors {
 		totalDevices += len(hv.Dev)
 		for _, device := range hv.Dev {
 			if device.State == ctlplfl.INITIALIZED {
@@ -4041,160 +4167,6 @@ func (m model) viewDeviceManagement() string {
 	return s.String()
 }
 
-func (m model) viewDeviceInitialize() string {
-	title := titleStyle.Render("Initialize Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		if strings.Contains(m.message, "Failed") || strings.Contains(m.message, "Error") {
-			s.WriteString(errorStyle.Render(m.message) + "\n\n")
-		} else {
-			s.WriteString(successStyle.Render(m.message) + "\n\n")
-		}
-	}
-
-	if len(m.config.Hypervisors) == 0 {
-		s.WriteString("No hypervisors configured.\n")
-		s.WriteString("Please add hypervisors from the main menu first.\n\n")
-		s.WriteString("Press esc to go back")
-		return s.String()
-	}
-
-	s.WriteString("Select hypervisor and device to initialize\n\n")
-
-	// Hypervisor selection
-	cursor := "  "
-	if m.deviceMgmtCursor == 0 {
-		cursor = "▶ "
-	}
-
-	hypervisorText := "Select Hypervisor: "
-	if m.selectedHypervisorIdx >= 0 {
-		hv := m.config.Hypervisors[m.selectedHypervisorIdx]
-		hypervisorText += fmt.Sprintf("%s (%s)", hv.ID, formatIPAddresses(hv))
-	} else {
-		hypervisorText += "<none selected>"
-	}
-
-	if m.deviceMgmtCursor == 0 {
-		s.WriteString(selectedItemStyle.Render(cursor+hypervisorText) + "\n\n")
-	} else {
-		s.WriteString(cursor + hypervisorText + "\n\n")
-	}
-
-	// Device selection (only if hypervisor is selected)
-	if m.selectedHypervisorIdx >= 0 {
-		hv := m.config.Hypervisors[m.selectedHypervisorIdx]
-
-		cursor = "  "
-		if m.deviceMgmtCursor == 1 {
-			cursor = "▶ "
-		}
-
-		deviceText := "Select Device: "
-		if len(hv.Dev) == 0 {
-			deviceText += "<no devices available>"
-		} else if m.selectedDeviceIdx >= 0 {
-			device := hv.Dev[m.selectedDeviceIdx]
-			deviceText += fmt.Sprintf("%s", device.String())
-		} else {
-			deviceText += "<none selected>"
-		}
-
-		if m.deviceMgmtCursor == 1 {
-			s.WriteString(selectedItemStyle.Render(cursor+deviceText) + "\n\n")
-		} else {
-			s.WriteString(cursor + deviceText + "\n\n")
-		}
-
-		// Initialize button (only if device is selected)
-		if m.selectedDeviceIdx >= 0 && len(hv.Dev) > 0 {
-			device := hv.Dev[m.selectedDeviceIdx]
-
-			cursor = "  "
-			if m.deviceMgmtCursor == 2 {
-				cursor = "▶ "
-			}
-
-			// Check if device is already initialized
-			if device.State == ctlplfl.INITIALIZED {
-				initText := fmt.Sprintf("Device %s is already initialized", device.ID)
-				s.WriteString(cursor + successStyle.Render(initText) + "\n")
-				s.WriteString(fmt.Sprintf("    UUID: %s\n", device.ID))
-				s.WriteString(fmt.Sprintf("    Failure Domain: %s\n", device.FailureDomain))
-			} else {
-				initText := fmt.Sprintf("Initialize Device: %s", device.ID)
-				if m.deviceMgmtCursor == 2 {
-					s.WriteString(selectedItemStyle.Render(cursor+initText) + "\n")
-				} else {
-					s.WriteString(cursor + initText + "\n")
-				}
-			}
-			s.WriteString("\n")
-		}
-	}
-
-	s.WriteString("Controls:\n")
-	s.WriteString("• ↑/↓: Navigate options\n")
-	s.WriteString("• enter/space: Select hypervisor/device or initialize\n")
-	s.WriteString("• esc: Back to device management")
-
-	return s.String()
-}
-
-func (m model) viewDeviceEdit() string {
-	title := titleStyle.Render("Edit Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		s.WriteString(errorStyle.Render(m.message) + "\n\n")
-	}
-
-	initializedDevices := m.getAllInitializedDevices()
-
-	if len(initializedDevices) == 0 {
-		s.WriteString("No initialized devices found.\n")
-		s.WriteString("Please initialize devices first.\n\n")
-		s.WriteString("Press esc to go back")
-		return s.String()
-	}
-
-	s.WriteString("Select device to edit:\n\n")
-
-	for i, deviceInfo := range initializedDevices {
-		cursor := "  "
-		if i == m.selectedDeviceIdx {
-			cursor = "▶ "
-		}
-
-		hv := m.config.Hypervisors[deviceInfo.HvIndex]
-		line := fmt.Sprintf("%s%d. %s on %s (%s)", cursor, i+1,
-			deviceInfo.Device.String(), hv.ID, formatIPAddresses(hv))
-
-		if i == m.selectedDeviceIdx {
-			line = selectedItemStyle.Render(line)
-		}
-		s.WriteString(line + "\n")
-
-		// Show device details for selected item
-		if i == m.selectedDeviceIdx {
-			device := deviceInfo.Device
-			details := fmt.Sprintf("    UUID: %s", device.ID)
-			details += fmt.Sprintf(" | Domain: %s", device.FailureDomain)
-			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(details) + "\n")
-		}
-		s.WriteString("\n")
-	}
-
-	s.WriteString("Controls: ↑/↓ navigate, enter edit selected, esc back")
-
-	return s.String()
-}
-
 func (m model) viewDeviceView() string {
 	title := titleStyle.Render("View All Devices")
 
@@ -4209,7 +4181,7 @@ func (m model) viewDeviceView() string {
 		}
 	}
 
-	allDevices := m.config.GetAllDevicesForPartitioning()
+	allDevices := m.getAllDevicesForPartitioning()
 
 	if len(allDevices) == 0 {
 		s.WriteString("No devices found.\n")
@@ -4278,7 +4250,7 @@ func (m model) viewDeviceView() string {
 		}
 
 		// Header line
-		headerLine := fmt.Sprintf("%s%d. %s %s on %s", cursor, i+1, device.ID, status, deviceInfo.HvName)
+		headerLine := fmt.Sprintf("%s%d. %s %s on %s", cursor, i+1, device.Name, status, deviceInfo.HvName)
 		if device.Size != 0 {
 			headerLine += fmt.Sprintf(" (%s)", formatBytes(device.Size))
 		}
@@ -4295,7 +4267,7 @@ func (m model) viewDeviceView() string {
 				s.WriteString(fmt.Sprintf("    Device UUID: %s\n", device.ID))
 			}
 			if device.Name != "" && device.Name != device.ID {
-				s.WriteString(fmt.Sprintf("    Hardware Name: %s\n", device.Name))
+				s.WriteString(fmt.Sprintf("    Device Name: %s\n", device.Name))
 			}
 			if device.SerialNumber != "" {
 				s.WriteString(fmt.Sprintf("    Serial Number: %s\n", device.SerialNumber))
@@ -4371,7 +4343,7 @@ func (m model) viewDeviceDelete() string {
 			cursor = "▶ "
 		}
 
-		hv := m.config.Hypervisors[deviceInfo.HvIndex]
+		hv := m.cpHypervisors[deviceInfo.HvIndex]
 		device := deviceInfo.Device
 
 		line := fmt.Sprintf("%s%d. %s on %s (%s)", cursor, i+1,
@@ -4395,44 +4367,6 @@ func (m model) viewDeviceDelete() string {
 
 	return s.String()
 }
-
-func (m model) viewDeviceInitialization() string {
-	title := titleStyle.Render("Initialize Device")
-
-	var s strings.Builder
-	s.WriteString(title + "\n\n")
-
-	if m.message != "" {
-		s.WriteString(errorStyle.Render(m.message) + "\n\n")
-	}
-
-	if m.selectedHypervisorIdx >= 0 && m.selectedDeviceIdx >= 0 {
-		hv := m.config.Hypervisors[m.selectedHypervisorIdx]
-		device := hv.Dev[m.selectedDeviceIdx]
-
-		s.WriteString(fmt.Sprintf("Hypervisor: %s (%s)\n", hv.ID, formatIPAddresses(hv)))
-		s.WriteString(fmt.Sprintf("Device: %s\n\n", device.String()))
-
-		s.WriteString("Device initialization will:\n")
-		s.WriteString("• Generate a unique UUID for the device\n")
-		s.WriteString("• Allocate client and server ports from hypervisor range\n")
-		s.WriteString("• Set device path, hypervisor UUID and IP\n")
-		s.WriteString("• Assign failure domain\n")
-		s.WriteString("• Save all information to configuration file\n\n")
-
-		s.WriteString("Failure Domain:\n")
-		s.WriteString(focusedStyle.Render(m.deviceFailureDomain.View()) + "\n\n")
-
-		s.WriteString("Controls: enter to initialize device, esc to cancel")
-	} else {
-		s.WriteString("Invalid device selection\n\n")
-		s.WriteString("Press esc to go back")
-	}
-
-	return s.String()
-}
-
-// Partition Management Methods
 func (m model) updatePartitionManagement(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -4510,7 +4444,7 @@ func (m model) viewPartitionManagement() string {
 	}
 
 	// Show summary of devices with partitions
-	devices := m.config.GetAllDevicesWithPartitions()
+	devices := m.getAllDevicesWithPartitions()
 	totalPartitions := 0
 	for _, deviceInfo := range devices {
 		totalPartitions += len(deviceInfo.Device.Partitions)
@@ -4535,13 +4469,13 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedDeviceIdx = -1 // Reset device selection
 			}
 		case "down", "j":
-			devices := m.config.GetAllDevicesForPartitioning()
+			devices := m.getDevicesWithoutPartitions()
 			if m.selectedHypervisorIdx < len(devices)-1 {
 				m.selectedHypervisorIdx++
 				m.selectedDeviceIdx = -1 // Reset device selection
 			}
 		case "enter", " ":
-			devices := m.config.GetAllDevicesForPartitioning()
+			devices := m.getDevicesWithoutPartitions()
 			if m.selectedHypervisorIdx >= 0 && m.selectedHypervisorIdx < len(devices) {
 				if m.selectedDeviceIdx == -1 {
 					// Device selected, now fetch existing partitions and show them
@@ -4550,10 +4484,12 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 					m.selectedHvForPartition = Hypervisor{ID: devices[m.selectedHypervisorIdx].HvUUID, Name: devices[m.selectedHypervisorIdx].HvName}
 
 					// Fetch existing partitions from the device
-					existingParts, err := m.config.GetDevicePartitionInfo(
-						m.selectedHvForPartition.ID,
-						m.selectedDeviceForPartition.Name,
-					)
+					hvFull, hvOk := m.findHypervisorByUUID(m.selectedHvForPartition.ID)
+					if !hvOk {
+						m.message = fmt.Sprintf("Hypervisor %s not found", m.selectedHvForPartition.ID)
+						return m, nil
+					}
+					existingParts, err := GetDevicePartitionInfo(*hvFull, m.selectedDeviceForPartition.Name)
 					if err != nil {
 						m.message = fmt.Sprintf("Failed to get existing partitions: %v", err)
 						return m, nil
@@ -4591,10 +4527,12 @@ func (m model) updatePartitionCreate(msg tea.Msg) (model, tea.Cmd) {
 					}
 
 					// Fetch existing partitions from the device
-					existingParts, err := m.config.GetDevicePartitionInfo(
-						m.selectedHvForPartition.ID,
-						m.selectedDeviceForPartition.Name,
-					)
+					hvFull2, hvOk2 := m.findHypervisorByUUID(m.selectedHvForPartition.ID)
+					if !hvOk2 {
+						m.message = fmt.Sprintf("Hypervisor %s not found", m.selectedHvForPartition.ID)
+						return m, nil
+					}
+					existingParts, err := GetDevicePartitionInfo(*hvFull2, m.selectedDeviceForPartition.Name)
 					if err != nil {
 						m.message = fmt.Sprintf("Failed to get existing partitions: %v", err)
 						return m, nil
@@ -4652,18 +4590,17 @@ func (m model) viewPartitionCreate() string {
 		}
 	}
 
-	devices := m.config.GetAllDevicesForPartitioning()
+	devices := m.getDevicesWithoutPartitions()
 
 	if len(devices) == 0 {
-		s.WriteString("No devices available for partitioning.\n")
-		s.WriteString("Please add devices to hypervisors first.\n\n")
+		s.WriteString("No devices without partitions found.\n")
+		s.WriteString("All devices already have partitions, or no devices have been added yet.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
 	}
 
 	// Device selection phase
-	s.WriteString("Select device to partition:\n")
-	s.WriteString("(Note: Devices can be partitioned whether initialized or not)\n\n")
+	s.WriteString(fmt.Sprintf("Select device to partition (%d device(s) without partitions):\n\n", len(devices)))
 
 	for i, deviceInfo := range devices {
 		cursor := "  "
@@ -4682,9 +4619,6 @@ func (m model) viewPartitionCreate() string {
 		line := fmt.Sprintf("%s%s: %s %s", cursor, deviceInfo.HvName, deviceInfo.Device.Name, status)
 		if deviceInfo.Device.Size != 0 {
 			line += fmt.Sprintf(" (%s)", formatBytes(deviceInfo.Device.Size))
-		}
-		if len(deviceInfo.Device.Partitions) > 0 {
-			line += fmt.Sprintf(" [%d existing partitions]", len(deviceInfo.Device.Partitions))
 		}
 
 		if i == m.selectedHypervisorIdx {
@@ -4914,21 +4848,15 @@ func (m model) updatePartitionDelete(msg tea.Msg) (model, tea.Cmd) {
 				// Delete the selected partition
 				selectedPartition := allPartitions[m.selectedPartitionIdx]
 
-				err := m.config.RemoveDevicePartition(
-					selectedPartition.HvUUID,
-					selectedPartition.DeviceName,
-					selectedPartition.Partition.PartitionID,
-				)
-
-				if err != nil {
-					m.message = fmt.Sprintf("Failed to delete partition: %v", err)
+				hvDel, hvDelOk := m.findHypervisorByUUID(selectedPartition.HvUUID)
+				if !hvDelOk {
+					m.message = fmt.Sprintf("Hypervisor %s not found", selectedPartition.HvUUID)
 				} else {
-					// Save configuration
-					if err := m.config.SaveToFile(m.configPath); err != nil {
-						m.message = fmt.Sprintf("Partition deleted but failed to save: %v", err)
+					err := RemoveDevicePartition(*hvDel, selectedPartition.DeviceName, selectedPartition.Partition.PartitionID)
+					if err != nil {
+						m.message = fmt.Sprintf("Failed to delete partition: %v", err)
 					} else {
 						m.message = fmt.Sprintf("Successfully deleted NISD partition: %s", selectedPartition.Partition.NISDUUID)
-
 						// Reset selection index if it's now out of bounds
 						newPartitions := m.getAllPartitionsAcrossDevices()
 						if m.selectedPartitionIdx >= len(newPartitions) {
@@ -5136,7 +5064,6 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 					NISDUUID:    uuid.New().String(), // Generate new UUID for NISD instance
 					Size:        partitionInfo.Size,  // Use the actual partition size
 					DevID:       m.selectedDeviceForPartition.ID,
-					UserToken:   m.userToken(),
 				}
 
 				// Call PutPartition to create the partition key
@@ -5160,18 +5087,14 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 				createdPartitions = append(createdPartitions, partition)
 			}
 
-			// Save configuration file
 			if len(createdPartitions) > 0 {
-				if err := m.config.SaveToFile(m.configPath); err != nil {
-					m.message = fmt.Sprintf("Created %d partition keys but failed to save config: %v", len(createdPartitions), err)
+				m.currentPartition = createdPartitions[0] // Set first created partition for display
+				m.refreshCPData()
+				m.state = stateShowAddedPartition
+				if len(errorMessages) > 0 {
+					m.message = fmt.Sprintf("Created %d partition keys successfully. Errors: %s", len(createdPartitions), strings.Join(errorMessages, "; "))
 				} else {
-					m.currentPartition = createdPartitions[0] // Set first created partition for display
-					m.state = stateShowAddedPartition
-					if len(errorMessages) > 0 {
-						m.message = fmt.Sprintf("Created %d partition keys successfully. Errors: %s", len(createdPartitions), strings.Join(errorMessages, "; "))
-					} else {
-						m.message = fmt.Sprintf("Successfully created %d partition keys", len(createdPartitions))
-					}
+					m.message = fmt.Sprintf("Successfully created %d partition keys", len(createdPartitions))
 				}
 			} else {
 				m.message = fmt.Sprintf("Failed to create any partition keys. Errors: %s", strings.Join(errorMessages, "; "))
@@ -5246,40 +5169,9 @@ func (m model) viewPartitionKeyCreation() string {
 }
 
 // Helper function to add a single partition to the config
-func (m model) addPartitionToConfig(partition DevicePartition) error {
-	// Add partition to the device in PDUs structure
-	for i, pdu := range m.config.PDUs {
-		for j, rack := range pdu.Racks {
-			for k, hypervisor := range rack.Hypervisors {
-				if hypervisor.ID == m.selectedHvForPartition.ID {
-					for devIndex, dev := range hypervisor.Dev {
-						if dev.Name == m.selectedDeviceForPartition.Name {
-							// Append the new partition to existing partitions
-							m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[devIndex].Partitions = append(
-								m.config.PDUs[i].Racks[j].Hypervisors[k].Dev[devIndex].Partitions, partition)
-							return nil
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Check legacy hypervisors structure
-	for hvIndex, hypervisor := range m.config.Hypervisors {
-		if hypervisor.ID == m.selectedHvForPartition.ID {
-			for devIndex, dev := range hypervisor.Dev {
-				if dev.Name == m.selectedDeviceForPartition.Name {
-					// Append the new partition to existing partitions
-					m.config.Hypervisors[hvIndex].Dev[devIndex].Partitions = append(
-						m.config.Hypervisors[hvIndex].Dev[devIndex].Partitions, partition)
-					return nil
-				}
-			}
-		}
-	}
-
-	return fmt.Errorf("device %s not found on hypervisor %s", m.selectedDeviceForPartition.Name, m.selectedHvForPartition.ID)
+func (m model) addPartitionToConfig(_ DevicePartition) error {
+	// Partition data is stored in the control plane; no local config needed.
+	return nil
 }
 
 // Whole Device Prompt Methods
@@ -5296,12 +5188,8 @@ func (m model) updateWholeDevicePrompt(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Save configuration file
-			if err := m.config.SaveToFile(m.configPath); err != nil {
-				m.message = fmt.Sprintf("Created partition key but failed to save config: %v", err)
-			} else {
-				m.message = "Successfully created partition key for whole device"
-			}
+			m.refreshCPData()
+			m.message = "Successfully created partition key for whole device"
 			m.currentPartition = partition // Set the partition for display
 			m.state = stateShowAddedPartition
 			return m, nil
@@ -5355,7 +5243,11 @@ func (m model) viewWholeDevicePrompt() string {
 // createWholeDevicePartitionKey creates a partition key for the whole device
 func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 	// Get the device name from /dev/disk/by-id/
-	deviceByIdName, err := m.config.getDeviceByIdName(m.selectedHvForPartition.ID, m.selectedDeviceForPartition.Name)
+	hvWD, hvWDOk := m.findHypervisorByUUID(m.selectedHvForPartition.ID)
+	if !hvWDOk {
+		return DevicePartition{}, fmt.Errorf("hypervisor %s not found", m.selectedHvForPartition.ID)
+	}
+	deviceByIdName, err := getDeviceByIdName(*hvWD, m.selectedDeviceForPartition.Name)
 	if err != nil {
 		return DevicePartition{}, fmt.Errorf("failed to get device by-id name: %v", err)
 	}
@@ -5366,7 +5258,6 @@ func (m model) createWholeDevicePartitionKey() (DevicePartition, error) {
 		NISDUUID:    uuid.New().String(),
 		Size:        m.selectedDeviceForPartition.Size, // Store the entire device size
 		DevID:       m.selectedDeviceForPartition.ID,
-		UserToken:   m.userToken(),
 	}
 
 	// Try to call PutPartition if control plane is enabled
@@ -5404,7 +5295,7 @@ func (m model) updatePDUManagement(msg tea.Msg) (model, tea.Cmd) {
 			}
 		case "down", "j":
 			maxItems := 4 // Add, View, Edit, Delete
-			if len(m.config.PDUs) == 0 {
+			if len(m.cpPDUs) == 0 {
 				maxItems = 1 // Only Add available
 			}
 			if m.pduManagementCursor < maxItems-1 {
@@ -5425,14 +5316,14 @@ func (m model) updatePDUManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.message = "Loading PDU details from Control Plane..."
 				return m, nil
 			case 2: // Edit PDU
-				if len(m.config.PDUs) > 0 {
+				if len(m.cpPDUs) > 0 {
 					m.state = stateEditPDU
 					m.pduListCursor = 0
 					m.message = ""
 					return m, nil
 				}
 			case 3: // Delete PDU
-				if len(m.config.PDUs) > 0 {
+				if len(m.cpPDUs) > 0 {
 					m.state = stateDeletePDU
 					m.pduListCursor = 0
 					m.message = ""
@@ -5486,36 +5377,29 @@ func (m model) updatePDUForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
+			pduID := m.editingUUID
+			if pduID == "" {
+				pduID = uuid.New().String()
+			}
 			pdu := PDU{
-				ID:            m.editingUUID, // Will be generated if empty in AddPDU
+				ID:            pduID,
 				Name:          name,
 				Location:      location,
 				PowerCapacity: powerCapacity,
 				Specification: description,
 				Racks:         []Rack{},
-				UserToken:     m.userToken(),
 			}
-
-			m.config.AddPDU(&pdu)
 
 			log.Info("Adding PDU: ", pdu)
 			pduResp, err := m.cpClient.PutPDU(&pdu)
 			if err != nil {
-				m.message = fmt.Sprintf("Added PDU %s but failed to save: %v",
-					m.currentPDU.ID, err)
+				m.message = fmt.Sprintf("Failed to add PDU %s: %v", pdu.Name, err)
 			} else if pduResp != nil && !pduResp.Success {
 				m.message = fmt.Sprintf("Failed to add PDU: %s", pduResp.Error)
 			} else {
 				m.currentPDU = pdu
-
-				// Auto-save configuration after adding PDU
-				if err := m.config.SaveToFile(m.configPath); err != nil {
-					m.message = fmt.Sprintf("Added PDU %s but failed to save: %v",
-						m.currentPDU.Name, err)
-				} else {
-					m.message = fmt.Sprintf("Added PDU %s (saved to %s)",
-						m.currentPDU.Name, m.configPath)
-				}
+				m.message = fmt.Sprintf("Added PDU %s to control plane", m.currentPDU.Name)
+				m.refreshCPData()
 				m.state = stateShowAddedPDU
 				return m, nil
 			}
@@ -5538,17 +5422,19 @@ func (m model) updateEditPDU(msg tea.Msg) (model, tea.Cmd) {
 				m.pduListCursor--
 			}
 		case "down", "j":
-			if m.pduListCursor < len(m.config.PDUs)-1 {
+			if m.pduListCursor < len(m.cpPDUs)-1 {
 				m.pduListCursor++
 			}
 		case "enter", " ":
 			// Load selected PDU for editing
-			pdu := m.config.PDUs[m.pduListCursor]
-			m.editingUUID = pdu.ID
-			m.currentPDU = pdu
-			m.loadPDUIntoForm(pdu)
-			m.state = statePDUForm
-			return m, textinput.Blink
+			if m.pduListCursor < len(m.cpPDUs) {
+				pdu := m.cpPDUs[m.pduListCursor]
+				m.editingUUID = pdu.ID
+				m.currentPDU = pdu
+				m.loadPDUIntoForm(pdu)
+				m.state = statePDUForm
+				return m, textinput.Blink
+			}
 		}
 	}
 	return m, nil
@@ -5563,20 +5449,14 @@ func (m model) updateDeletePDU(msg tea.Msg) (model, tea.Cmd) {
 				m.pduListCursor--
 			}
 		case "down", "j":
-			if m.pduListCursor < len(m.config.PDUs)-1 {
+			if m.pduListCursor < len(m.cpPDUs)-1 {
 				m.pduListCursor++
 			}
 		case "enter", " ", "y":
-			// Delete selected PDU
-			pdu := m.config.PDUs[m.pduListCursor]
-			if m.config.DeletePDU(pdu.ID) {
-				if err := m.config.SaveToFile(m.configPath); err != nil {
-					m.message = fmt.Sprintf("Failed to save after deletion: %v", err)
-				} else {
-					m.message = fmt.Sprintf("Deleted PDU '%s' and all its racks", pdu.Name)
-				}
-			} else {
-				m.message = "Failed to delete PDU"
+			// Delete selected PDU (CP has no delete API - show informational message)
+			if m.pduListCursor < len(m.cpPDUs) {
+				pdu := m.cpPDUs[m.pduListCursor]
+				m.message = fmt.Sprintf("PDU '%s' deletion not supported via control plane API", pdu.Name)
 			}
 			m.state = statePDUManagement
 			return m, nil
@@ -5602,7 +5482,7 @@ func (m model) updateViewPDU(msg tea.Msg) (model, tea.Cmd) {
 		// If control plane client is available, fetch PDU data from CP
 		if m.cpClient != nil {
 			log.Info("Calling GetPDUs with GetAll=true")
-			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+			cpPDUs, err := m.cpClient.GetPDUs(&ctlplfl.GetReq{GetAll: true})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query PDUs from Control Plane: ", err)
@@ -5675,7 +5555,7 @@ func (m model) updateRackManagement(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			maxItems := 4 // Add, View, Edit, Delete
 			totalRacks := 0
-			for _, pdu := range m.config.PDUs {
+			for _, pdu := range m.cpPDUs {
 				totalRacks += len(pdu.Racks)
 			}
 			if totalRacks == 0 {
@@ -5687,7 +5567,8 @@ func (m model) updateRackManagement(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			switch m.rackManagementCursor {
 			case 0: // Add Rack
-				if len(m.config.PDUs) > 0 {
+				m.refreshCPData()
+				if len(m.cpPDUs) > 0 {
 					m.state = stateRackForm
 					m.editingUUID = "" // Clear editing UUID for new rack
 					m.resetInputsForRack()
@@ -5706,7 +5587,7 @@ func (m model) updateRackManagement(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			case 2: // Edit Rack
 				totalRacks := 0
-				for _, pdu := range m.config.PDUs {
+				for _, pdu := range m.cpPDUs {
 					totalRacks += len(pdu.Racks)
 				}
 				if totalRacks > 0 {
@@ -5717,7 +5598,7 @@ func (m model) updateRackManagement(msg tea.Msg) (model, tea.Cmd) {
 				}
 			case 3: // Delete Rack
 				totalRacks := 0
-				for _, pdu := range m.config.PDUs {
+				for _, pdu := range m.cpPDUs {
 					totalRacks += len(pdu.Racks)
 				}
 				if totalRacks > 0 {
@@ -5773,25 +5654,22 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 
-			if m.selectedPDUIdx >= len(m.config.PDUs) {
+			if m.selectedPDUIdx >= len(m.cpPDUs) {
 				m.message = "Invalid PDU selection"
 				return m, nil
 			}
 
-			pdu := m.config.PDUs[m.selectedPDUIdx]
+			pdu := m.cpPDUs[m.selectedPDUIdx]
+			rackID := m.editingUUID
+			if rackID == "" {
+				rackID = uuid.New().String()
+			}
 			rack := Rack{
-				ID:            m.editingUUID, // Will be generated if empty in AddRack
+				ID:            rackID,
 				Name:          name,
 				PDUID:         pdu.ID,
 				Location:      location,
 				Specification: description,
-				UserToken:     m.userToken(),
-			}
-
-			err := m.config.AddRack(&rack)
-			if err != nil {
-				m.message = fmt.Sprintf("Failed to add rack: %v", err)
-				return m, nil
 			}
 
 			log.Info("Adding Rack: ", rack)
@@ -5805,19 +5683,12 @@ func (m model) updateRackForm(msg tea.Msg) (model, tea.Cmd) {
 				return m, nil
 			}
 			m.currentRack = rack
-
-			// Auto-save configuration after adding rack
-			if err := m.config.SaveToFile(m.configPath); err != nil {
-				m.message = fmt.Sprintf("Added rack %s but failed to save: %v",
-					m.currentRack.Name, err)
-			} else {
-				m.message = fmt.Sprintf("Added rack %s to PDU %s (saved to %s)",
-					m.currentRack.Name, pdu.Name, m.configPath)
-			}
+			m.refreshCPData()
+			m.message = fmt.Sprintf("Added rack %s to PDU %s", m.currentRack.Name, pdu.Name)
 			m.state = stateShowAddedRack
 			return m, nil
 		case "p", "P": // Open PDU selection menu
-			if len(m.config.PDUs) > 0 {
+			if len(m.cpPDUs) > 0 {
 				m.pduSelectionCursor = m.selectedPDUIdx // Start at currently selected PDU
 				m.state = stateRackPDUSelection
 				return m, nil
@@ -5880,17 +5751,7 @@ func (m model) updateDeleteRack(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ", "y":
 			// Delete selected rack
 			if m.rackListCursor < len(allRacks) {
-				rackInfo := allRacks[m.rackListCursor]
-				rack := rackInfo.Rack
-				if m.config.DeleteRack(rack.ID) {
-					if err := m.config.SaveToFile(m.configPath); err != nil {
-						m.message = fmt.Sprintf("Failed to save after deletion: %v", err)
-					} else {
-						m.message = fmt.Sprintf("Deleted rack '%s' and all its hypervisors", rack.ID)
-					}
-				} else {
-					m.message = "Failed to delete rack"
-				}
+				m.message = "Rack deletion is not supported via the control plane API"
 				m.state = stateRackManagement
 				return m, nil
 			}
@@ -5913,7 +5774,7 @@ func (m model) updateViewRack(msg tea.Msg) (model, tea.Cmd) {
 		// If control plane client is available, fetch Rack data from CP
 		if m.cpClient != nil {
 			log.Info("Calling GetRacks with GetAll=true")
-			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+			cpRacks, err := m.cpClient.GetRacks(&ctlplfl.GetReq{GetAll: true})
 			if err != nil {
 				// Log error and show empty list
 				log.Error("Failed to query Racks from Control Plane: ", err)
@@ -5997,7 +5858,7 @@ func (m model) viewPDUManagement() string {
 		"Add PDU - Create new Power Distribution Unit",
 	}
 
-	if len(m.config.PDUs) > 0 {
+	if len(m.cpPDUs) > 0 {
 		managementItems = append(managementItems,
 			"View PDU - Display PDU details and hierarchy",
 			"Edit PDU - Modify existing PDU",
@@ -6015,7 +5876,7 @@ func (m model) viewPDUManagement() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString(fmt.Sprintf("\nCurrent PDUs: %d\n\n", len(m.config.PDUs)))
+	s.WriteString(fmt.Sprintf("\nCurrent PDUs: %d\n\n", len(m.cpPDUs)))
 	s.WriteString("Controls: ↑/↓ navigate, enter select, esc back to main menu")
 
 	return s.String()
@@ -6065,7 +5926,7 @@ func (m model) viewEditPDU() string {
 		s.WriteString(errorStyle.Render(m.message) + "\n\n")
 	}
 
-	if len(m.config.PDUs) == 0 {
+	if len(m.cpPDUs) == 0 {
 		s.WriteString("No PDUs available to edit.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
@@ -6073,7 +5934,7 @@ func (m model) viewEditPDU() string {
 
 	s.WriteString("Select PDU to edit:\n\n")
 
-	for i, pdu := range m.config.PDUs {
+	for i, pdu := range m.cpPDUs {
 		cursor := "  "
 		if i == m.pduListCursor {
 			cursor = "▶ "
@@ -6116,7 +5977,7 @@ func (m model) viewDeletePDU() string {
 		s.WriteString(errorStyle.Render(m.message) + "\n\n")
 	}
 
-	if len(m.config.PDUs) == 0 {
+	if len(m.cpPDUs) == 0 {
 		s.WriteString("No PDUs available to delete.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
@@ -6125,7 +5986,7 @@ func (m model) viewDeletePDU() string {
 	s.WriteString("⚠️  WARNING: This will permanently delete the PDU and ALL its racks and hypervisors!\n\n")
 	s.WriteString("Select PDU to delete:\n\n")
 
-	for i, pdu := range m.config.PDUs {
+	for i, pdu := range m.cpPDUs {
 		cursor := "  "
 		if i == m.pduListCursor {
 			cursor = "▶ "
@@ -6291,7 +6152,7 @@ func (m model) viewRackManagement() string {
 	}
 
 	totalRacks := 0
-	for _, pdu := range m.config.PDUs {
+	for _, pdu := range m.cpPDUs {
 		totalRacks += len(pdu.Racks)
 	}
 
@@ -6313,7 +6174,7 @@ func (m model) viewRackManagement() string {
 		s.WriteString("\n")
 	}
 
-	s.WriteString(fmt.Sprintf("\nCurrent PDUs: %d\n", len(m.config.PDUs)))
+	s.WriteString(fmt.Sprintf("\nCurrent PDUs: %d\n", len(m.cpPDUs)))
 	s.WriteString(fmt.Sprintf("Current Racks: %d\n\n", totalRacks))
 	s.WriteString("Controls: ↑/↓ navigate, enter select, esc back to main menu")
 
@@ -6337,9 +6198,9 @@ func (m model) viewRackForm() string {
 
 	// Show PDU selection with dropdown-style interface
 	s.WriteString(lipgloss.NewStyle().Bold(true).Render("═══ PDU SELECTION ═══") + "\n")
-	if len(m.config.PDUs) > 0 {
-		if m.selectedPDUIdx >= 0 && m.selectedPDUIdx < len(m.config.PDUs) {
-			pdu := m.config.PDUs[m.selectedPDUIdx]
+	if len(m.cpPDUs) > 0 {
+		if m.selectedPDUIdx >= 0 && m.selectedPDUIdx < len(m.cpPDUs) {
+			pdu := m.cpPDUs[m.selectedPDUIdx]
 			s.WriteString(fmt.Sprintf("📍 Selected PDU: %s", selectedItemStyle.Render(pdu.Name)))
 			if pdu.Location != "" {
 				s.WriteString(fmt.Sprintf(" (%s)", pdu.Location))
@@ -6348,8 +6209,8 @@ func (m model) viewRackForm() string {
 		} else {
 			s.WriteString(errorStyle.Render("⚠️  No PDU selected") + "\n")
 		}
-		if len(m.config.PDUs) > 1 {
-			s.WriteString(fmt.Sprintf("   📋 %d PDUs available - Press 'P' to select different PDU\n", len(m.config.PDUs)))
+		if len(m.cpPDUs) > 1 {
+			s.WriteString(fmt.Sprintf("   📋 %d PDUs available - Press 'P' to select different PDU\n", len(m.cpPDUs)))
 		}
 	} else {
 		s.WriteString(errorStyle.Render("⚠️  No PDUs available - Create PDUs first") + "\n")
@@ -6662,7 +6523,7 @@ func (m model) viewShowAddedRack() string {
 
 		// Find parent PDU name
 		var parentPDUName string
-		for _, pdu := range m.config.PDUs {
+		for _, pdu := range m.cpPDUs {
 			for _, r := range pdu.Racks {
 				if r.ID == rack.ID {
 					parentPDUName = pdu.Name
@@ -6712,7 +6573,7 @@ func (m model) viewShowAddedHypervisor() string {
 		var isLegacy bool
 
 		// Check hierarchical hypervisors first
-		for _, pdu := range m.config.PDUs {
+		for _, pdu := range m.cpPDUs {
 			for _, rack := range pdu.Racks {
 				for _, hvInRack := range rack.Hypervisors {
 					if hvInRack.ID == hv.ID {
@@ -6732,7 +6593,7 @@ func (m model) viewShowAddedHypervisor() string {
 
 		// If not found, check legacy hypervisors
 		if parentPDUName == "" {
-			for _, legacyHv := range m.config.Hypervisors {
+			for _, legacyHv := range m.cpHypervisors {
 				if legacyHv.ID == hv.ID {
 					isLegacy = true
 					break
@@ -6797,7 +6658,7 @@ type RackInfo struct {
 // Helper function to get all racks across all PDUs
 func (m model) getAllRacks() []RackInfo {
 	var racks []RackInfo
-	for pduIndex, pdu := range m.config.PDUs {
+	for pduIndex, pdu := range m.cpPDUs {
 		for _, rack := range pdu.Racks {
 			racks = append(racks, RackInfo{
 				Rack:     rack,
@@ -6822,7 +6683,7 @@ func (m model) getAllHypervisors() []HypervisorInfo {
 	var hypervisors []HypervisorInfo
 
 	// Get hypervisors from hierarchical structure (in racks)
-	for pduIndex, pdu := range m.config.PDUs {
+	for pduIndex, pdu := range m.cpPDUs {
 		for _, rack := range pdu.Racks {
 			for _, hv := range rack.Hypervisors {
 				rackInfo := &RackInfo{
@@ -6841,7 +6702,7 @@ func (m model) getAllHypervisors() []HypervisorInfo {
 	}
 
 	// Get legacy hypervisors
-	for _, hv := range m.config.Hypervisors {
+	for _, hv := range m.cpHypervisors {
 		hypervisors = append(hypervisors, HypervisorInfo{
 			Hypervisor: hv,
 			Location:   "Legacy",
@@ -6863,7 +6724,7 @@ func (m model) updateRackPDUSelection(msg tea.Msg) (model, tea.Cmd) {
 				m.pduSelectionCursor--
 			}
 		case "down", "j":
-			if m.pduSelectionCursor < len(m.config.PDUs)-1 {
+			if m.pduSelectionCursor < len(m.cpPDUs)-1 {
 				m.pduSelectionCursor++
 			}
 		case "enter", " ":
@@ -6886,7 +6747,7 @@ func (m model) viewRackPDUSelection() string {
 	var s strings.Builder
 	s.WriteString(title + "\n\n")
 
-	if len(m.config.PDUs) == 0 {
+	if len(m.cpPDUs) == 0 {
 		s.WriteString(errorStyle.Render("No PDUs available") + "\n")
 		s.WriteString("Press ESC to go back\n")
 		return s.String()
@@ -6894,7 +6755,7 @@ func (m model) viewRackPDUSelection() string {
 
 	s.WriteString("Choose a PDU to assign this rack to:\n\n")
 
-	for i, pdu := range m.config.PDUs {
+	for i, pdu := range m.cpPDUs {
 		cursor := "  "
 		if i == m.pduSelectionCursor {
 			cursor = "▶ "
@@ -7076,7 +6937,6 @@ func (m model) submitWriteDevice() (model, tea.Cmd) {
 		SerialNumber:  m.writeDeviceInputs[2].Value(),
 		HypervisorID:  m.writeDeviceInputs[4].Value(),
 		FailureDomain: m.writeDeviceInputs[5].Value(),
-		UserToken:     m.userToken(),
 	}
 
 	// Parse status field
@@ -7245,7 +7105,7 @@ func (m model) updateNISDPartitionSelection(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDPartitionIdx = -1
 			}
 		case "down", "j":
-			partitions := m.config.GetAllPartitionsForNISD()
+			partitions := m.getAllPartitionsForNISD()
 			if m.selectedNISDHypervisorIdx < len(partitions)-1 {
 				m.selectedNISDHypervisorIdx++
 				m.selectedNISDDeviceIdx = -1
@@ -7253,7 +7113,7 @@ func (m model) updateNISDPartitionSelection(msg tea.Msg) (model, tea.Cmd) {
 			}
 		case " ":
 			// Toggle selection of current partition
-			partitions := m.config.GetAllPartitionsForNISD()
+			partitions := m.getAllPartitionsForNISD()
 			if m.selectedNISDHypervisorIdx >= 0 && m.selectedNISDHypervisorIdx < len(partitions) {
 				if m.selectedNISDPartitions[m.selectedNISDHypervisorIdx] {
 					delete(m.selectedNISDPartitions, m.selectedNISDHypervisorIdx)
@@ -7264,7 +7124,7 @@ func (m model) updateNISDPartitionSelection(msg tea.Msg) (model, tea.Cmd) {
 			return m, nil
 		case "a", "A":
 			// Select all partitions
-			partitions := m.config.GetAllPartitionsForNISD()
+			partitions := m.getAllPartitionsForNISD()
 			m.selectedNISDPartitions = make(map[int]bool)
 			for i := range partitions {
 				m.selectedNISDPartitions[i] = true
@@ -7316,7 +7176,7 @@ func (m model) viewNISDPartitionSelection() string {
 		}
 	}
 
-	partitions := m.config.GetAllPartitionsForNISD()
+	partitions := m.getAllPartitionsForNISD()
 
 	if len(partitions) == 0 {
 		s.WriteString("No partitions available for NISD initialization.\n")
@@ -7371,7 +7231,6 @@ func (m model) updateNISDInitialize(msg tea.Msg) (model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter", " ":
-			// Initialize all selected NISDs
 			err := (&m).initializeSelectedNISDs()
 			if err != nil {
 				m.message = fmt.Sprintf("Failed to initialize NISDs: %v", err)
@@ -7410,7 +7269,7 @@ func (m model) viewNISDInitialize() string {
 		}
 	}
 
-	partitions := m.config.GetAllPartitionsForNISD()
+	partitions := m.getAllPartitionsForNISD()
 	selectedCount := 0
 	for _, selected := range m.selectedNISDPartitions {
 		if selected {
@@ -7494,19 +7353,19 @@ func (m *model) initializeNISD() error {
 	nisdUUID := m.selectedPartitionForNISD.NISDUUID
 
 	// Get hypervisor info
-	hv, found := m.config.GetHypervisor(m.selectedHvForNISD.ID)
+	hv, found := m.findHypervisorByUUID(m.selectedHvForNISD.ID)
 	if !found {
 		return fmt.Errorf("hypervisor %s not found", m.selectedHvForNISD.ID)
 	}
 
 	// Get Rack info to populate PDU-ID in NISD
-	rack, found := m.config.GetRack(hv.RackID)
+	rack, found := m.findRackByUUID(hv.RackID)
 	if !found {
 		return fmt.Errorf("rack %s not found", hv.RackID)
 	}
 
 	// Allocate ports for NISD
-	clientPort, serverPort, err := m.config.AllocatePortPair(m.selectedHvForNISD.ID, hv.PortRange, m.userToken(), m.cpClient)
+	clientPort, serverPort, err := AllocatePortPair(m.selectedHvForNISD.ID, hv.PortRange, m.userToken(), m.cpClient)
 	if err != nil {
 		return fmt.Errorf("failed to allocate ports for NISD: %v", err)
 	}
@@ -7530,9 +7389,9 @@ func (m *model) initializeNISD() error {
 			hv.RackID,
 			m.selectedHvForNISD.ID,
 			m.selectedPartitionForNISD.DevID,
+			m.selectedPartitionForNISD.PartitionID,
 		},
 		NetInfoCnt: len(netInfos),
-		UserToken:  m.userToken(),
 	}
 
 	// Call PutNisd
@@ -7561,7 +7420,7 @@ func (m *model) initializeSelectedNISDs() error {
 		return fmt.Errorf("control plane client is not initialized")
 	}
 
-	partitions := m.config.GetAllPartitionsForNISD()
+	partitions := m.getAllPartitionsForNISD()
 	var errors []string
 	successCount := 0
 
@@ -7571,20 +7430,20 @@ func (m *model) initializeSelectedNISDs() error {
 		}
 
 		// Get hypervisor info
-		hv, found := m.config.GetHypervisor(partitionInfo.HvUUID)
+		hv, found := m.findHypervisorByUUID(partitionInfo.HvUUID)
 		if !found {
 			errors = append(errors, fmt.Sprintf("hypervisor %s not found for partition %s", partitionInfo.HvName, partitionInfo.Partition.NISDUUID))
 			continue
 		}
 
 		// Get Rack info to populate PDU-ID in NISD
-		rack, found := m.config.GetRack(hv.RackID)
+		rack, found := m.findRackByUUID(hv.RackID)
 		if !found {
 			return fmt.Errorf("rack %s not found", hv.RackID)
 		}
 
 		// Allocate ports for NISD
-		clientPort, serverPort, err := m.config.AllocatePortPair(partitionInfo.HvUUID, hv.PortRange, m.userToken(), m.cpClient)
+		clientPort, serverPort, err := AllocatePortPair(partitionInfo.HvUUID, hv.PortRange, m.userToken(), m.cpClient)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("failed to allocate ports for NISD %s: %v", partitionInfo.Partition.NISDUUID, err))
 			continue
@@ -7610,9 +7469,9 @@ func (m *model) initializeSelectedNISDs() error {
 				hv.RackID,
 				partitionInfo.HvUUID,
 				partitionInfo.Partition.DevID,
+				partitionInfo.Partition.PartitionID,
 			},
 			NetInfoCnt: len(netInfos),
-			UserToken:  m.userToken(),
 		}
 
 		// Call PutNisd
@@ -7660,12 +7519,12 @@ func (m model) updateNISDSelection(msg tea.Msg) (model, tea.Cmd) {
 				m.selectedNISDForStart--
 			}
 		case "down", "j":
-			nisdList := m.config.GetAllInitializedNISDs()
+			nisdList, _ := m.getNISDsList()
 			if m.selectedNISDForStart < len(nisdList)-1 {
 				m.selectedNISDForStart++
 			}
 		case "enter", " ":
-			nisdList := m.config.GetAllInitializedNISDs()
+			nisdList, _ := m.getNISDsList()
 			if m.selectedNISDForStart >= 0 && m.selectedNISDForStart < len(nisdList) {
 				m.selectedNISDToStart = nisdList[m.selectedNISDForStart]
 				m.state = stateNISDStart
@@ -7696,13 +7555,11 @@ func (m model) viewNISDSelection() string {
 		}
 	}
 
-	nisdList := m.config.GetAllInitializedNISDs()
+	nisdList, _ := m.getNISDsList()
 
 	if len(nisdList) == 0 {
 		s.WriteString("No initialized NISD instances found.\n")
 		s.WriteString("Please initialize a NISD first using 'Initialize NISD' option.\n\n")
-		s.WriteString("Note: In a real implementation, this would query the control plane\n")
-		s.WriteString("for all registered NISD instances.\n\n")
 		s.WriteString("Press esc to go back")
 		return s.String()
 	}
@@ -8158,7 +8015,7 @@ func (m model) updateVdevDeviceSelection(msg tea.Msg) (model, tea.Cmd) {
 			// Get devices from control plane for navigation
 			var deviceCount int
 			if m.cpClient != nil && m.cpConnected {
-				req := ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+				req := ctlplfl.GetReq{ID: "", GetAll: true}
 				devices, err := m.cpClient.GetDevices(req)
 				if err == nil {
 					deviceCount = len(devices)
@@ -8432,7 +8289,7 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
 				if err == nil && len(vdevs) > 0 {
 					// Sort to ensure consistent ordering for navigation bounds
 					sort.Slice(vdevs, func(i, j int) bool {
@@ -8470,7 +8327,7 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true, UserToken: m.userToken()})
+		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -8554,7 +8411,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+				req := &ctlplfl.GetReq{ID: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err == nil {
 					// Sort to ensure consistent ordering for navigation bounds
@@ -8569,7 +8426,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			// Delete selected Vdev
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+				req := &ctlplfl.GetReq{ID: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to query Vdevs: %v", err)
@@ -8620,7 +8477,7 @@ func (m model) viewDeleteVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true, UserToken: m.userToken()}
+		req := &ctlplfl.GetReq{ID: "", GetAll: true}
 		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
@@ -8889,8 +8746,7 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 			Size:       size,
 			NumReplica: 1,
 		},
-		Filter:    filter,
-		UserToken: m.userToken(),
+		Filter: filter,
 	}
 
 	if m.cpClient != nil && m.cpConnected {
@@ -9040,7 +8896,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 			errorCount := 0
 
 			// Initialize configured devices
-			for _, hv := range m.config.Hypervisors {
+			for _, hv := range m.cpHypervisors {
 				for _, device := range hv.Dev {
 					deviceInfo := ctlplfl.Device{
 						ID:            device.ID,
@@ -9051,7 +8907,6 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						Size:          device.Size,
 						HypervisorID:  hv.ID,
 						FailureDomain: device.FailureDomain,
-						UserToken:     m.userToken(),
 					}
 
 					// Validate and fix device info
@@ -9089,7 +8944,6 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 						Size:          device.Size,
 						HypervisorID:  m.currentHv.ID,
 						FailureDomain: device.FailureDomain,
-						UserToken:     m.userToken(),
 					}
 
 					// Validate and fix device info
@@ -9120,6 +8974,7 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 			} else {
 				m.message = fmt.Sprintf("Successfully initialized %d devices in control plane", deviceCount)
 			}
+			m.refreshCPData()
 
 			m.state = stateDeviceManagement
 			return m, nil
@@ -9152,7 +9007,7 @@ func (m model) viewInitializeDeviceForm() string {
 
 	// Count devices from both local config and discovered devices
 	deviceCount := 0
-	for _, hv := range m.config.Hypervisors {
+	for _, hv := range m.cpHypervisors {
 		deviceCount += len(hv.Dev)
 	}
 
@@ -9180,7 +9035,7 @@ func (m model) viewInitializeDeviceForm() string {
 	s.WriteString("Devices to be initialized:\n")
 
 	// Show configured devices
-	for _, hv := range m.config.Hypervisors {
+	for _, hv := range m.cpHypervisors {
 		if len(hv.Dev) > 0 {
 			s.WriteString(fmt.Sprintf("\nHypervisor: %s (%s) - Configured Devices\n", hv.Name, hv.ID))
 			for _, device := range hv.Dev {
@@ -9238,7 +9093,7 @@ func main() {
 		fmt.Println("2. Collecting hypervisor details (IP, name, port range)")
 		fmt.Println("3. Discovering storage devices via SSH")
 		fmt.Println("4. Allowing device selection and partitioning for NISD")
-		fmt.Println("5. Saving hierarchical configuration to", configFile)
+		fmt.Println("5. Discovering and partitioning devices for NISD")
 		fmt.Println("\nControl Plane Options:")
 		fmt.Println("  -cp                  Enable control plane integration")
 		fmt.Println("  -raft-uuid string    Control plane raft UUID")
@@ -9255,7 +9110,7 @@ func main() {
 	}()
 
 	p := tea.NewProgram(
-		initialModel(*cpEnabled, *cpRaftUUID, *cpGossipPath),
+		initialModel(*cpEnabled, *cpRaftUUID, *cpGossipPath, *logFile),
 		tea.WithAltScreen(),
 	)
 
