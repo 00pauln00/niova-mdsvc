@@ -443,7 +443,7 @@ func TestVdevLifecycle(t *testing.T) {
 	log.Info("Created vdev2: ", resp.ID)
 
 	// Step 3: Fetch all Vdevs and validate both exist
-	getAllReq := &cpLib.GetReq{GetAll: true}
+	getAllReq := &cpLib.GetVdevReq{GetAll: true}
 
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	if err != nil {
@@ -453,8 +453,9 @@ func TestVdevLifecycle(t *testing.T) {
 	}
 
 	// Step 4: Fetch specific Vdev (vdev1)
-	getSpecificReq := &cpLib.GetReq{
-		ID: vdev1ID,
+	getSpecificReq := &cpLib.GetVdevReq{
+		Value: vdev1ID,
+		IsID: true,
 	}
 	specificResp, err := c.GetVdevCfg(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev")
@@ -549,7 +550,7 @@ func TestVdevNisdChunk(t *testing.T) {
 	resp, err = c.CreateVdev(vdev)
 	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	readV, err := c.GetVdevCfg(&cpLib.GetVdevReq{Value: resp.ID, IsID: true})
 	assert.NoError(t, err, "Should be able to get one record")
 	assert.NotNil(t, readV, "get back inserted record")
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(resp.ID, "0")})
@@ -957,7 +958,7 @@ func TestDeleteVdev(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, dvResp)
 
-	vdevResp, err := c.GetVdevCfg(&cpLib.GetReq{ID: cvresp.ID})
+	vdevResp, err := c.GetVdevCfg(&cpLib.GetVdevReq{Value: cvresp.ID, IsID: true})
 	assert.Error(t, err)
 	assert.Empty(t, vdevResp.ID)
 
@@ -1029,7 +1030,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		t.Logf("User1 created vdev: %s", vdevID)
 
 		// User1 can read own vdev
-		vdevCfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		vdevCfg, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdevID, IsID: true})
 		assert.NoError(t, err, "user1 should be able to read their own vdev")
 		assert.Equal(t, vdevID, vdevCfg.ID)
 
@@ -1045,7 +1046,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		t.Logf("User2 logged in: %s", user2Username)
 
 		// User2 cannot access user1's vdev
-		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdevID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized")
 		t.Log("User2 correctly denied access to user1's vdev")
 
@@ -1057,19 +1058,19 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		vdev2ID := vdev2Resp.ID
 
 		// User2 can read own vdev
-		vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.NoError(t, err, "user2 should be able to read their own vdev")
 		assert.Equal(t, vdev2ID, vdev2Cfg.ID)
 
 		// User1 cannot access user2's vdev
 		ctlClient.SetToken(user1AccessToken)
-		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized")
 		t.Log("User1 correctly denied access to user2's vdev")
 
 		// No token: read and create are rejected
 		ctlClient.SetToken("")
-		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdevID, IsID: true})
 		assert.EqualError(t, err, "Invalid Token")
 		_, err = ctlClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 100 * 1024 * 1024 * 1024, NumReplica: 1}})
 		assert.EqualError(t, err, "user token is required")
@@ -1091,11 +1092,11 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		vdev2ID := vdev2Resp.ID
 
 		// Any caller can read any vdev — no ownership enforcement
-		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
 		assert.Equal(t, vdev1ID, cfg1.ID)
 
-		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
 		assert.Equal(t, vdev2ID, cfg2.ID)
 		t.Log("Auth disabled: vdev operations succeed without token")
@@ -1766,36 +1767,36 @@ func TestABACVdevOwnership(t *testing.T) {
 
 		// ABAC on GetVdevCfg
 		ctlClient.SetToken(user1Token)
-		vdev1Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		vdev1Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		assert.NoError(t, err, "user1 should read their own vdev")
 		assert.Equal(t, vdev1ID, vdev1Cfg.ID)
 
 		ctlClient.SetToken(user2Token)
-		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized", "user2 must not read user1's vdev")
 
-		vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		vdev2Cfg, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.NoError(t, err, "user2 should read their own vdev")
 		assert.Equal(t, vdev2ID, vdev2Cfg.ID)
 
 		ctlClient.SetToken(user1Token)
-		_, err = ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		_, err = ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized", "user1 must not read user2's vdev")
 
 		// ABAC on GetVdevsWithChunkInfo
 		ctlClient.SetToken(user1Token)
-		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		assert.NoError(t, err, "user1 should read chunk-info of their own vdev")
 
 		ctlClient.SetToken(user2Token)
-		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized")
 
-		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.NoError(t, err, "user2 should read chunk-info of their own vdev")
 
 		ctlClient.SetToken(user1Token)
-		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized")
 
 		// ABAC on GetChunkNisd
@@ -1831,15 +1832,15 @@ func TestABACVdevOwnership(t *testing.T) {
 		vdev2ID := vdev2Resp.ID
 
 		// Any caller can read any vdev — no ownership enforcement
-		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
 		assert.Equal(t, vdev1ID, cfg1.ID)
 
-		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
 		assert.Equal(t, vdev2ID, cfg2.ID)
 
-		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+		_, err = ctlClient.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		assert.NoError(t, err, "GetVdevsWithChunkInfo should succeed when auth is disabled")
 
 		_, err = ctlClient.GetChunkNisd(&cpLib.GetReq{ID: path.Join(vdev1ID, "0")})

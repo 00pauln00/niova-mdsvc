@@ -278,6 +278,12 @@ type GetReq struct {
 	GetAll bool
 }
 
+type GetVdevReq struct {
+	Value  string // holds either ID or Name
+	IsID   bool   // true => Value is ID, false => Value is Name
+	GetAll bool
+}
+
 func (vdev *VdevCfg) Init() error {
 
 	id, err := uuid.NewV7()
@@ -353,6 +359,7 @@ func RegisterGOBStructs() {
 	gob.Register(Rack{})
 	gob.Register([]Rack{})
 	gob.Register(GetReq{})
+	gob.Register(GetVdevReq{})
 	gob.Register(Hypervisor{})
 	gob.Register([]Hypervisor{})
 	gob.Register(PDU{})
@@ -396,6 +403,14 @@ func (req *GetReq) ValidateRequest() error {
 		return fmt.Errorf("Invalid Request: Recieved empty ID")
 	}
 	return nil
+
+}
+
+func (req *GetVdevReq) ValidateVdevRequest() error {
+        if req.Value == "" {
+                return fmt.Errorf("Invalid Request: Recieved empty vdev name/ID")
+        }
+        return nil
 
 }
 

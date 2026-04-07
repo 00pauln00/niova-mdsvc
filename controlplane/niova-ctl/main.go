@@ -8059,9 +8059,8 @@ func (m model) viewVdevManagement() string {
 // Step 1: GetVdevCfgs (GetAll) to resolve name/UUID → vdevID.
 // Step 2: GetVdevsWithChunkInfo with the specific ID to fetch chunk mapping.
 func (m model) doVdevSearch(query string) VdevSearchMsg {
-	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{
+	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{
 		GetAll:    true,
-		UserToken: m.userToken(),
 	})
 	if err != nil {
 		return VdevSearchMsg{err: fmt.Sprintf("Failed to query vdevs: %v", err)}
@@ -8079,10 +8078,10 @@ func (m model) doVdevSearch(query string) VdevSearchMsg {
 	}
 
 	// Fetch chunk mapping for the specific vdev (no admin role required).
-	vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetReq{
-		ID:        matchedID,
+	vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetVdevReq{
+		Value:     matchedID,
+		IsID:	   true,
 		GetAll:    false,
-		UserToken: m.userToken(),
 	})
 	if err != nil {
 		return VdevSearchMsg{err: fmt.Sprintf("Failed to get chunk info: %v", err)}
@@ -8598,7 +8597,7 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
+				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{GetAll: true})
 				if err == nil && len(vdevs) > 0 {
 					// Sort to ensure consistent ordering for navigation bounds
 					sort.Slice(vdevs, func(i, j int) bool {
@@ -8636,7 +8635,7 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
+		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{GetAll: true})
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -8723,7 +8722,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true}
+				req := &ctlplfl.GetVdevReq{Value: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err == nil {
 					// Sort to ensure consistent ordering for navigation bounds
@@ -8738,7 +8737,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			// Delete selected Vdev
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true}
+				req := &ctlplfl.GetVdevReq{Value: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to query Vdevs: %v", err)
@@ -8789,7 +8788,7 @@ func (m model) viewDeleteVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true}
+		req := &ctlplfl.GetVdevReq{Value: "", GetAll: true}
 		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")

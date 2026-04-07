@@ -1113,7 +1113,7 @@ func main() {
 		}
 		log.Info("Vdev created successfully with UUID:", resp)
 	case "GetVdevCfgs":
-		req := &cpLib.GetReq{}
+		req := &cpLib.GetVdevReq{}
 		vdevs, err := c.GetVdevCfgs(req)
 		if err != nil {
 			log.Errorf("Failed to fetch Vdev configurations: %v", err)
@@ -1183,8 +1183,9 @@ func main() {
 			log.Error("Missing required flag: -vdev")
 			os.Exit(1)
 		}
-		vdev, err := c.GetVdevsWithChunkInfo(&cpLib.GetReq{
-			ID: *vdevID,
+		vdev, err := c.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{
+			Value: *vdevID,
+			IsID: true,
 		})
 		if err != nil {
 			log.Errorf("Failed to fetch Vdev details for VdevID=%s: %v", *vdevID, err)

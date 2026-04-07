@@ -858,7 +858,9 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Errorf("APCreateVdev: %v", err)
 		return ctlplfl.InternalError(err)
 	}
-
+	resp := &ctlplfl.ResponseXML{
+		Name: req.Vdev.Name,
+	}	 
 	// Check for duplicate vdev name before allocating any resources.
 	if req.Vdev.Name != "" {
 		reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
@@ -885,8 +887,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Debugf("APCreateVdev: forwarding write-prep error response: %s", cpResp.Error.Message)
 		return pmCmn.Encoder(pmCmn.GOB, cpResp)
 	}
-	resp, ok4 := intrm.Response.(ctlplfl.ResponseXML)
-	if !ok4 {
+	if resp, ok4 := intrm.Response.(ctlplfl.ResponseXML); ok4 && resp.Error != "" {
 		log.Errorf("APCreateVdev: invalid response type in decoded intermediate data")
 		return ctlplfl.FuncError(fmt.Errorf("invalid response type"))
 	}
@@ -1111,7 +1112,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-	req := cpReq.Payload.(ctlplfl.GetReq)
+	req := cpReq.Payload.(ctlplfl.GetVdevReq)
 	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		log.Errorf("ReadVdevsInfoWithChunkMapping: token validation failed: %v", err)
@@ -1126,17 +1127,39 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 			} // ← add this closing brace
 		} else {
 			// Specific vdev: verify RBAC + ABAC ownership
-			attributes := map[string]string{"vdev": req.ID}
+			attributes := map[string]string{"vdev": req.Value}
 			if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.ID)
+				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.Value)
 				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 			}
 		}
 	}
 
+	vdevID := req.Value
+        if !req.IsID {
+                vnKey := getConfKey(vnameKey, req.Value)
+                var rqResult *storageiface.RangeReadResult
+                rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+                        Selector: colmfamily,
+                        Key:      vnKey,
+                        BufSize:  cbArgs.ReplySize,
+                        Prefix:   vnKey,
+                })
+                if err != nil {
+                        log.Error("RangeReadKV failure: ", err)
+                        return ctlplfl.FuncError(err)
+                }
+                for k, v := range rqResult.ResultMap {
+                        parts := strings.Split(strings.Trim(k, "/"), "/")
+                        if len(parts) == ELEMENT_KEY {
+                                vdevID = string(v)
+                        }
+                }
+        }
+
 	key := vdevKey
 	if !req.GetAll {
-		key = getConfKey(vdevKey, req.ID)
+		key = getConfKey(vdevKey, vdevID)
 	}
 
 	nisdResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -1259,9 +1282,9 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-	req := cpReq.Payload.(ctlplfl.GetReq)
+	req := cpReq.Payload.(ctlplfl.GetVdevReq)
 
-	err := req.ValidateRequest()
+	err := req.ValidateVdevRequest()
 	if err != nil {
 		log.Errorf("ReadVdevInfo: invalid request: %v", err)
 		return ctlplfl.FuncError(fmt.Errorf("Invalid Request"))
@@ -1273,14 +1296,35 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		return ctlplfl.AuthError(fmt.Errorf("Invalid Token"))
 	}
 	if authorizer != nil {
-		attributes := map[string]string{"vdev": req.ID}
+		attributes := map[string]string{"vdev": req.Value}
 		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
+			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.Value)
 			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 		}
 	}
-	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.ID)
-	vKey := getConfKey(vdevKey, req.ID)
+	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.Value)
+	vdevID := req.Value
+	if !req.IsID {
+		vnKey := getConfKey(vnameKey, req.Value)
+	        var rqResult *storageiface.RangeReadResult
+        	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+                	Selector: colmfamily,
+	                Key:      vnKey,
+        	        BufSize:  cbArgs.ReplySize,
+                	Prefix:   vnKey,
+	        })
+		if err != nil {
+			log.Error("RangeReadKV failure: ", err)
+			return ctlplfl.FuncError(err)
+		}
+		for k, v := range rqResult.ResultMap {
+			parts := strings.Split(strings.Trim(k, "/"), "/")
+			if len(parts) == ELEMENT_KEY {
+				vdevID = string(v)
+			}
+		}
+	}
+	vKey := getConfKey(vdevKey, vdevID)
 	var rqResult *storageiface.RangeReadResult
 	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -1299,7 +1343,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	claims := map[string]any{
-		"vdevID": req.ID,
+		"vdevID": req.Value,
 	}
 
 	authtoken, err := authtc.CreateToken(claims)
@@ -1307,10 +1351,10 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Token Creation failed with: ", err)
 		return ctlplfl.FuncError(err)
 	}
-	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
+	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.Value)
 
 	vdevInfo := ctlplfl.VdevCfg{
-		ID:        req.ID,
+		ID:        req.Value,
 		AuthToken: authtoken,
 	}
 
@@ -1341,7 +1385,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		}
 
 	}
-	log.Debugf("ReadVdevInfo: returning vdev config for %s", req.ID)
+	log.Debugf("ReadVdevInfo: returning vdev config for %s", req.Value)
 	return ctlplfl.EncodeResponse(vdevInfo)
 }
 

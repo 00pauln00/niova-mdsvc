@@ -15,7 +15,8 @@ const ( // Key Prefixes
 	KEY_LEN          = 3
 	VDEV_CFG_C_KEY   = 2
 	VDEV_ELEMENT_KEY = 3
-
+	BASE_VDEV_PREFIX = 1
+	
 	NET_IDX = 3
 )
 
