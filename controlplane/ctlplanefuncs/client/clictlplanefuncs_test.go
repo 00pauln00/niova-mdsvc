@@ -416,25 +416,29 @@ func TestVdevLifecycle(t *testing.T) {
 	// Step 1: Create first Vdev
 	req1 := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
+			Name:       "vdevtest1",
 			ID:         uuid.NewString(),
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
 		},
 	}
+	log.Info("provided vdevid : ", req1)
 	resp, err = c.CreateVdev(req1)
 	assert.NoError(t, err, "failed to create vdev1")
 	require.NotNil(t, resp, "vdev1 response should not be nil")
 	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
 	vdev1ID := resp.ID
-
+	log.Info("Created vdev1: ", resp.ID)
 	// Step 2: Create second Vdev
 	req2 := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
+			Name:       "vdevtest2",
 			ID:         uuid.NewString(),
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
 		},
 	}
+	log.Info("provided vdevid2 : ", req2)
 	resp, err = c.CreateVdev(req2)
 	if err != nil || resp == nil {
 		t.Fatalf("failed to create vdev2: %v", err)
@@ -451,7 +455,7 @@ func TestVdevLifecycle(t *testing.T) {
 	} else {
 		assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
 	}
-
+	log.Infof("GetVdevsWithChunkInfo: %v ", allCResp)
 	// Step 4: Fetch specific Vdev (vdev1)
 	getSpecificReq := &cpLib.GetVdevReq{
 		Value: vdev1ID,
@@ -471,6 +475,99 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.Equal(t, 1, len(result), "expected exactly one vdev with chunk mapping in specific fetch")
 	assert.Equal(t, vdev1ID, result[0].Cfg.ID, "fetched vdev ID mismatch")
 	assert.Equal(t, req1.Vdev.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
+}
+
+func TestVdevLifecycleByName(t *testing.T) {
+    c := newClient(t)
+
+    // Step 0: Create a NISD
+    n := cpLib.Nisd{
+        PeerPort: 8001,
+        ID:       uuid.NewString(),
+        FailureDomain: []string{
+            uuid.NewString(),
+            uuid.NewString(),
+            uuid.NewString(),
+            uuid.NewString(),
+            uuid.NewString(),
+        },
+        TotalSize:     15_000_000_000_000,
+        AvailableSize: 15_000_000_000_000,
+    }
+
+    resp, err := c.PutNisd(&n)
+    assert.NoError(t, err)
+    assert.NotEmpty(t, resp.Name)
+    assert.Equal(t, true, resp.Success)
+
+    // Step 1: Create first Vdev
+    vdev1Name := "vdevtest1"
+
+    req1 := &cpLib.VdevReq{
+        Vdev: &cpLib.VdevCfg{
+            Name:       vdev1Name,
+            ID:         uuid.NewString(),
+            Size:       500 * 1024 * 1024 * 1024,
+            NumReplica: 1,
+        },
+    }
+
+    resp, err = c.CreateVdev(req1)
+    assert.NoError(t, err)
+    require.NotNil(t, resp)
+    assert.NotEmpty(t, resp.ID)
+
+    log.Info("Created vdev1: ", resp.ID)
+
+    // Step 2: Create second Vdev
+    vdev2Name := "vdevtest2"
+
+    req2 := &cpLib.VdevReq{
+        Vdev: &cpLib.VdevCfg{
+            Name:       vdev2Name,
+            ID:         uuid.NewString(),
+            Size:       500 * 1024 * 1024 * 1024,
+            NumReplica: 1,
+        },
+    }
+
+    resp, err = c.CreateVdev(req2)
+    require.NoError(t, err)
+    require.NotNil(t, resp)
+    assert.NotEmpty(t, resp.ID)
+
+    log.Info("Created vdev2: ", resp.ID)
+
+    // Step 3: Fetch all Vdevs
+    getAllReq := &cpLib.GetVdevReq{GetAll: true}
+
+    allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
+    assert.NoError(t, err)
+    assert.NotNil(t, allCResp)
+
+    log.Infof("GetVdevsWithChunkInfo: %v ", allCResp)
+
+    // Step 4: Fetch specific Vdev using NAME
+    getByNameReq := &cpLib.GetVdevReq{
+        Value: vdev1Name,
+        IsID:  false, // important
+    }
+
+    specificResp, err := c.GetVdevCfg(getByNameReq)
+    assert.NoError(t, err)
+    assert.NotNil(t, specificResp)
+
+    assert.Equal(t, vdev1Name, specificResp.Name, "fetched vdev name mismatch")
+    assert.Equal(t, req1.Vdev.Size, specificResp.Size, "fetched vdev size mismatch")
+
+    // Step 5: Fetch with chunk info using NAME
+    result, err := c.GetVdevsWithChunkInfo(getByNameReq)
+    assert.NoError(t, err)
+    assert.NotNil(t, result)
+
+    assert.Equal(t, 1, len(result), "expected exactly one vdev")
+    assert.Equal(t, vdev1Name, result[0].Cfg.Name, "fetched vdev name mismatch")
+    assert.Equal(t, req1.Vdev.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
 }
 
 func TestPutAndGetPartition(t *testing.T) {

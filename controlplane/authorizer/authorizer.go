@@ -2,6 +2,7 @@ package authorizer
 
 import (
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
+	"fmt"
 )
 
 type Authorizer struct {
@@ -167,6 +168,7 @@ func (a *Authorizer) getPolicy(fn FunctionName) (FunctionPolicy, bool) {
 func (a *Authorizer) CheckRBAC(fn FunctionName, userRoles []string) bool {
 	policy, ok := a.getPolicy(fn)
 	if !ok {
+		fmt.Println("RBAC policy returned false")
 		return false
 	}
 
@@ -177,23 +179,29 @@ func (a *Authorizer) CheckRBAC(fn FunctionName, userRoles []string) bool {
 
 	for _, allowedRole := range policy.RBAC {
 		if _, exists := roleSet[allowedRole]; exists {
+			fmt.Println("roles set in RBAC true allowedrole", allowedRole)
 			return true
 		}
 	}
+	fmt.Println("return from RBAC true ")
 	return false
 }
 
 func prefixQuery(prefix, userID, value string, ds storageiface.DataStore, colFamily string) bool {
 	res, err := ds.Read("/u/"+userID+"/"+prefix+value, colFamily)
 	if err != nil {
+		fmt.Printf("read value is userID=%v, prefix=%v, value=%v, colFamily=%v and err=%v\n", userID, prefix, value, colFamily, err)
 		return false
 	}
 	if res == nil {
+		fmt.Printf("response is nil userID=%v, prefix=%v, value=%v, colFamily=%v\n", userID, prefix, value, colFamily)
 		return false
 	}
 	if string(res) == "1" {
+		fmt.Printf("response is 1 userID=%v, prefix=%v, value=%v, colFamily=%v\n", userID, prefix, value, colFamily)
 		return true
 	}
+	fmt.Printf("return false from prefixquery userID=%v, prefix=%v, value=%v, colFamily=%v\n",userID, prefix, value, colFamily)
 	return false
 }
 
@@ -201,15 +209,18 @@ func prefixQuery(prefix, userID, value string, ds storageiface.DataStore, colFam
 func (a *Authorizer) CheckABAC(fn FunctionName, userID string, attributes map[string]string, ds storageiface.DataStore, colFamily string) bool {
 	policy, ok := a.getPolicy(fn)
 	if !ok {
+		fmt.Println("ABAC policy returned false")
 		return false
 	}
 
 	for _, rule := range policy.ABAC {
 		value, exists := attributes[rule.Argument]
 		if !exists || !prefixQuery(rule.Prefix, userID, value, ds, colFamily) {
+			fmt.Println("Check the prefixquery in ABAC false")
 			return false
 		}
 	}
+	fmt.Println("return from ABAC true ")
 	return true
 }
 
