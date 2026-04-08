@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 
 	uuid "github.com/satori/go.uuid"
 
@@ -656,7 +655,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 	if readErr == nil {
 		//Copy the encoded result in replyBuffer
 		replySize, copyErr = PumiceDBServer.PmdbCopyDataToBuffer(resultResponse,
-			buf)
+			readArgs.ReplyBuf)
 		if copyErr != nil {
 			log.Errorf("Failed to Copy result in the buffer: %s", copyErr)
 			return -1
