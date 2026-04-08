@@ -96,9 +96,8 @@ jobs:
 
     - name: run recipes for controlplane application
       run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
-           export USER_ENCRYPTION_KEY=81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII && 
-           cd /home/runner/work/niovad/niovad/build_dir/holon/ && 
-           ../run-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon' 
+            cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
+           ../run-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon'
                              '/home/runner/work/niovad/niovad/build_dir'
                              '/home/runner/work/niovad/niovad/holon_log' 5
                              '/home/runner/work/niovad/niovad/build_dir/controlplane_recipes.txt'
