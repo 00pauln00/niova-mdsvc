@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
 
@@ -12,9 +13,8 @@ import (
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userClient "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
-	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 
-	"github.com/google/uuid"
+	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 )
 
 const GEN_CONF_FILE = "config-gen.yaml"

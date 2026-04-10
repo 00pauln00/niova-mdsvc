@@ -4,17 +4,6 @@ import (
 	//"bufio"
 	"bufio"
 	"bytes"
-	"net/http"
-
-	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
-
-	httpServer "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpserver"
-
-	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
-	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
-	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
-	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
-
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
@@ -22,8 +11,9 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -32,14 +22,22 @@ import (
 	"syscall"
 	"time"
 
+	defaultLogger "log"
+
+	uuid "github.com/satori/go.uuid"
+
 	pmdbClient "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
+	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
+	httpServer "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpserver"
+	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 
-	defaultLogger "log"
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
-	uuid "github.com/satori/go.uuid"
 )
 
 var limiter chan int
@@ -64,9 +62,9 @@ type proxyHandler struct {
 	pmdbClientObj           *pmdbClient.PmdbClientObj
 
 	//Serf agent
-	serfAgentName     string
-	serfAgentPort     uint16
-	serfAgentRPCPort  uint16
+	serfAgentName string
+	// serfAgentPort uint16
+	// serfAgentRPCPort  uint16
 	serfPeersFilePath string
 	serfLogger        string
 	serfAgentObj      serfAgent.SerfAgentHandler
@@ -239,7 +237,7 @@ func (handler *proxyHandler) startSerfAgent() error {
 	//Setup serf logger if passed in cmd line args
 	switch handler.serfLogger {
 	case "ignore":
-		defaultLogger.SetOutput(ioutil.Discard)
+		defaultLogger.SetOutput(io.Discard)
 	default:
 		f, err := os.OpenFile(handler.serfLogger, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
@@ -284,7 +282,7 @@ Func      : validateCheckSum
 Arguments : map[string]string, string
 Return(s) : error
 
-Description : A helper func to validate recieved checksum with checksum of the data(map[string]string).
+Description : A helper func to validate received checksum with checksum of the data(map[string]string).
 */
 func validateCheckSum(data map[string]string, checksum string) error {
 	keys := make([]string, 0, len(data))
@@ -728,7 +726,7 @@ func (handler *proxyHandler) killSignalHandler() {
 	go func() {
 		<-sigs
 		json_data, _ := json.MarshalIndent(handler.httpServerObj.Stat, "", " ")
-		_ = ioutil.WriteFile((handler.clientUUID.String())+".json", json_data, 0644)
+		_ = os.WriteFile((handler.clientUUID.String())+".json", json_data, 0644)
 		PumiceDBCommon.EmitCoverData(handler.coverageOutDir)
 		log.Info("(Proxy) Received a kill signal")
 		os.Exit(1)

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
+
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
 
 // Type aliases to use libctlplanefuncs types
@@ -155,7 +156,7 @@ func DeleteAllPartitionsFromDevice(hv ctlplfl.Hypervisor, deviceName string) err
 
 	partCmd := fmt.Sprintf("parted -s %s mklabel gpt", devicePath)
 	_, _ = sshClient.RunCommand(partCmd)
-	log.Info("Create partition table on %s (%s): %v", devicePath, partCmd)
+	log.Infof("Create partition table on %s (%s)", devicePath, partCmd)
 
 	time.Sleep(2 * time.Second)
 
@@ -268,14 +269,14 @@ func GetDevicePartitionInfo(hv ctlplfl.Hypervisor, deviceName string) ([]DeviceP
 					sizeStr := parts[1]
 					size, err := strconv.ParseInt(sizeStr, 10, 64)
 					if err != nil {
-						log.Warn("Failed to parse size for partition %s: %v", partitionName, err)
+						log.Warnf("Failed to parse size for partition %s: %v", partitionName, err)
 						size = 0
 					}
 
 					partitionByIdCmd := fmt.Sprintf("ls -la /dev/disk/by-id/ | grep '%s$' | head -1 | awk '{print $9}'", partitionName)
 					partitionByIdOutput, err := sshClient.RunCommand(partitionByIdCmd)
 					if err != nil {
-						log.Warn("Failed to get by-id name for partition %s: %v", partitionName, err)
+						log.Warnf("Failed to get by-id name for partition %s: %v", partitionName, err)
 						partitionInfos = append(partitionInfos, DevicePartitionInfo{
 							Name: partitionName,
 							Size: size,
@@ -397,6 +398,6 @@ func RemoveDevicePartition(hv ctlplfl.Hypervisor, deviceName, partitionID string
 	}
 
 	// Partition may already be deleted
-	log.Warn("Partition %s not found on device %s, may already be removed", partitionID, deviceName)
+	log.Warnf("Partition %s not found on device %s, may already be removed", partitionID, deviceName)
 	return nil
 }
