@@ -55,8 +55,9 @@ func ParsePortRange(portRange string) (int, int, error) {
 	return start, end, nil
 }
 
-// AllocatePortPair allocates a client and server port pair from the given range,
-// avoiding already allocated ports by querying existing NISDs from the control plane
+// AllocatePortPair allocates a contiguous pair of ports (serverPort=N, clientPort=N+1)
+// from the given range, avoiding already allocated ports by querying existing NISDs
+// from the control plane. Ports are isolated per hypervisor via FailureDomain[HV_IDX].
 func AllocatePortPair(hypervisorUUID string, portRange string, userToken string, cpClient interface{}) (int, int, error) {
 	startPort, endPort, err := ParsePortRange(portRange)
 	if err != nil {
@@ -78,22 +79,17 @@ func AllocatePortPair(hypervisorUUID string, portRange string, userToken string,
 					if nisd.FailureDomain[ctlplfl.HV_IDX] == hypervisorUUID {
 						allocatedPorts[int(nisd.PeerPort)] = true
 						allocatedPorts[int(nisd.NetInfo[0].Port)] = true
-						allocatedPorts[int(nisd.NetInfo[0].Port)+1] = true
-						allocatedPorts[int(nisd.NetInfo[0].Port)+2] = true
 					}
 				}
 			}
 		}
 	}
 
-	for port := startPort; port < endPort-3; port += 4 {
+	for port := startPort; port < endPort-1; port += 2 {
 		serverPort := port
-		gapPort1 := port + 1
-		clientPort := port + 2
-		gapPort2 := port + 3
+		clientPort := port + 1
 
-		if !allocatedPorts[serverPort] && !allocatedPorts[gapPort1] &&
-			!allocatedPorts[clientPort] && !allocatedPorts[gapPort2] {
+		if !allocatedPorts[serverPort] && !allocatedPorts[clientPort] {
 			return clientPort, serverPort, nil
 		}
 	}
