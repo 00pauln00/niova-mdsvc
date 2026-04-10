@@ -413,7 +413,6 @@ func (req *GetVdevReq) ValidateVdevRequest() error {
                 return fmt.Errorf("Invalid Request: Recieved empty vdev name/ID")
         }
         return nil
-
 }
 
 func (a *NisdArgs) BuildCmdArgs() string {
