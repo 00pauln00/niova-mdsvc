@@ -51,6 +51,8 @@ func GetReqStruct(name string) any {
 		return &userlib.GetReq{}
 	case cpLib.DELETE_VDEV:
 		return &cpLib.DeleteVdevReq{}
+	case cpLib.MOUNT_VDEV:
+		return &cpLib.MountVdevRequest{}
 	default:
 		return &cpLib.GetReq{}
 	}
@@ -96,6 +98,8 @@ func GetRespStruct(name string) any {
 		return &userlib.LoginResp{}
 	case cpLib.DELETE_VDEV:
 		return &cpLib.ResponseXML{}
+	case cpLib.MOUNT_VDEV:
+		return &cpLib.VdevMountInfo{}
 	}
 	return nil
 }
@@ -155,6 +159,8 @@ func derefPtr(v any) any {
 	case *userlib.GetReq:
 		return *p
 	case *cpLib.DeleteVdevReq:
+		return *p
+	case *cpLib.MountVdevRequest:
 		return *p
 	default:
 		return v
