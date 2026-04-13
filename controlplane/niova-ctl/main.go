@@ -110,13 +110,13 @@ const (
 	// PDU specific
 	inputPowerCapacity
 	// Hypervisor specific
-	inputIP
-	inputAdditionalIPs
-	inputSSHPort
-	inputPortRange
+	// inputIP
+	// inputAdditionalIPs
+	// inputSSHPort
+	// inputPortRange
 	// Device partition specific
-	inputNISDInstance
-	inputPartitionSize
+	// inputNISDInstance
+	// inputPartitionSize
 	// Vdev specific
 	inputVdevSearch
 	inputVdevName
@@ -209,8 +209,8 @@ type model struct {
 	selectedPartitions           map[int]bool // Track which partitions are selected
 
 	// NISD Management
-	nisdMgmtCursor            int
-	nisdCursor                int // For NISD pagination
+	nisdMgmtCursor int
+	// nisdCursor                int // For NISD pagination
 	selectedNISDIdx           int // For NISD item navigation like partitions
 	selectedNISDPartitionIdx  int
 	selectedNISDHypervisorIdx int
@@ -218,10 +218,10 @@ type model struct {
 	selectedNISDForStart      int
 	selectedNISDPartitions    map[int]bool // Track which partitions are selected for NISD initialization
 	currentNISD               ctlplfl.Nisd
-	selectedPartitionForNISD  DevicePartition
-	selectedHvForNISD         ctlplfl.Hypervisor
-	selectedDeviceForNISD     Device
-	selectedNISDToStart       ctlplfl.Nisd
+	// selectedPartitionForNISD  DevicePartition
+	// selectedHvForNISD         ctlplfl.Hypervisor
+	// selectedDeviceForNISD     Device
+	selectedNISDToStart ctlplfl.Nisd
 
 	// Vdev Management
 	vdevMgmtCursor         int
@@ -1328,12 +1328,12 @@ func (m *model) syncDeviceStatesFromCP(cpDevices []ctlplfl.Device) {
 // string if initialization fails.
 func (m model) ensureUserClient() (model, error) {
 	if m.cpRaftUUID == "" || m.cpGossipPath == "" {
-		return m, fmt.Errorf("Control plane not configured. Use -cp flag with -raft-uuid and -gossip-path.")
+		return m, fmt.Errorf("control plane not configured. Use -cp flag with -raft-uuid and -gossip-path")
 	}
 	if m.userClient == nil {
 		client, teardown := initUserClient(m.cpRaftUUID, m.cpGossipPath, m.logFile)
 		if client == nil {
-			return m, fmt.Errorf("Failed to initialize user client.")
+			return m, fmt.Errorf("failed to initialize user client")
 		}
 		m.userClient = client
 		userClientTeardownFn = teardown
@@ -2322,6 +2322,7 @@ func (m model) updateDeviceDelete(msg tea.Msg) (model, tea.Cmd) {
 	return m, nil
 }
 
+/*
 func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -2384,6 +2385,7 @@ func (m model) updateDeviceInitialization(msg tea.Msg) (model, tea.Cmd) {
 	m.deviceFailureDomain, cmd = m.deviceFailureDomain.Update(msg)
 	return m, cmd
 }
+*/
 
 // DeviceInfo holds device and its location in the config
 type DeviceInfo struct {
@@ -2514,11 +2516,6 @@ func formatBytes(bytes int64) string {
 
 	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
 	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp+1])
-}
-
-// Helper function to generate a new UUID
-func generateUUID() string {
-	return uuid.New().String()
 }
 
 // Helper function to get NISDs list from control plane with error handling
@@ -3168,11 +3165,9 @@ func (m model) viewMenu() string {
 
 	// Control plane status
 	if m.cpEnabled {
-		cpStatus := "Enabled"
+		cpStatus := errorStyle.Render("Disconnected")
 		if m.cpConnected {
 			cpStatus = successStyle.Render("Connected")
-		} else {
-			cpStatus = errorStyle.Render("Disconnected")
 		}
 		s.WriteString(fmt.Sprintf("Control Plane: %s\n\n", cpStatus))
 	} else {
@@ -5107,7 +5102,7 @@ func (m model) updatePartitionKeyCreation(msg tea.Msg) (model, tea.Cmd) {
 				// Call PutPartition to create the partition key
 				ptResp, err := m.cpClient.PutPartition(&partition)
 				if err != nil {
-					log.Info("Failed to add partition to pumiceDB: %v", err)
+					log.Infof("Failed to add partition to pumiceDB: %v", err)
 					errorMessages = append(errorMessages, fmt.Sprintf("Failed to create key for %s: %v", partitionInfo.Name, err))
 					continue
 				} else if ptResp != nil && !ptResp.Success {
@@ -7380,6 +7375,7 @@ func (m model) viewShowInitializedNISD() string {
 	return s.String()
 }
 
+/*
 // Helper function to initialize NISD
 func (m *model) initializeNISD() error {
 
@@ -7452,6 +7448,7 @@ func (m *model) initializeNISD() error {
 
 	return nil
 }
+*/
 
 func (m *model) initializeSelectedNISDs() error {
 	if m.cpClient == nil {
@@ -9222,6 +9219,7 @@ func validateDeviceInfo(device *ctlplfl.Device) {
 	}
 }
 
+/*
 // updateInitializeDeviceForm handles the Initialize Device form
 func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 	// Check if control plane is connected
@@ -9330,7 +9328,9 @@ func (m model) updateInitializeDeviceForm(msg tea.Msg) (model, tea.Cmd) {
 	}
 	return m, nil
 }
+*/
 
+/*
 // viewInitializeDeviceForm displays the Initialize Device form
 func (m model) viewInitializeDeviceForm() string {
 	title := titleStyle.Render("Initialize Device")
@@ -9410,6 +9410,7 @@ func (m model) viewInitializeDeviceForm() string {
 
 	return s.String()
 }
+*/
 
 func main() {
 	// Define command line flags

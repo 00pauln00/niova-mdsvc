@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -17,19 +16,21 @@ import (
 	"sync"
 	"time"
 
+	uuid "github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
+	maps "golang.org/x/exp/maps"
+
 	ctlplcl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/client"
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	userClient "github.com/00pauln00/niova-mdsvc/controlplane/user/client"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
+
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	leaseClientLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/client"
 	leaseLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/common"
 	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
-	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
-	maps "golang.org/x/exp/maps"
 )
 
 type clientReq struct {
@@ -49,11 +50,9 @@ type clientHandler struct {
 	logPath             string
 	resultFile          string
 	lookoutID           string
-	rangeQuery          bool
 	relaxedConsistency  bool
 	count               int
 	seed                int
-	lastKey             string
 	clientAPIObj        serviceDiscovery.ServiceDiscoveryHandler
 	seqNum              uint64
 	valSize             int
@@ -106,7 +105,7 @@ func randSeq(n int, r *rand.Rand) []byte {
 	return b
 }
 
-func (co *clientHandler) appendReq(kvArr *[]clientReq, key string, value []byte) {
+func (c *clientHandler) appendReq(kvArr *[]clientReq, key string, value []byte) {
 	creq := clientReq{}
 	creq.Request.Key = key
 	creq.Request.Value = value
@@ -115,10 +114,10 @@ func (co *clientHandler) appendReq(kvArr *[]clientReq, key string, value []byte)
 }
 
 // dummy function to mock user filling up multiple req
-func (co *clientHandler) generateVdevRange() []clientReq {
+func (c *clientHandler) generateVdevRange() []clientReq {
 
 	var kvArr []clientReq
-	r := rand.New(rand.NewSource(int64(co.seed)))
+	r := rand.New(rand.NewSource(int64(c.seed)))
 	var nodeUUID []string
 	var vdevUUID []string
 	nodeNisdMap := make(map[string][]string)
@@ -130,7 +129,7 @@ func (co *clientHandler) generateVdevRange() []clientReq {
 		HostName
 		NISD-UUIDs
 	*/
-	noUUID := co.count
+	noUUID := c.count
 	for i := int64(0); i < int64(noUUID); i++ {
 		randomNodeUUID := uuid.NewV4()
 		nodeUUID = append(nodeUUID, randomNodeUUID.String())
@@ -143,7 +142,7 @@ func (co *clientHandler) generateVdevRange() []clientReq {
 		}
 
 		nval, _ := json.Marshal(nodeNisdMap[randomNodeUUID.String()])
-		co.appendReq(&kvArr, prefix+".NISD-UUIDs", nval)
+		c.appendReq(&kvArr, prefix+".NISD-UUIDs", nval)
 	}
 	//NISD
 	/*
@@ -163,19 +162,19 @@ func (co *clientHandler) generateVdevRange() []clientReq {
 			randomNodeUUID := uuid.NewV4()
 
 			//Node-UUID
-			co.appendReq(&kvArr, prefix+".Node-UUID", []byte(node))
+			c.appendReq(&kvArr, prefix+".Node-UUID", []byte(node))
 
 			nval, _ := json.Marshal(nodeNisdMap[randomNodeUUID.String()])
-			co.appendReq(&kvArr, prefix+".NISD-UUIDs", nval)
+			c.appendReq(&kvArr, prefix+".NISD-UUIDs", nval)
 
 			//Config-Info
-			co.appendReq(&kvArr, prefix+".Config-Info", randSeq(co.valSize, r))
+			c.appendReq(&kvArr, prefix+".Config-Info", randSeq(c.valSize, r))
 
 			//VDEV-UUID
 			for j := int64(0); j < int64(noUUID); j++ {
 				randUUID := uuid.NewV4()
 				partNodePrefix := prefix + "." + randUUID.String()
-				co.appendReq(&kvArr, partNodePrefix, randSeq(co.valSize, r))
+				c.appendReq(&kvArr, partNodePrefix, randSeq(c.valSize, r))
 				vdevUUID = append(vdevUUID, randUUID.String())
 			}
 		}
@@ -189,47 +188,47 @@ func (co *clientHandler) generateVdevRange() []clientReq {
 	*/
 	for i := int64(0); i < int64(len(vdevUUID)); i++ {
 		prefix := "v." + vdevUUID[i]
-		co.appendReq(&kvArr, prefix+".User-Token", randSeq(co.valSize, r))
+		c.appendReq(&kvArr, prefix+".User-Token", randSeq(c.valSize, r))
 
-		noChunck := co.count
+		noChunck := c.count
 		Cprefix := prefix + ".c"
 		for j := int64(0); j < int64(noChunck); j++ {
 			randUUID := uuid.NewV4()
 			Chunckprefix := Cprefix + strconv.Itoa(int(j)) + "." + randUUID.String()
-			co.appendReq(&kvArr, Chunckprefix, randSeq(co.valSize, r))
+			c.appendReq(&kvArr, Chunckprefix, randSeq(c.valSize, r))
 		}
 	}
 	return kvArr
 }
 
 // Function to get command line parameters
-func (handler *clientHandler) getCmdParams() {
+func (c *clientHandler) getCmdParams() {
 
-	flag.StringVar(&handler.requestKey, "k", "", "Key - For ReadRange pass '<prefix>*' e.g. : -k 'vdev.*'")
-	flag.StringVar(&handler.addr, "a", "127.0.0.1", "Addr value")
-	flag.StringVar(&handler.port, "p", "1999", "Port value")
-	flag.StringVar(&handler.requestValue, "v", "", "Value")
-	flag.StringVar(&handler.raftUUID, "ru", "", "RaftUUID of the cluster to be queried")
-	flag.StringVar(&handler.configPath, "c", "./gossipNodes", "gossip nodes config file path")
-	flag.StringVar(&handler.logPath, "l", cpLib.DefaultLogPath(), "Log path")
-	flag.StringVar(&handler.operation, "o", "rw", "Specify the opeation to perform")
-	flag.StringVar(&handler.resultFile, "j", "json_output", "Path along with file name for the resultant json file")
-	flag.BoolVar(&handler.regenerateNISDUUIDs, "rnu", false, "Regenerate new UUIDs for all NISDs using the topology JSON as structure reference")
-	flag.StringVar(&handler.lookoutID, "u", "", "Lookout uuid")
-	flag.IntVar(&handler.count, "n", 1, "Write number of key/value pairs per key type (Default 1 will write the passed key/value)")
-	flag.BoolVar(&handler.relaxedConsistency, "r", false, "Set this flag if range could be performed with relaxed consistency")
-	flag.IntVar(&handler.seed, "s", 10, "Seed value")
-	flag.IntVar(&handler.valSize, "vs", 512, "Random value generation size")
-	flag.Uint64Var(&handler.seqNum, "S", math.MaxUint64, "Sequence Number for read")
-	flag.IntVar(&handler.serviceRetry, "sr", 1, "how many times you want to retry to pick the server if proxy is not available")
-	flag.StringVar(&handler.userToken, "ut", "", "User authentication token")
-	flag.StringVar(&handler.username, "user", "", "Username for authentication")
-	flag.StringVar(&handler.password, "pass", "", "Password/SecretKey for authentication")
+	flag.StringVar(&c.requestKey, "k", "", "Key - For ReadRange pass '<prefix>*' e.g. : -k 'vdev.*'")
+	flag.StringVar(&c.addr, "a", "127.0.0.1", "Addr value")
+	flag.StringVar(&c.port, "p", "1999", "Port value")
+	flag.StringVar(&c.requestValue, "v", "", "Value")
+	flag.StringVar(&c.raftUUID, "ru", "", "RaftUUID of the cluster to be queried")
+	flag.StringVar(&c.configPath, "c", "./gossipNodes", "gossip nodes config file path")
+	flag.StringVar(&c.logPath, "l", cpLib.DefaultLogPath(), "Log path")
+	flag.StringVar(&c.operation, "o", "rw", "Specify the opeation to perform")
+	flag.StringVar(&c.resultFile, "j", "json_output", "Path along with file name for the resultant json file")
+	flag.BoolVar(&c.regenerateNISDUUIDs, "rnu", false, "Regenerate new UUIDs for all NISDs using the topology JSON as structure reference")
+	flag.StringVar(&c.lookoutID, "u", "", "Lookout uuid")
+	flag.IntVar(&c.count, "n", 1, "Write number of key/value pairs per key type (Default 1 will write the passed key/value)")
+	flag.BoolVar(&c.relaxedConsistency, "r", false, "Set this flag if range could be performed with relaxed consistency")
+	flag.IntVar(&c.seed, "s", 10, "Seed value")
+	flag.IntVar(&c.valSize, "vs", 512, "Random value generation size")
+	flag.Uint64Var(&c.seqNum, "S", math.MaxUint64, "Sequence Number for read")
+	flag.IntVar(&c.serviceRetry, "sr", 1, "how many times you want to retry to pick the server if proxy is not available")
+	flag.StringVar(&c.userToken, "ut", "", "User authentication token")
+	flag.StringVar(&c.username, "user", "", "Username for authentication")
+	flag.StringVar(&c.password, "pass", "", "Password/SecretKey for authentication")
 	flag.Parse()
 }
 
-func (cli *clientHandler) complete(data []byte) error {
-	err := ioutil.WriteFile(cli.resultFile+".json", data, 0644)
+func (c *clientHandler) complete(data []byte) error {
+	err := os.WriteFile(c.resultFile+".json", data, 0644)
 	if err != nil {
 		log.Error("Error in writing output to the file : ", err)
 	}
@@ -256,8 +255,8 @@ func prepareOutput(status int, operation string, key string, value interface{}, 
 	return &operationObj
 }
 
-func (cli *clientHandler) getNISDInfo() map[string]nisdData {
-	data := cli.clientAPIObj.GetMembership()
+func (c *clientHandler) getNISDInfo() map[string]nisdData {
+	data := c.clientAPIObj.GetMembership()
 	nisdDataMap := make(map[string]nisdData)
 	for _, node := range data {
 		if (node.Tags["Type"] == "LOOKOUT") && (node.Status == "alive") {
@@ -285,18 +284,18 @@ func (cli *clientHandler) getNISDInfo() map[string]nisdData {
 	return nisdDataMap
 }
 
-func (clientObj *clientHandler) prepareLOInfoRequest(b *bytes.Buffer) error {
+func (c *clientHandler) prepareLOInfoRequest(b *bytes.Buffer) error {
 	//Request obj
 	var o requestResponseLib.LookoutRequest
 	var err error
 
 	//Parse UUID
-	o.UUID, err = uuid.FromString(clientObj.requestKey)
+	o.UUID, err = uuid.FromString(c.requestKey)
 	if err != nil {
 		log.Error("Invalid argument - key must be UUID")
 		return err
 	}
-	o.Cmd = string(clientObj.requestValue)
+	o.Cmd = string(c.requestValue)
 
 	enc := gob.NewEncoder(b)
 	err = enc.Encode(o)
@@ -306,31 +305,31 @@ func (clientObj *clientHandler) prepareLOInfoRequest(b *bytes.Buffer) error {
 	return err
 }
 
-func (co *clientHandler) prepNSendReq(rncui string, isWrite bool, itr int) error {
+func (c *clientHandler) prepNSendReq(rncui string, isWrite bool, itr int) error {
 
 	var rqb bytes.Buffer
 
 	encoder := gob.NewEncoder(&rqb)
-	err := encoder.Encode(co.clientReqArr[itr].Request)
+	err := encoder.Encode(c.clientReqArr[itr].Request)
 	if err != nil {
 		return err
 	}
 
 	//Send the request
-	rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app?rncui="+rncui+"&wsn=0", isWrite)
+	rsb, err := c.clientAPIObj.Request(rqb.Bytes(), "/app?rncui="+rncui+"&wsn=0", isWrite)
 	if err != nil {
 		return err
 	}
 
 	//Decode the response to get the status of the operation.
-	res := &co.clientReqArr[itr].Response
+	res := &c.clientReqArr[itr].Response
 	dec := gob.NewDecoder(bytes.NewBuffer(rsb))
 	return dec.Decode(res)
 }
 
-func (co *clientHandler) write(wresult bool) ([]byte, error) {
+func (c *clientHandler) write(wresult bool) ([]byte, error) {
 
-	co.operation = "write"
+	c.operation = "write"
 
 	var wg sync.WaitGroup
 	var err error
@@ -338,10 +337,10 @@ func (co *clientHandler) write(wresult bool) ([]byte, error) {
 	requestLimiter := make(chan int, 100)
 
 	// iterate over req and res, while performing reqs
-	for i := 0; i < len(co.clientReqArr); i++ {
+	for i := 0; i < len(c.clientReqArr); i++ {
 		wg.Add(1)
 		requestLimiter <- 1
-		co.clientReqArr[i].Request.Operation = requestResponseLib.KV_WRITE
+		c.clientReqArr[i].Request.Operation = requestResponseLib.KV_WRITE
 		go func(itr int, rncui string) {
 			defer func() {
 				wg.Done()
@@ -349,7 +348,7 @@ func (co *clientHandler) write(wresult bool) ([]byte, error) {
 			}()
 
 			err = func() error {
-				err := co.prepNSendReq(rncui, true, itr)
+				err := c.prepNSendReq(rncui, true, itr)
 				return err
 			}()
 			if err != nil {
@@ -358,63 +357,63 @@ func (co *clientHandler) write(wresult bool) ([]byte, error) {
 		}(i, uuid.NewV4().String()+":0:0:0:0")
 	}
 	wg.Wait()
-	file, err := json.MarshalIndent(co.clientReqArr, "", " ")
+	file, err := json.MarshalIndent(c.clientReqArr, "", " ")
 	if err != nil {
 		log.Error("Failed to json.MarshalIndent cli.clientReqArr")
 	}
 	//If calling function asked to write the result immediately
 	if wresult {
-		err = ioutil.WriteFile(co.resultFile+".json", file, 0644)
+		err = os.WriteFile(c.resultFile+".json", file, 0644)
 		if err != nil {
 			log.Error("Error in writing output to the file : ", err)
 		}
 		return nil, err
 	}
 	//else return the result byte array
-	return json.MarshalIndent(co.clientReqArr, "", " ")
+	return json.MarshalIndent(c.clientReqArr, "", " ")
 }
 
-func (co *clientHandler) read() ([]byte, error) {
+func (c *clientHandler) read() ([]byte, error) {
 
 	//read single key passed from cmdline.
 	creq := clientReq{}
 	creq.Request.Operation = requestResponseLib.KV_READ
-	creq.Request.Key = co.requestKey
+	creq.Request.Key = c.requestKey
 	creq.Request.Value = []byte("")
 
-	co.clientReqArr = append(co.clientReqArr, creq)
+	c.clientReqArr = append(c.clientReqArr, creq)
 
-	co.operation = "read"
+	c.operation = "read"
 	err := func() error {
-		return co.prepNSendReq("", false, 0)
+		return c.prepNSendReq("", false, 0)
 	}()
 
 	if err != nil {
 		return nil, err
 	}
-	return json.MarshalIndent(co.clientReqArr, "", " ")
+	return json.MarshalIndent(c.clientReqArr, "", " ")
 }
 
-func (co *clientHandler) rangeRead() ([]byte, error) {
+func (c *clientHandler) rangeRead() ([]byte, error) {
 	var prefix, key string
 	var op int
 	var err error
 	var seqNum uint64
 
-	co.operation = "read"
+	c.operation = "read"
 
-	prefix = co.requestKey[:len(co.requestKey)-1]
-	key = co.requestKey[:len(co.requestKey)-1]
+	prefix = c.requestKey[:len(c.requestKey)-1]
+	key = c.requestKey[:len(c.requestKey)-1]
 
 	op = requestResponseLib.KV_RANGE_READ
 	// get sequence number from arguments
-	seqNum = co.seqNum
+	seqNum = c.seqNum
 	// Keep calling range request till ContinueRead is true
 
 	creq := clientReq{}
 	creq.Request.Prefix = prefix
 	creq.Request.Operation = op
-	creq.Request.Consistent = !co.relaxedConsistency
+	creq.Request.Consistent = !c.relaxedConsistency
 	creq.Request.Key = key
 	resultMap := make(map[string][]byte)
 	for {
@@ -433,7 +432,7 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 		}
 
 		//Send the request
-		rsb, err := co.clientAPIObj.Request(rqb.Bytes(), "/app", false)
+		rsb, err := c.clientAPIObj.Request(rqb.Bytes(), "/app", false)
 		if err != nil {
 			log.Error("Error while sending request : ", err)
 		}
@@ -462,57 +461,57 @@ func (co *clientHandler) rangeRead() ([]byte, error) {
 			break
 		}
 	}
-	co.clientReqArr = append(co.clientReqArr, creq)
-	maps.Clear(co.clientReqArr[0].Response.ResultMap)
-	maps.Copy(co.clientReqArr[0].Response.ResultMap, resultMap)
+	c.clientReqArr = append(c.clientReqArr, creq)
+	maps.Clear(c.clientReqArr[0].Response.ResultMap)
+	maps.Copy(c.clientReqArr[0].Response.ResultMap, resultMap)
 
-	return json.MarshalIndent(co.clientReqArr, "", " ")
+	return json.MarshalIndent(c.clientReqArr, "", " ")
 }
 
 // check and fill request map acc to req count
-func (clientObj *clientHandler) prepWriteReq(rArr []clientReq) {
-	clientObj.clientReqArr = rArr
+func (c *clientHandler) prepWriteReq(rArr []clientReq) {
+	c.clientReqArr = rArr
 }
 
-func (clientObj *clientHandler) getKVArray() []clientReq {
+func (c *clientHandler) getKVArray() []clientReq {
 	var rArr []clientReq
-	if clientObj.requestKey == "" && clientObj.requestValue == "" {
-		rArr = clientObj.generateVdevRange()
+	if c.requestKey == "" && c.requestValue == "" {
+		rArr = c.generateVdevRange()
 	} else {
 		creq := clientReq{}
-		creq.Request.Key = clientObj.requestKey
-		creq.Request.Value = []byte(clientObj.requestValue)
-		rArr = append(clientObj.clientReqArr, creq)
+		creq.Request.Key = c.requestKey
+		creq.Request.Value = []byte(c.requestValue)
+		rArr = append(c.clientReqArr, creq)
 	}
 	return rArr
 }
 
-func (clientObj *clientHandler) processReadWriteReq(rArr []clientReq) ([]byte, error) {
+func (c *clientHandler) processReadWriteReq(rArr []clientReq) ([]byte, error) {
 
 	//Wait till proxy is ready
-	err := clientObj.waitServiceInit("PROXY")
+	err := c.waitServiceInit("PROXY")
 	if err != nil {
 		return nil, err
 	}
 
 	var data []byte
-	switch clientObj.operation {
+	switch c.operation {
 	case "rw":
-		clientObj.prepWriteReq(rArr)
-		data, err = clientObj.write(true)
+		c.prepWriteReq(rArr)
+		data, err = c.write(true)
 		if err == nil {
-			data, err = clientObj.read()
+			data, err = c.read()
 		}
 		break
 	case "write":
-		clientObj.prepWriteReq(rArr)
-		data, err = clientObj.write(false)
+		c.prepWriteReq(rArr)
+		data, err = c.write(false)
 		break
 	case "read":
-		if !isRangeRequest(clientObj.requestKey) {
-			data, err = clientObj.read()
+		if !isRangeRequest(c.requestKey) {
+			data, err = c.read()
 		} else {
-			data, err = clientObj.rangeRead()
+			data, err = c.rangeRead()
 		}
 		break
 	default:
@@ -521,16 +520,16 @@ func (clientObj *clientHandler) processReadWriteReq(rArr []clientReq) ([]byte, e
 	return data, err
 }
 
-func (clientObj *clientHandler) processConfig() ([]byte, error) {
-	return clientObj.clientAPIObj.GetPMDBServerConfig()
+func (c *clientHandler) processConfig() ([]byte, error) {
+	return c.clientAPIObj.GetPMDBServerConfig()
 }
 
-func (clientObj *clientHandler) processMembership() ([]byte, error) {
-	toJson := clientObj.clientAPIObj.GetMembership()
+func (c *clientHandler) processMembership() ([]byte, error) {
+	toJson := c.clientAPIObj.GetMembership()
 	return json.MarshalIndent(toJson, "", " ")
 }
 
-func (clientObj *clientHandler) processGeneral() {
+func (c *clientHandler) processGeneral() {
 	fmt.Printf("\033[2J")
 	fmt.Printf("\033[2;0H")
 	fmt.Print("UUID")
@@ -541,7 +540,7 @@ func (clientObj *clientHandler) processGeneral() {
 	offset := 3
 	for {
 		lineCounter := 0
-		data := clientObj.clientAPIObj.GetMembership()
+		data := c.clientAPIObj.GetMembership()
 		for _, node := range data {
 			currentLine := offset + lineCounter
 			fmt.Print(node.Name)
@@ -560,7 +559,7 @@ func (clientObj *clientHandler) processGeneral() {
 	}
 }
 
-func (clientObj *clientHandler) processNisd() {
+func (c *clientHandler) processNisd() {
 	fmt.Printf("\033[2J")
 	fmt.Printf("\033[2;0H")
 	fmt.Println("NISD_UUID")
@@ -571,7 +570,7 @@ func (clientObj *clientHandler) processNisd() {
 	offset := 3
 	for {
 		lCounter := 0
-		data := clientObj.clientAPIObj.GetMembership()
+		data := c.clientAPIObj.GetMembership()
 		for _, node := range data {
 			if (node.Tags["Type"] == "LOOKOUT") && (node.Status == "alive") {
 				for uuid, value := range node.Tags {
@@ -596,42 +595,42 @@ func (clientObj *clientHandler) processNisd() {
 	}
 }
 
-func (clientObj *clientHandler) processGossip() ([]byte, error) {
-	fileData, err := clientObj.clientAPIObj.GetPMDBServerConfig()
+func (c *clientHandler) processGossip() ([]byte, error) {
+	fileData, err := c.clientAPIObj.GetPMDBServerConfig()
 	if err != nil {
 		log.Error("Error while getting pmdb server config data : ", err)
 		return nil, err
 	}
-	f, _ := os.OpenFile(clientObj.resultFile+".json", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	f, _ := os.OpenFile(c.resultFile+".json", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	f.WriteString(string(fileData))
 
 	return fileData, err
 }
 
-func (clientObj *clientHandler) processProxyStat() ([]byte, error) {
-	clientObj.clientAPIObj.ServerChooseAlgorithm = 2
-	clientObj.clientAPIObj.UseSpecificServerName = clientObj.requestKey
-	resBytes, err := clientObj.clientAPIObj.Request(nil, "/stat", false)
+func (c *clientHandler) processProxyStat() ([]byte, error) {
+	c.clientAPIObj.ServerChooseAlgorithm = 2
+	c.clientAPIObj.UseSpecificServerName = c.requestKey
+	resBytes, err := c.clientAPIObj.Request(nil, "/stat", false)
 	if err != nil {
 		log.Error("Error while sending request to proxy : ", err)
 	}
 	return resBytes, err
 }
 
-func (clientObj *clientHandler) processLookoutInfo() ([]byte, error) {
-	clientObj.clientAPIObj.ServerChooseAlgorithm = 2
-	clientObj.clientAPIObj.UseSpecificServerName = clientObj.lookoutID
+func (c *clientHandler) processLookoutInfo() ([]byte, error) {
+	c.clientAPIObj.ServerChooseAlgorithm = 2
+	c.clientAPIObj.UseSpecificServerName = c.lookoutID
 
 	var b bytes.Buffer
 	var r []byte
 
-	err := clientObj.prepareLOInfoRequest(&b)
+	err := c.prepareLOInfoRequest(&b)
 	if err != nil {
 		log.Error("Error while preparing lookout request")
 		return nil, err
 	}
 
-	r, err = clientObj.clientAPIObj.Request(b.Bytes(), "/v1/", false)
+	r, err = c.clientAPIObj.Request(b.Bytes(), "/v1/", false)
 	if err != nil {
 		log.Error("Error while sending request : ", err)
 		return nil, err
@@ -640,25 +639,25 @@ func (clientObj *clientHandler) processLookoutInfo() ([]byte, error) {
 	return r, err
 }
 
-func (clientObj *clientHandler) waitServiceInit(service string) error {
-	err := clientObj.clientAPIObj.TillReady(service, clientObj.serviceRetry)
+func (c *clientHandler) waitServiceInit(service string) error {
+	err := c.clientAPIObj.TillReady(service, c.serviceRetry)
 	if err != nil {
 		opStat := prepareOutput(-1, "setup", "", err.Error(), 0)
-		clientObj.writeData2Json(opStat)
+		c.writeData2Json(opStat)
 	}
 	return err
 }
 
-func (clientObj *clientHandler) initServiceDisHandler() {
-	clientObj.clientAPIObj = serviceDiscovery.ServiceDiscoveryHandler{
+func (c *clientHandler) initServiceDisHandler() {
+	c.clientAPIObj = serviceDiscovery.ServiceDiscoveryHandler{
 		HTTPRetry: 10,
 		SerfRetry: 5,
-		RaftUUID:  clientObj.raftUUID,
+		RaftUUID:  c.raftUUID,
 	}
 }
 
-func (clientObj *clientHandler) prepareLeaseHandlers(leaseReqHandler *leaseClientLib.LeaseClientReqHandler) error {
-	raft, err := uuid.FromString(clientObj.raftUUID)
+func (c *clientHandler) prepareLeaseHandlers(leaseReqHandler *leaseClientLib.LeaseClientReqHandler) error {
+	raft, err := uuid.FromString(c.raftUUID)
 	if err != nil {
 		log.Error("Error getting raft UUID ", err)
 		return err
@@ -666,7 +665,7 @@ func (clientObj *clientHandler) prepareLeaseHandlers(leaseReqHandler *leaseClien
 
 	leaseClientObj := leaseClientLib.LeaseClient{
 		RaftUUID:            raft,
-		ServiceDiscoveryObj: &clientObj.clientAPIObj,
+		ServiceDiscoveryObj: &c.clientAPIObj,
 	}
 
 	leaseReqHandler.LeaseClientObj = &leaseClientObj
@@ -688,21 +687,26 @@ func getLeaseOperationType(op string) int {
 }
 
 // Write to Json
-func (cli *clientHandler) writeData2Json(data interface{}) {
+func (c *clientHandler) writeData2Json(data interface{}) {
 	file, err := json.MarshalIndent(data, "", " ")
-	err = ioutil.WriteFile(cli.resultFile+".json", file, 0644)
 	if err != nil {
-		log.Error("Error in writing output to the file : ", err)
+		log.Error("Error marshaling data to JSON: ", err)
+		return
+	}
+
+	err = os.WriteFile(c.resultFile+".json", file, 0644)
+	if err != nil {
+		log.Error("Error writing file: ", err)
 	}
 }
 
-func (clientObj *clientHandler) performLeaseReq(resource, client string) ([]byte, error) {
-	clientObj.clientAPIObj.TillReady("PROXY", clientObj.serviceRetry)
+func (c *clientHandler) performLeaseReq(resource, client string) ([]byte, error) {
+	c.clientAPIObj.TillReady("PROXY", c.serviceRetry)
 
-	op := getLeaseOperationType(clientObj.operation)
+	op := getLeaseOperationType(c.operation)
 
 	var lrh leaseClientLib.LeaseClientReqHandler
-	err := clientObj.prepareLeaseHandlers(&lrh)
+	err := c.prepareLeaseHandlers(&lrh)
 	if err != nil {
 		log.Error("Error while preparing lease handlers : ", err)
 		return nil, err
@@ -772,21 +776,21 @@ func DumpVdevCfgsToJSON(vdevs []cpLib.VdevCfg, filePath string) error {
 }
 
 // ensureUserToken resolves the user token before any authenticated operation.
-func (clientObj *clientHandler) ensureUserToken() error {
-	if clientObj.userToken != "" {
+func (c *clientHandler) ensureUserToken() error {
+	if c.userToken != "" {
 		return nil
 	}
-	if clientObj.username == "" || clientObj.password == "" {
+	if c.username == "" || c.password == "" {
 		return fmt.Errorf("authentication required: provide -ut <token> or both -user and -pass")
 	}
 	authClient, _ := userClient.New(userClient.Config{
 		AppUUID:          uuid.NewV4().String(),
-		RaftUUID:         clientObj.raftUUID,
-		GossipConfigPath: clientObj.configPath,
+		RaftUUID:         c.raftUUID,
+		GossipConfigPath: c.configPath,
 		LogLevel:         "Error",
-		LogFile:          clientObj.logPath,
+		LogFile:          c.logPath,
 	})
-	resp, err := authClient.Login(clientObj.username, clientObj.password)
+	resp, err := authClient.Login(c.username, c.password)
 	if err != nil {
 		return fmt.Errorf("login failed: %v", err)
 	}
@@ -794,7 +798,7 @@ func (clientObj *clientHandler) ensureUserToken() error {
 		return fmt.Errorf("login failed: %s", resp.Error)
 	}
 	log.Infof("Login successful, using token for operation")
-	clientObj.userToken = resp.AccessToken
+	c.userToken = resp.AccessToken
 	return nil
 }
 
@@ -838,21 +842,23 @@ func regenerateNISDUUIDs(pdus []cpLib.PDU, c *ctlplcl.CliCFuncs) error {
 	return nil
 }
 
-func (clientObj *clientHandler) populateTopology(jsonPath string) error {
+func (c *clientHandler) populateTopology(jsonPath string) error {
 	if jsonPath == "" {
 		return fmt.Errorf("topology JSON file path is required (-v <path>)")
 	}
-	if err := clientObj.ensureUserToken(); err != nil {
+
+	if err := c.ensureUserToken(); err != nil {
 		return err
 	}
 
-	c := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), clientObj.raftUUID, clientObj.configPath, clientObj.logPath)
+	cliCFuncs := ctlplcl.InitCliCFuncs(uuid.NewV4().String(), c.raftUUID, c.configPath, c.logPath)
 	var pdus []cpLib.PDU
 
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		return fmt.Errorf("failed to read topology JSON: %v", err)
 	}
+
 	if err := json.Unmarshal(data, &pdus); err != nil {
 		var single cpLib.PDU
 		if json.Unmarshal(data, &single) == nil {
@@ -863,14 +869,14 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 	}
 	log.Info("Loaded topology JSON from ", jsonPath)
 
-	if clientObj.regenerateNISDUUIDs {
-		if err := regenerateNISDUUIDs(pdus, c); err != nil {
+	if c.regenerateNISDUUIDs {
+		if err := regenerateNISDUUIDs(pdus, cliCFuncs); err != nil {
 			return fmt.Errorf("failed to regenerate NISD UUIDs: %v", err)
 		}
 	} else {
 		port := 13000
 		for _, pdu := range pdus {
-			resp, err := c.PutPDU(&pdu)
+			resp, err := cliCFuncs.PutPDU(&pdu)
 			if err != nil || resp == nil || !resp.Success {
 				log.Errorf("Failed to insert PDU %s: %v", pdu.ID, err)
 				continue
@@ -878,7 +884,7 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 			log.Infof("Inserted PDU %s", pdu.Name)
 
 			for _, rack := range pdu.Racks {
-				resp, err := c.PutRack(&rack)
+				resp, err := cliCFuncs.PutRack(&rack)
 				if err != nil || resp == nil || !resp.Success {
 					log.Errorf("Failed to insert Rack %s: %v", rack.ID, err)
 					continue
@@ -886,7 +892,7 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 				log.Infof("Inserted Rack %s, under PDU %s", rack.Name, pdu.Name)
 
 				for _, hv := range rack.Hypervisors {
-					resp, err := c.PutHypervisor(&hv)
+					resp, err := cliCFuncs.PutHypervisor(&hv)
 					if err != nil || resp == nil || !resp.Success {
 						log.Errorf("Failed to insert Hypervisor %s: %v", hv.ID, err)
 						continue
@@ -894,7 +900,7 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 					log.Infof("Inserted Hypervisor %s, under Rack %s", hv.Name, rack.Name)
 
 					for _, dev := range hv.Dev {
-						resp, err := c.PutDevice(&dev)
+						resp, err := cliCFuncs.PutDevice(&dev)
 						if err != nil || resp == nil || !resp.Success {
 							log.Errorf("Failed to insert Device %s: %v", dev.ID, err)
 							continue
@@ -915,7 +921,7 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 								NetInfoCnt: 2,
 							}
 
-							resp, err := c.PutNisd(&nisd)
+							resp, err := cliCFuncs.PutNisd(&nisd)
 							if err != nil || resp == nil || !resp.Success {
 								log.Errorf("Failed to insert NISD %s (port %d): %v", nisd.ID, port, err)
 							} else {
@@ -928,6 +934,7 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 			}
 		}
 	}
+
 	log.Info("Topology population completed successfully")
 
 	const topoOutputFile = "topology-output.json"
@@ -935,10 +942,13 @@ func (clientObj *clientHandler) populateTopology(jsonPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal topology output: %v", err)
 	}
+
 	log.Info("Topology JSON:\n", string(out))
+
 	if err := os.WriteFile(topoOutputFile, out, 0644); err != nil {
 		return fmt.Errorf("failed to write topology output to %s: %v", topoOutputFile, err)
 	}
+
 	log.Info("Topology JSON written to ", topoOutputFile)
 	return nil
 }
@@ -1018,7 +1028,6 @@ func main() {
 		break
 
 	case "Gossip":
-		passNext = true
 		rdata = nil
 		break
 

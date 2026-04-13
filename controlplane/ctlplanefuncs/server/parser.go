@@ -4,8 +4,9 @@ import (
 	"strconv"
 	"strings"
 
-	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
+
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
 
 const ( // Key Prefixes
@@ -32,7 +33,7 @@ type ParseEntity interface {
 func ParseEntitiesRR[T Entity](readResult []map[string][]byte, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
-	for i, _ := range readResult {
+	for i := range readResult {
 		for k, v := range readResult[i] {
 			parts := strings.Split(strings.Trim(k, "/"), "/")
 			if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
@@ -163,6 +164,7 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 
 func (hvParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Hypervisor) }
 
+/*
 // Device parser
 type deviceParser struct{}
 
@@ -194,7 +196,7 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
-
+*/
 // nisd parser
 type NisdParser struct{}
 

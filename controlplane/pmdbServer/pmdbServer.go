@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	defaultLogger "log"
 	"net"
 	"os"
@@ -21,12 +20,16 @@ import (
 	"strings"
 	"time"
 
+	uuid "github.com/satori/go.uuid"
+
+	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
-	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
-
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	userserver "github.com/00pauln00/niova-mdsvc/controlplane/user/server"
+
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
 	leaseServerLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicelease/server"
@@ -37,9 +40,6 @@ import (
 	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
-
-	log "github.com/00pauln00/niova-lookout/pkg/xlog"
-	uuid "github.com/satori/go.uuid"
 )
 
 /*
@@ -217,7 +217,7 @@ func main() {
 	}
 
 	nso.leaseObj = leaseServerLib.LeaseServerObject{}
-	// Initalise leaseObj
+	// Initialize leaseObj
 	nso.leaseObj.InitLeaseObject(nso.pso)
 	// Separate column families for application requests and lease
 	nso.pso.ColumnFamilies = []string{cpLib.PmdbColumnFamily, nso.leaseObj.LeaseColmFam}
@@ -343,14 +343,9 @@ func (handler *pmdbServerHandler) parseArgs() (*NiovaKVServer, error) {
 
 	handler.raftUUID, _ = uuid.FromString(tempRaftUUID)
 	handler.peerUUID, _ = uuid.FromString(tempPeerUUID)
-	nso := &NiovaKVServer{}
-	nso.raftUuid = handler.raftUUID
-	nso.peerUuid = handler.peerUUID
-
-	if nso == nil {
-		err = errors.New("Not able to parse the arguments")
-	} else {
-		err = nil
+	nso := &NiovaKVServer{
+		raftUuid: handler.raftUUID,
+		peerUuid: handler.peerUUID,
 	}
 
 	return nso, err
@@ -400,7 +395,7 @@ func extractPMDBServerConfigfromFile(path string) (*PumiceDBCommon.PeerConfigDat
 
 func (handler *pmdbServerHandler) readPMDBServerConfig() error {
 	folder := os.Getenv("NIOVA_LOCAL_CTL_SVC_DIR")
-	files, err := ioutil.ReadDir(folder + "/")
+	files, err := os.ReadDir(folder + "/")
 	if err != nil {
 		return err
 	}
@@ -503,17 +498,17 @@ func (handler *pmdbServerHandler) startSerfAgent() error {
 	serfLog := "00"
 	switch serfLog {
 	case "ignore":
-		defaultLogger.SetOutput(ioutil.Discard)
+		defaultLogger.SetOutput(io.Discard)
 	default:
-		f, err := os.OpenFile("serfLog.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-		if err != nil {
+		f, openErr := os.OpenFile("serfLog.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if openErr != nil {
 			defaultLogger.SetOutput(os.Stderr)
 		} else {
 			defaultLogger.SetOutput(f)
 		}
 	}
 
-	//defaultLogger.SetOutput(ioutil.Discard)
+	//defaultLogger.SetOutput(io.Discard)
 	serfAgentHandler := serfAgent.SerfAgentHandler{
 		Name:              handler.peerUUID.String(),
 		AddrList:          handler.addrList,
@@ -621,7 +616,6 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		readErr = err
 
 	} else if reqStruct.Operation == requestResponseLib.KV_RANGE_READ {
-		reqStruct.Prefix = reqStruct.Prefix
 		log.Trace("sequence number - ", reqStruct.SeqNum)
 		readResult, err := readArgs.Store.RangeRead(storageiface.RangeReadArgs{
 			Selector:   cpLib.PmdbColumnFamily,
@@ -657,7 +651,7 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		replySize, copyErr = PumiceDBServer.PmdbCopyDataToBuffer(resultResponse,
 			readArgs.ReplyBuf)
 		if copyErr != nil {
-			log.Error("Failed to Copy result in the buffer: %s", copyErr)
+			log.Errorf("Failed to Copy result in the buffer: %s", copyErr)
 			return -1
 		}
 	} else {

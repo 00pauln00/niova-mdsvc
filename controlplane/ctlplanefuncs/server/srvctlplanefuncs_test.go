@@ -9,9 +9,11 @@ import (
 	"time"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	authz "github.com/00pauln00/niova-mdsvc/controlplane/authorizer"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
@@ -59,17 +61,11 @@ func (s *testDataStore) RangeRead(args storageiface.RangeReadArgs) (*storageifac
 }
 
 const (
-	testVdevUUID = "28061cd0-1e01-11f1-a069-032bff036f03"
-	testNisdUUID = "59ee0460-1e01-11f1-9566-83949aa998ea"
-
 	testPDU  = "acdef556-1ea3-11f1-848b-9f6e716afc46"
 	testRack = "b1b89a50-1ea3-11f1-b397-d76191bdb3d2"
 	testHV   = "b726b99a-1ea3-11f1-95da-436ff27bf77e"
 	testDev  = "nvme-001"
 	testPT   = "nvme-001-01"
-
-	testNisdAvailableSize = 1000000000
-	testVdevSize          = 1073741824
 )
 
 // TestMain initializes the test environment
@@ -95,8 +91,7 @@ const (
 )
 
 var (
-	testSecret  = []byte(ctlplfl.CP_SECRET)
-	wrongSecret = []byte("wrong-secret")
+	testSecret = []byte(ctlplfl.CP_SECRET)
 )
 
 // Helper function to create valid JWT token
@@ -112,6 +107,7 @@ func createTestToken(userID, role string, secret []byte) (string, error) {
 	return tc.CreateToken(claims)
 }
 
+/*
 // Helper function to create expired token
 func createExpiredToken(userID, role string, secret []byte) (string, error) {
 	tc := &auth.Token{
@@ -124,7 +120,9 @@ func createExpiredToken(userID, role string, secret []byte) (string, error) {
 	}
 	return tc.CreateToken(claims)
 }
+*/
 
+/*
 // Helper function to verify ownership key exists in datastore
 func verifyOwnershipKey(ds storageiface.DataStore, userID, vdevID string) bool {
 	ownershipKey := fmt.Sprintf("/u/%s/v/%s", userID, vdevID)
@@ -134,6 +132,7 @@ func verifyOwnershipKey(ds storageiface.DataStore, userID, vdevID string) bool {
 	}
 	return string(result) == "1"
 }
+*/
 
 // Helper function to setup vdev data in memstore
 func setupVdevData(ds storageiface.DataStore, vdevID string) error {

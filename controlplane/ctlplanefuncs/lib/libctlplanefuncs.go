@@ -5,19 +5,21 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"hash/fnv"
+	"github.com/google/uuid"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
+
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
-	"github.com/google/uuid"
 )
 
 const (
@@ -134,7 +136,7 @@ type SnapResponseXML struct {
 }
 
 type ChunkXML struct {
-	Idx uint32 `xml:Idx,attr`
+	Idx uint32 `xml:"Idx,attr"`
 	Seq uint64 `xml:"Seq"`
 }
 
@@ -402,7 +404,7 @@ func RegisterGOBStructs() {
 
 func (req *GetReq) ValidateRequest() error {
 	if req.ID == "" {
-		return fmt.Errorf("Invalid Request: Recieved empty ID")
+		return fmt.Errorf("Invalid Request: Received empty ID")
 	}
 	return nil
 

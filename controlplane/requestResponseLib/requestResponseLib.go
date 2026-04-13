@@ -2,8 +2,8 @@ package requestResponseLib
 
 const (
 	KV_WRITE      int = 0
-	KV_READ           = 1
-	KV_RANGE_READ     = 2
+	KV_READ       int = 1
+	KV_RANGE_READ int = 2
 )
 
 type KVRequest struct {

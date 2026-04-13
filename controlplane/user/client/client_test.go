@@ -4,11 +4,12 @@ import (
 	"os"
 	"testing"
 
-	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 )
 
 // Shared admin secret used across all tests.
