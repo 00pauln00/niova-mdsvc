@@ -601,7 +601,6 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 
 	var readErr error
 	var resultResponse requestResponseLib.KVResponse
-
 	//var resultReq requestResponseLib.KVResponse
 	//Pass the work as key to PmdbReadKV and get the value from pumicedb
 	if reqStruct.Operation == requestResponseLib.KV_READ {
