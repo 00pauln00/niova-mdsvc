@@ -20,15 +20,16 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
-
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+	uuid "github.com/satori/go.uuid"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	srvctlplanefuncs "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server"
+	cphandler "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server/handler"
+	"github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server/repository"
+	"github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/server/service"
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
-	userserver "github.com/00pauln00/niova-mdsvc/controlplane/user/server"
 
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	PumiceDBFunc "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/server"
@@ -171,40 +172,40 @@ func main() {
 	srvctlplanefuncs.SetClmFamily(cpLib.PmdbColumnFamily)
 	cpAPI := PumiceDBFunc.NewFuncServer()
 
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, srvctlplanefuncs.WPNisdCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, srvctlplanefuncs.WPDeviceInfo)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, srvctlplanefuncs.WPPDUCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, srvctlplanefuncs.WPRackCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, srvctlplanefuncs.WPHyperVisorCfg)
-	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, srvctlplanefuncs.WritePrepCreateSnap)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, srvctlplanefuncs.WPCreatePartition)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD, cphandler.WPNisdCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_DEVICE, cphandler.WPDeviceInfo)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PDU, cphandler.WPPDUCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_RACK, cphandler.WPRackCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_HYPERVISOR, cphandler.WPHyperVisorCfg)
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_SNAP, cphandler.WPCreateSnap)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_PARTITION, cphandler.WPCreatePartition)
 
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, srvctlplanefuncs.ReadAllNisdConfigs)
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD, srvctlplanefuncs.ReadNisdConfig)
-	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, srvctlplanefuncs.RdDeviceInfo)
-	cpAPI.RegisterReadFunc(cpLib.GET_PDU, srvctlplanefuncs.ReadPDUCfg)
-	cpAPI.RegisterReadFunc(cpLib.GET_RACK, srvctlplanefuncs.ReadRackCfg)
-	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, srvctlplanefuncs.ReadHyperVisorCfg)
-	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, srvctlplanefuncs.ReadSnapByName)
-	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, srvctlplanefuncs.ReadSnapForVdev)
-	cpAPI.RegisterReadFunc(cpLib.GET_PARTITION, srvctlplanefuncs.ReadPartition)
-	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_CHUNK_INFO, srvctlplanefuncs.ReadVdevsInfoWithChunkMapping)
-	cpAPI.RegisterReadFunc(cpLib.GET_NISD_ARGS, srvctlplanefuncs.RdNisdArgs)
-	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, srvctlplanefuncs.WPNisdArgs)
-	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, srvctlplanefuncs.ReadVdevInfo)
-	cpAPI.RegisterReadFunc(cpLib.GET_ALL_VDEV, srvctlplanefuncs.ReadAllVdevInfo)
-	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, srvctlplanefuncs.ReadChunkNisd)
-	cpAPI.RegisterApplyFunc(cpLib.DELETE_VDEV, srvctlplanefuncs.APDeleteVdev)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_LIST, cphandler.ReadAllNisdConfigs)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD, cphandler.ReadNisdConfig)
+	cpAPI.RegisterReadFunc(cpLib.GET_DEVICE, cphandler.RdDeviceInfo)
+	cpAPI.RegisterReadFunc(cpLib.GET_PDU, cphandler.ReadPDUCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_RACK, cphandler.ReadRackCfg)
+	cpAPI.RegisterReadFunc(cpLib.GET_HYPERVISOR, cphandler.ReadHyperVisorCfg)
+	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_NAME, cphandler.ReadSnapByName)
+	cpAPI.RegisterReadFunc(cpLib.READ_SNAP_VDEV, cphandler.ReadSnapForVdev)
+	cpAPI.RegisterReadFunc(cpLib.GET_PARTITION, cphandler.ReadPartition)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_CHUNK_INFO, cphandler.ReadVdevsInfoWithChunkMapping)
+	cpAPI.RegisterReadFunc(cpLib.GET_NISD_ARGS, cphandler.RdNisdArgs)
+	cpAPI.RegisterWritePrepFunc(cpLib.PUT_NISD_ARGS, cphandler.WPNisdArgs)
+	cpAPI.RegisterReadFunc(cpLib.GET_VDEV_INFO, cphandler.ReadVdevInfo)
+	cpAPI.RegisterReadFunc(cpLib.GET_ALL_VDEV, cphandler.ReadAllVdevInfo)
+	cpAPI.RegisterReadFunc(cpLib.GET_CHUNK_NISD, cphandler.ReadChunkNisd)
+	cpAPI.RegisterApplyFunc(cpLib.DELETE_VDEV, cphandler.APDeleteVdev)
 
-	cpAPI.RegisterWritePrepFunc(userlib.PutUserAPI, userserver.PutUser)
-	cpAPI.RegisterReadFunc(userlib.GetUserAPI, userserver.GetUser)
-	cpAPI.RegisterApplyFunc(userlib.AdminUserAPI, userserver.CreateAdminUser)
-	cpAPI.RegisterReadFunc(userlib.LoginAPI, userserver.Login)
+	cpAPI.RegisterWritePrepFunc(userlib.PutUserAPI, cphandler.WPPutUser)
+	cpAPI.RegisterReadFunc(userlib.GetUserAPI, cphandler.RdGetUser)
+	cpAPI.RegisterApplyFunc(userlib.AdminUserAPI, cphandler.APCreateAdminUser)
+	cpAPI.RegisterReadFunc(userlib.LoginAPI, cphandler.RdLogin)
 
-	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.WPCreateVdev)
-	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, srvctlplanefuncs.APCreateVdev)
+	cpAPI.RegisterWritePrepFunc(cpLib.CREATE_VDEV, cphandler.WPCreateVdev)
+	cpAPI.RegisterApplyFunc(cpLib.CREATE_VDEV, cphandler.APCreateVdev)
 	cpAPI.RegisterApplyFunc("*", srvctlplanefuncs.ApplyFunc)
-	cpAPI.RegisterApplyFunc(cpLib.PUT_NISD, srvctlplanefuncs.ApplyNisd)
+	cpAPI.RegisterApplyFunc(cpLib.PUT_NISD, cphandler.ApplyNisd)
 
 	nso.pso = &PumiceDBServer.PmdbServerObject{
 		RaftUuid:       nso.raftUuid.String(),
@@ -239,6 +240,32 @@ func main() {
 	} else {
 		log.Warn("Authentication and authorization: DISABLED - all requests will be granted admin access")
 	}
+
+	cpServer, err := srvctlplanefuncs.NewControlPlaneServer(&pumicestore.PumiceStore{}, cpLib.PmdbColumnFamily)
+	if err != nil {
+		log.Fatal("failed to initialize ControlPlaneServer:", err)
+	}
+
+	repo := repository.NewStorageRepository(cpServer.ColumnFamily)
+	baseService := service.NewBaseService(srvctlplanefuncs.GetAuthorizer(), &srvctlplanefuncs.HR)
+	pduService := service.NewPDUService(repo, baseService)
+	rackService := service.NewRackService(repo, baseService)
+	hypervisorService := service.NewHypervisorService(repo, baseService)
+	deviceService := service.NewDeviceService(repo, baseService)
+	nisdService := service.NewNisdService(repo, baseService)
+	vdevService := service.NewVdevService(repo, baseService)
+	snapService := service.NewSnapService(repo, baseService)
+	userService := service.NewUserService()
+
+	cpServer.PDUService = pduService
+	cpServer.RackService = rackService
+	cpServer.HypervisorService = hypervisorService
+	cpServer.DeviceService = deviceService
+	cpServer.NisdService = nisdService
+	cpServer.VdevService = vdevService
+	cpServer.SnapService = snapService
+	cpServer.UserService = userService
+	srvctlplanefuncs.Server = cpServer
 
 	serverHandler.checkPMDBLiveness()
 	serverHandler.exportTags()

@@ -52,7 +52,6 @@ const (
 	GET_NISD_ARGS  = "GetNisdArgs"
 	CHUNK_SIZE     = 8 * 1024 * 1024 * 1024
 	MAX_REPLY_SIZE = 4 * 1024 * 1024
-	NAME           = "name"
 
 	NISD_SECRET = "Nisd-secret"
 	CP_SECRET   = "ControlPlane-secret"

@@ -20,12 +20,12 @@ func PopulateEntities[T Entity](entity T, infra PopulateInfra, entityKey string)
 	return commitChgs
 }
 
-type rackPopulator struct{}
+type RackPopulator struct{}
 
-func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (RackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	rack := entity.(*cpLib.Rack)
-	key := getConfKey(entityKey, rack.ID)
-	for _, field := range []string{NAME, LOCATION, SPEC, pduKey} {
+	key := GetConfKey(entityKey, rack.ID)
+	for _, field := range []string{NAME, LOCATION, SPEC, PduKey} {
 		var value string
 		switch field {
 		case NAME:
@@ -34,7 +34,7 @@ func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 			value = rack.Location
 		case SPEC:
 			value = rack.Specification
-		case pduKey:
+		case PduKey:
 			value = rack.PDUID
 
 		default:
@@ -47,17 +47,17 @@ func (rackPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	}
 }
 
-type partitionPopulator struct{}
+type PartitionPopulator struct{}
 
-func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (PartitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	pt := entity.(*cpLib.DevicePartition)
-	key := getConfKey(entityKey, pt.PartitionID)
-	for _, field := range []string{PARTITION_PATH, nisdKey, DEVICE_ID, SIZE} {
+	key := GetConfKey(entityKey, pt.PartitionID)
+	for _, field := range []string{PARTITION_PATH, NisdKey, DEVICE_ID, SIZE} {
 		var value string
 		switch field {
 		case PARTITION_PATH:
 			value = pt.PartitionPath
-		case nisdKey:
+		case NisdKey:
 			value = pt.NISDUUID
 		case DEVICE_ID:
 			value = pt.DevID
@@ -73,23 +73,23 @@ func (partitionPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitCh
 	}
 }
 
-type nisdPopulator struct{}
+type NisdPopulator struct{}
 
-func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (NisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	nisd := entity.(*cpLib.Nisd)
-	key := getConfKey(entityKey, nisd.ID)
+	key := GetConfKey(entityKey, nisd.ID)
 
 	// Schema: n_cfg/{nisdID}/{field} : {value}
-	for _, field := range []string{DEVICE_ID, PEER_PORT, hvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, pduKey, rackKey, ptKey, NETWORK_INFO_CNT} {
+	for _, field := range []string{DEVICE_ID, PEER_PORT, HvKey, FAILURE_DOMAIN, TOTAL_SPACE, AVAIL_SPACE, SOCKET_PATH, PduKey, RackKey, PtKey, NETWORK_INFO_CNT} {
 		var value string
 		switch field {
 		case PEER_PORT:
 			value = strconv.Itoa(int(nisd.PeerPort))
-		case hvKey:
+		case HvKey:
 			value = nisd.FailureDomain[cpLib.HV_IDX]
-		case pduKey:
+		case PduKey:
 			value = nisd.FailureDomain[cpLib.PDU_IDX]
-		case rackKey:
+		case RackKey:
 			value = nisd.FailureDomain[cpLib.RACK_IDX]
 		case TOTAL_SPACE:
 			value = strconv.Itoa(int(nisd.TotalSize))
@@ -99,7 +99,7 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 			value = nisd.FailureDomain[cpLib.DEVICE_IDX]
 		case SOCKET_PATH:
 			value = nisd.SocketPath
-		case ptKey:
+		case PtKey:
 			value = nisd.FailureDomain[cpLib.PARTITION_IDX]
 		case NETWORK_INFO_CNT:
 			value = strconv.Itoa(nisd.NetInfoCnt)
@@ -123,24 +123,24 @@ func (nisdPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, en
 	}
 }
 
-type devicePopulator struct{}
+type DevicePopulator struct{}
 
-func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (DevicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	dev := entity.(*cpLib.Device)
 
-	k := getConfKey(entityKey, dev.ID)
+	k := GetConfKey(entityKey, dev.ID)
 	*commitChgs = append(*commitChgs, funclib.CommitChg{
 		Key: []byte(fmt.Sprintf("%s", k)),
 	})
 	//Schema : /d/{devID}/{field} : {value}
-	for _, field := range []string{NAME, DEVICE_PATH, STATE, SIZE, SERIAL_NUM, hvKey, FAILURE_DOMAIN} {
+	for _, field := range []string{NAME, DEVICE_PATH, STATE, SIZE, SERIAL_NUM, HvKey, FAILURE_DOMAIN} {
 		var value string
 		switch field {
 		case SERIAL_NUM:
 			value = dev.SerialNumber
 		case STATE:
 			value = strconv.Itoa(int(dev.State))
-		case hvKey:
+		case HvKey:
 			value = dev.HypervisorID
 		case FAILURE_DOMAIN:
 			value = dev.FailureDomain
@@ -168,25 +168,25 @@ func (devicePopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, 
 	// Add parent to child relationship
 	if dev.HypervisorID != "" {
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", hvKey, dev.HypervisorID, deviceCfgKey)),
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", HvKey, dev.HypervisorID, DeviceCfgKey)),
 			Value: []byte(dev.ID),
 		})
 	}
 
 	if dev.FailureDomain != "" {
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, deviceCfgKey)),
+			Key:   []byte(fmt.Sprintf("%s/%s/%s", FAILURE_DOMAIN, dev.FailureDomain, DeviceCfgKey)),
 			Value: []byte(dev.ID),
 		})
 	}
 }
 
-type hvPopulator struct{}
+type HvPopulator struct{}
 
-func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (HvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	hv := entity.(*cpLib.Hypervisor)
-	key := getConfKey(entityKey, hv.ID)
-	for _, field := range []string{rackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT, ENABLE_RDMA} {
+	key := GetConfKey(entityKey, hv.ID)
+	for _, field := range []string{RackKey, NAME, IP_ADDR, PORT_RANGE, SSH_PORT, ENABLE_RDMA} {
 		var value string
 		switch field {
 		case NAME:
@@ -195,7 +195,7 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 			value = hv.PortRange
 		case SSH_PORT:
 			value = hv.SSHPort
-		case rackKey:
+		case RackKey:
 			value = hv.RackID
 		case ENABLE_RDMA:
 			value = strconv.FormatBool(hv.RDMAEnabled)
@@ -216,14 +216,14 @@ func (hvPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, enti
 	}
 }
 
-type pduPopulator struct{}
+type PduPopulator struct{}
 
-func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (PduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	pdu := entity.(*cpLib.PDU)
-	key := getConfKey(entityKey, pdu.ID)
+	key := GetConfKey(entityKey, pdu.ID)
 	*commitChgs = append(*commitChgs,
 		funclib.CommitChg{
-			Key: []byte(getConfKey(pduKey, pdu.ID)),
+			Key: []byte(GetConfKey(PduKey, pdu.ID)),
 		})
 	for _, field := range []string{NAME, LOCATION, SPEC, POWER_CAP} {
 		var value string
@@ -247,9 +247,9 @@ func (pduPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, ent
 	}
 }
 
-type nisdArgsPopulator struct{}
+type NisdArgsPopulator struct{}
 
-func (nisdArgsPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
+func (NisdArgsPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg, entityKey string) {
 	args := entity.(*cpLib.NisdArgs)
 	for _, field := range []string{DEFRAG, MBCCnt, MergeHCnt, MCIReadCache, S3, DSYNC, ALLOW_DEFRAG_MCIB_CACHE} {
 		var value string
@@ -273,7 +273,7 @@ func (nisdArgsPopulator) Populate(entity Entity, commitChgs *[]funclib.CommitChg
 			continue
 		}
 		*commitChgs = append(*commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s", argsKey, field)),
+			Key:   []byte(fmt.Sprintf("%s/%s", ArgsKey, field)),
 			Value: []byte(value),
 		})
 	}
