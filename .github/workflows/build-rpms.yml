@@ -45,7 +45,7 @@ jobs:
 
       - name: Build RPMs
         run: |
-          bash docker-build/build.sh --build-deps
+          bash docker-build/build.sh
         env:
           VERSION: ${{ env.VERSION }}
 
