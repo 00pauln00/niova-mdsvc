@@ -293,9 +293,7 @@ func (vdev *VdevCfg) Init() error {
 		log.Error("failed to generate uuid:", err)
 		return err
 	}
-	if vdev.ID == "" {
-		vdev.ID = id.String()
-	}
+	vdev.ID = id.String()
 	vdev.NumChunks = uint32(Count8GBChunks(vdev.Size))
 	vdev.NumDataBlk = 0
 	vdev.NumParityBlk = 0

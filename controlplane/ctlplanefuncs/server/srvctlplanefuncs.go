@@ -872,10 +872,6 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Errorf("APCreateVdev: %v", err)
 		return ctlplfl.InternalError(err)
 	}
-	resp := &ctlplfl.ResponseXML{
-		Name: req.Vdev.Name,
-		ID:   req.Vdev.ID,
-	}	 
 	// Check for duplicate vdev name before allocating any resources.
 	if req.Vdev.Name != "" {
 		reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
@@ -901,11 +897,11 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Debugf("APCreateVdev: forwarding write-prep error response: %s", cpResp.Error.Message)
 		return pmCmn.Encoder(pmCmn.GOB, cpResp)
 	}
-	if resp, ok4 := intrm.Response.(ctlplfl.ResponseXML); ok4 && resp.Error != "" {
+	resp, ok4 := intrm.Response.(ctlplfl.ResponseXML)
+	if ok4 && resp.Error != "" {
 		log.Errorf("APCreateVdev: invalid response type in decoded intermediate data")
 		return ctlplfl.FuncError(fmt.Errorf("invalid response type"))
 	}
-
 	req.Vdev.ID = resp.ID
 	req.Vdev.NumChunks = uint32(ctlplfl.Count8GBChunks(req.Vdev.Size))
 	if err := AllocNISDs(&req, allocMap, &intrm); err != nil {
