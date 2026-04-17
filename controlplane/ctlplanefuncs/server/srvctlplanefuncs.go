@@ -898,7 +898,7 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		return pmCmn.Encoder(pmCmn.GOB, cpResp)
 	}
 	resp, ok4 := intrm.Response.(ctlplfl.ResponseXML)
-	if ok4 && resp.Error != "" {
+	if !ok4 && resp.Error != "" {
 		log.Errorf("APCreateVdev: invalid response type in decoded intermediate data")
 		return ctlplfl.FuncError(fmt.Errorf("invalid response type"))
 	}
