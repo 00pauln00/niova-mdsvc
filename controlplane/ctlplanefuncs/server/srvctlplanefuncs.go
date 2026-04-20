@@ -1497,14 +1497,13 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	// Validate Vdev exists
 	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
 
+	rrArgs := storageiface.RangeReadArgs{
+		Key:      vdevKey,
+		Prefix:   vdevKey,
+		BufSize:  cbArgs.ReplySize,
+		Selector: colmfamily,
+	}
 	for {
-		rrArgs := storageiface.RangeReadArgs{
-			Selector: colmfamily,
-			Key:      vdevKey,
-			BufSize:  cbArgs.ReplySize,
-			Prefix:   vdevKey,
-		}
-
 		rrOp, err := cbArgs.Store.RangeRead(rrArgs)
 		if err != nil {
 			log.Error("Range read failure ", err)
@@ -1560,8 +1559,8 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		if rrOp.LastKey == "" {
 			break
 		}
+		// Advance to the next page
 		rrArgs.Key = rrOp.LastKey
-		rrArgs.Prefix = vdevKey
 		rrArgs.SeqNum = rrOp.SeqNum
 	}
 	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.ID)
