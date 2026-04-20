@@ -4,17 +4,6 @@ import (
 	//"bufio"
 	"bufio"
 	"bytes"
-	"net/http"
-
-	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
-
-	httpServer "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpserver"
-
-	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
-	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
-	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
-	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
-
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
@@ -22,8 +11,9 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -32,15 +22,25 @@ import (
 	"syscall"
 	"time"
 
+	defaultLogger "log"
+
+	uuid "github.com/satori/go.uuid"
+
 	pmdbClient "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
 	PumiceDBCommon "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
+	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
+	httpServer "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpserver"
+	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 
-	defaultLogger "log"
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
-	uuid "github.com/satori/go.uuid"
 )
+
+var limiter chan int
 
 // Structure for proxy
 type proxyHandler struct {
@@ -62,9 +62,9 @@ type proxyHandler struct {
 	pmdbClientObj           *pmdbClient.PmdbClientObj
 
 	//Serf agent
-	serfAgentName     string
-	serfAgentPort     uint16
-	serfAgentRPCPort  uint16
+	serfAgentName string
+	// serfAgentPort uint16
+	// serfAgentRPCPort  uint16
 	serfPeersFilePath string
 	serfLogger        string
 	serfAgentObj      serfAgent.SerfAgentHandler
@@ -237,7 +237,7 @@ func (handler *proxyHandler) startSerfAgent() error {
 	//Setup serf logger if passed in cmd line args
 	switch handler.serfLogger {
 	case "ignore":
-		defaultLogger.SetOutput(ioutil.Discard)
+		defaultLogger.SetOutput(io.Discard)
 	default:
 		f, err := os.OpenFile(handler.serfLogger, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
@@ -282,7 +282,7 @@ Func      : validateCheckSum
 Arguments : map[string]string, string
 Return(s) : error
 
-Description : A helper func to validate recieved checksum with checksum of the data(map[string]string).
+Description : A helper func to validate received checksum with checksum of the data(map[string]string).
 */
 func validateCheckSum(data map[string]string, checksum string) error {
 	keys := make([]string, 0, len(data))
@@ -508,6 +508,28 @@ func encode(data interface{}) []byte {
 }
 
 /*
+Func      : writeErrorCPResp
+Arguments : pumicecommon.Format, *[]byte, error
+Return(s) : error
+
+Description : Helper to format and serialize internal proxy errors into CPResp
+*/
+func writeErrorCPResp(encType PumiceDBCommon.Format, response *[]byte, origErr error) error {
+	errorCpResp := &cpLib.CPResp{
+		Error: &cpLib.CPError{
+			Message: origErr.Error(),
+			Code:    cpLib.ErrInternal,
+		},
+	}
+	errBytes, encErr := PumiceDBCommon.Encoder(encType, errorCpResp)
+	if encErr != nil {
+		return encErr
+	}
+	*response = errBytes
+	return nil
+}
+
+/*
 Structure : proxyHandler
 Method    : ReadHandlerCB
 Arguments : string,
@@ -516,19 +538,26 @@ Return(s) : error
 Description : Call back for PMDB read func requests to HTTP server.
 */
 func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response *[]byte, reader *http.Request) error {
+	limiter <- 1
+	defer func() {
+		<-limiter
+	}()
 	log.Info("ReadFuncHandlerCB called with name: ", name, string(body))
 	encType := GetEncodingType(reader)
-	var res any = nil
+	var cpReq *cpLib.CPReq
 	var err error
 	if len(body) > 0 {
-		res, err = DecodeRequest(encType, name, body)
+		cpReq, err = DecodeCPReq(encType, name, body)
 		if err != nil {
-			log.Error("RHCB:failed to decode request: ", err)
-			return err
+			log.Error("RHCB:failed to decode CPReq: ", err)
+			return writeErrorCPResp(encType, response, err)
 		}
+	} else {
+		log.Error("RHCB:empty body")
+		return writeErrorCPResp(encType, response, fmt.Errorf("empty body"))
 	}
 
-	r := &funclib.FuncReq{Name: name, Args: res}
+	r := &funclib.FuncReq{Name: name, Args: *cpReq}
 	reqArgs := &pmdbClient.PmdbReq{
 		Request:  encode(r),
 		ReqType:  PumiceDBCommon.FUNC_REQ,
@@ -538,12 +567,12 @@ func (handler *proxyHandler) GetFuncHandlerCB(name string, body []byte, response
 	err = handler.pmdbClientObj.Get(reqArgs)
 	if err != nil {
 		log.Error("Error in GetEncoded and Response: ", err)
-		return err
+		return writeErrorCPResp(encType, response, err)
 	}
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
 		log.Error("RHCB:failed to encode response: ", err)
-		return err
+		return writeErrorCPResp(encType, response, err)
 	}
 	return nil
 }
@@ -558,28 +587,21 @@ Description : Call back for PMDB write func requests to HTTP server.
 */
 func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int64,
 	body []byte, response *[]byte, reader *http.Request) error {
-
+	limiter <- 1
+	defer func() {
+		<-limiter
+	}()
 	log.Tracef("FuncHandlerCB called | name=%s rncui=%s wsn=%d bodySize=%d",
 		name, rncui, wsn, len(body))
 
 	// Detect encoding type used by the client (json/xml/etc)
 	encType := GetEncodingType(reader)
-
-	// Decode incoming request
-	res, err := DecodeRequest(encType, name, body)
+	cpReq, err := DecodeCPReq(encType, name, body)
 	if err != nil {
-		log.Error("WHCB: failed to decode request:", err)
-		return err
+		log.Error("WHCB:failed to decode CPReq: ", err)
+		return writeErrorCPResp(encType, response, err)
 	}
-
-	log.Tracef("Decoded request for %s: %+v", name, res)
-
-	// Build function request
-	r := &funclib.FuncReq{
-		Name: name,
-		Args: res,
-	}
-
+	r := &funclib.FuncReq{Name: name, Args: *cpReq}
 	reqArgs := &pmdbClient.PmdbReq{
 		Rncui:       rncui,
 		Request:     encode(r),
@@ -597,21 +619,19 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 		log.Error("Error in WriteEncoded and Response:", err)
 
 		// Encode structured error so client can decode it
-		errBytes := EncodeErrorResponse(name, err.Error())
-		if errBytes == nil {
-			return err
+		encErr := writeErrorCPResp(encType, response, err)
+		if encErr != nil {
+			return encErr
 		}
 
-		log.Tracef("Returning encoded error response | size=%d", len(errBytes))
-
-		*response = errBytes
+		log.Tracef("Returning encoded error response | size=%d", len(*response))
 		return nil
 	}
 
 	// Validate reply buffer before decoding
 	if reqArgs.Reply == nil {
 		log.Error("pmdb returned nil reply for function:", name)
-		return fmt.Errorf("nil reply received from pmdb")
+		return writeErrorCPResp(encType, response, fmt.Errorf("nil reply received from pmdb"))
 	}
 
 	log.Tracef("Reply received from pmdb | size=%d bytes", len(*reqArgs.Reply))
@@ -620,7 +640,7 @@ func (handler *proxyHandler) PutFuncHandlerCB(name string, rncui string, wsn int
 	err = EncodeResponse(encType, name, reqArgs.Reply)
 	if err != nil {
 		log.Error("WHCB: failed to encode response:", err)
-		return err
+		return writeErrorCPResp(encType, response, err)
 	}
 
 	log.Tracef("Response encoded successfully | finalSize=%d", len(*reqArgs.Reply))
@@ -706,7 +726,7 @@ func (handler *proxyHandler) killSignalHandler() {
 	go func() {
 		<-sigs
 		json_data, _ := json.MarshalIndent(handler.httpServerObj.Stat, "", " ")
-		_ = ioutil.WriteFile((handler.clientUUID.String())+".json", json_data, 0644)
+		_ = os.WriteFile((handler.clientUUID.String())+".json", json_data, 0644)
 		PumiceDBCommon.EmitCoverData(handler.coverageOutDir)
 		log.Info("(Proxy) Received a kill signal")
 		os.Exit(1)
@@ -743,6 +763,7 @@ func main() {
 
 	var err error
 	var i int
+	limiter = make(chan int, 10)
 	cpLib.RegisterGOBStructs()
 	proxyObj := proxyHandler{}
 	//Get commandline paraameters.

@@ -1,0 +1,87 @@
+[
+  {
+    "ID": "bafd2752-f661-44f0-88e2-7b01750ee59e",
+    "Name": "PDU-1",
+    "Location": "DataCenter-A",
+    "PowerCapacity": "10kW",
+    "Spec": "Standard-PDU-v1",
+    "Racks": [
+      {
+        "ID": "7d4dea1f-bb1f-4a1f-b6b8-838c29f6d4e0",
+        "Name": "rack-1",
+        "PDUID": "bafd2752-f661-44f0-88e2-7b01750ee59e",
+        "Location": "Row-1",
+        "Specification": "42U",
+        "Hypervisors": [
+          {
+            "ID": "48d2dd50-0b78-4c1d-96f5-25c48a37cd5e",
+            "RackID": "7d4dea1f-bb1f-4a1f-b6b8-838c29f6d4e0",
+            "Name": "hv-r1-1",
+            "IPAddrs": ["10.0.0.10", "10.10.0.10"],
+            "PortRange": "13000-15000",
+            "SSHPort": "22",
+            "RDMAEnabled": false,
+            "Dev": [
+              {
+                "ID": "1e7812fd-76fc-42a8-b9d1-2334175b81a6",
+                "Name": "dev-r1-hv1-1",
+                "DevicePath": "/dev/sda",
+                "SerialNumber": "SN-003",
+                "State": 2,
+                "Size": 107374182400,
+                "HyperVisorID": "48d2dd50-0b78-4c1d-96f5-25c48a37cd5e",
+                "partitions": [
+                  {
+                    "partition_id": "511d678a-d592-4dd3-adcc-64f87b8e9bc5",
+                    "partition_path": "/dev/sda1",
+                    "nisd_uuid": "6a731b78-54d7-47ba-81e2-fff122080236",
+                    "Dev_Id": "1e7812fd-76fc-42a8-b9d1-2334175b81a6",
+                    "size": 107374182400
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "ID": "45c34d1e-a2f8-433b-89f5-915e38db1c1f",
+        "Name": "rack-2",
+        "PDUID": "bafd2752-f661-44f0-88e2-7b01750ee59e",
+        "Location": "Row-2",
+        "Specification": "42U",
+        "Hypervisors": [
+          {
+            "ID": "cb60be93-aa3c-4ce3-b801-28e01266026c",
+            "RackID": "45c34d1e-a2f8-433b-89f5-915e38db1c1f",
+            "Name": "hv-r2-1",
+            "IPAddrs": ["10.0.0.20", "10.10.0.20"],
+            "PortRange": "13000-15000",
+            "SSHPort": "22",
+            "RDMAEnabled": false,
+            "Dev": [
+              {
+                "ID": "919e32a8-653f-4316-9f69-cb534b0ea950",
+                "Name": "dev-r2-hv1-1",
+                "DevicePath": "/dev/sda",
+                "SerialNumber": "SN-004",
+                "State": 2,
+                "Size": 107374182400,
+                "HyperVisorID": "cb60be93-aa3c-4ce3-b801-28e01266026c",
+                "partitions": [
+                  {
+                    "partition_id": "c59b31b2-6ffb-4153-866b-ef8798a70a4a",
+                    "partition_path": "/dev/sda1",
+                    "nisd_uuid": "78d731b1-cacc-4e3a-a8f0-60024728a6f3",
+                    "Dev_Id": "919e32a8-653f-4316-9f69-cb534b0ea950",
+                    "size": 107374182400
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

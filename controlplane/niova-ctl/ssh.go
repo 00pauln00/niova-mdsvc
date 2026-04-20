@@ -11,9 +11,10 @@ import (
 	"strings"
 	"time"
 
-	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
+
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
 
 type SSHClient struct {
@@ -82,42 +83,51 @@ func (s *SSHClient) RunCommand(cmd string) (string, error) {
 }
 
 func (s *SSHClient) GetDevices() ([]ctlplfl.Device, error) {
-	devices := make([]ctlplfl.Device, 0)
+	// deviceMap is keyed by block device name (e.g. "sda").
+	// This lets us deduplicate multiple by-id symlinks that point to the
+	// same disk and merge lsblk metadata into the correct entry.
+	deviceMap := make(map[string]*ctlplfl.Device)
 
 	byIdOutput, err := s.RunCommand("ls -la /dev/disk/by-id/ 2>/dev/null | grep -v '^total' | grep -v '^d' | awk '{print $9, $11}'")
 	if err == nil && byIdOutput != "" {
-		devices = append(devices, parseByIdDevices(byIdOutput)...)
+		for _, dev := range parseByIdDevices(byIdOutput) {
+			// DevicePath is "/dev/sda"; strip the prefix to get the block name.
+			blockName := filepath.Base(dev.DevicePath)
+			if _, exists := deviceMap[blockName]; !exists {
+				// Keep only the first by-id entry per physical disk.
+				// All symlinks for the same disk share the same DevicePath;
+				// we want one representative with a unique hardware-based Name.
+				d := dev
+				deviceMap[blockName] = &d
+			}
+		}
 	}
 
-	lsblkOutput, err := s.RunCommand("lsblk -d -n -o NAME,SIZE,SERIAL,TYPE | grep 'disk'")
+	lsblkOutput, err := s.RunCommand("lsblk -d -n -o ID,NAME,SIZE,SERIAL,TYPE | grep 'disk'")
 	if err != nil {
-		return devices, fmt.Errorf("failed to get device list: %v", err)
+		return nil, fmt.Errorf("failed to get device list: %v", err)
 	}
 
-	lsblkDevices := parseLsblkDevices(lsblkOutput)
-
-	deviceMap := make(map[string]*Device)
-	for i := range devices {
-		deviceMap[devices[i].Name] = &devices[i]
-	}
-
-	for _, lsblkDev := range lsblkDevices {
+	for _, lsblkDev := range parseLsblkDevices(lsblkOutput) {
 		if existing, exists := deviceMap[lsblkDev.Name]; exists {
-			// Merge information from lsblk with by-id information
+			// Enrich the by-id entry with size and serial from lsblk.
 			existing.Size = lsblkDev.Size
 			if existing.SerialNumber == "" {
 				existing.SerialNumber = lsblkDev.SerialNumber
 			}
-			if existing.DevicePath == "" {
-				existing.DevicePath = lsblkDev.DevicePath
-			}
 		} else {
-			log.Info("Add device to list: ", lsblkDev)
-			devices = append(devices, lsblkDev)
+			// No by-id entry for this disk — use lsblk data as-is.
+			log.Info("Add device to list (no by-id entry): ", lsblkDev)
+			d := lsblkDev
+			deviceMap[lsblkDev.Name] = &d
 		}
 	}
 
-	return devices, nil
+	result := make([]ctlplfl.Device, 0, len(deviceMap))
+	for _, dev := range deviceMap {
+		result = append(result, *dev)
+	}
+	return result, nil
 }
 
 func parseByIdDevices(output string) []ctlplfl.Device {
@@ -151,7 +161,7 @@ func parseByIdDevices(output string) []ctlplfl.Device {
 
 				devices = append(devices, Device{
 					ID:         id,
-					Name:       deviceName,
+					Name:       id, // by-id name is unique per hardware across all hypervisors
 					DevicePath: "/dev/" + deviceName,
 				})
 			}
@@ -226,27 +236,34 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 	devices := make([]Device, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
 
-	// Updated regex to handle NAME SIZE SERIAL TYPE format, making SERIAL optional
-	re := regexp.MustCompile(`^(\S+)\s+(\S+)\s+(\S*)\s+disk`)
+	// Regex to handle ID NAME SIZE SERIAL TYPE format.
+	// ID may be empty (lsblk pads with spaces), NAME and SIZE are always present,
+	// SERIAL is optional, TYPE is "disk".
+	re := regexp.MustCompile(`^(\S*)\s+(\S+)\s+(\S+)\s+(\S*)\s+disk`)
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 
 		matches := re.FindStringSubmatch(line)
-		if len(matches) >= 4 {
-			name := matches[1]
-			sizeStr := matches[2] // Size string like "1T", "500G", "1.2G", etc.
-			serialNum := matches[3]
+		if len(matches) >= 5 {
+			id := matches[1]
+			name := matches[2]
+			sizeStr := matches[3]
+			serialNum := matches[4]
+
+			if id == "" {
+				id = name
+			}
 
 			// Convert size string to bytes
 			sizeBytes := parseSizeToBytes(sizeStr)
-			log.Info("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)
+			log.Infof("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)
 
 			devices = append(devices, Device{
-				ID:           name,
+				ID:           id,
 				Name:         name,
 				DevicePath:   "/dev/" + name,
 				Size:         sizeBytes,

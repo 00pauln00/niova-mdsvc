@@ -1,0 +1,91 @@
+name: go_lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Install build dependencies (CGO)
+        run: sudo apt-get update && sudo apt-get -y install build-essential uuid-dev uuid libuuid1 libgcrypt20 openssl libssl-dev librocksdb-dev uncrustify libasan5 libtsan0 liblz4-dev
+
+      - name: Cache C dependencies
+        id: cache-c-deps
+        uses: actions/cache@v4
+        with:
+          path: /tmp/niova_build_dir
+          key: ${{ runner.os }}-c-deps-${{ hashFiles('modules/**') }}
+
+      - name: Build C Dependencies
+        if: steps.cache-c-deps.outputs.cache-hit != 'true'
+        run: |
+          DIR=/tmp/niova_build_dir
+          mkdir -p $DIR
+          
+          cd $GITHUB_WORKSPACE/modules/niova-pumicedb/modules/libbacktrace/
+          ./configure > /dev/null
+          make > /dev/null
+          sudo make install > /dev/null
+          
+          cd $GITHUB_WORKSPACE/modules/niova-pumicedb/modules/niova-raft/modules/niova-core/
+          ./prepare.sh > /dev/null
+          ./configure --enable-devel --prefix=$DIR > /dev/null
+          make -j$(nproc) > /dev/null
+          make install > /dev/null
+          
+          cd $GITHUB_WORKSPACE/modules/niova-pumicedb/modules/niova-raft/
+          ./prepare.sh > /dev/null
+          ./configure --with-niova=$DIR --prefix=$DIR --enable-devel > /dev/null
+          make clean > /dev/null
+          make -j$(nproc) > /dev/null
+          make install > /dev/null
+          
+          cd $GITHUB_WORKSPACE/modules/niova-pumicedb/
+          ./prepare.sh > /dev/null
+          ./configure --enable-devel --with-niova=$DIR --prefix=$DIR > /dev/null
+          make clean > /dev/null
+          make -j$(nproc) > /dev/null
+          make install > /dev/null
+
+      # gofmt
+      - name: Check gofmt
+        run: |
+          unformatted=$(gofmt -l ./controlplane/)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not formatted with gofmt:"
+            echo "$unformatted"
+            echo ""
+            echo "Run: gofmt -w ./controlplane/"
+            exit 1
+          fi
+
+      # go vet 
+      - name: Run go vet
+        env:
+          CGO_ENABLED: "1"
+        run: make vet DIR=/tmp/niova_build_dir
+
+      # golangci-lint (all configured linters)
+      - name: Install golangci-lint from source
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
+      - name: Run golangci-lint
+        env:
+          CGO_ENABLED: "1"
+        run: make lint DIR=/tmp/niova_build_dir

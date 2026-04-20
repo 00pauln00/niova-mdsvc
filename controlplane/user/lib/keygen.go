@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-// SecretKeyLengh defines lenght of secret key in bytes (128 bits)
+// SecretKeyLength defines length of secret key in bytes (128 bits)
 const SecretKeyLength = 16
 
 // GenerateSecretKey generates a cryptographically secure random secret key

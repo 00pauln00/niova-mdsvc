@@ -14,14 +14,15 @@ import (
 	"strconv"
 	"time"
 
+	uuid "github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/00pauln00/niova-mdsvc/controlplane/requestResponseLib"
+
 	pmdbc "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceclient"
 	pmdbCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	cmpLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
 	serfc "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfclient"
-
-	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 type configApplication struct {
@@ -141,11 +142,6 @@ func (handler *configApplication) GetPMDBServerConfig() error {
 
 	//Get Raft UUID from the map
 	handler.raftUUID = pmdbServerGossip["RU"]
-	if err != nil {
-		log.Error("Error :", err)
-		return err
-	}
-
 	//Validate checksum; Get checksum entry from Map and delete that entry
 	recvCheckSum := pmdbServerGossip["CS"]
 	delete(pmdbServerGossip, "CS")
@@ -230,10 +226,10 @@ func (handler *configApplication) Read(key string, response *[]byte) error {
 	enc := gob.NewEncoder(&requestBytes)
 	enc.Encode(request)
 	reqArgs := &pmdbc.PmdbReq{
-		Rncui:      "",
-		Request: requestBytes.Bytes(),
+		Rncui:    "",
+		Request:  requestBytes.Bytes(),
 		GetReply: 1,
-		Reply:   response,
+		Reply:    response,
 	}
 
 	return handler.pmdbClientObj.Get(reqArgs)

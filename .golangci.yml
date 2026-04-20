@@ -1,0 +1,97 @@
+# golangci-lint configuration
+# Docs: https://golangci-lint.run/usage/configuration/
+#
+# Target pattern: ./controlplane/...  (never ./...)
+# Toolchain note: run with GOTOOLCHAIN=local to avoid go-version mismatches.
+
+run:
+  timeout: 10m
+  build-tags: []
+
+  # Skip everything that is not our own code.
+  exclude-dirs:
+    - modules     # git submodules (niova-pumicedb, etc.)
+    - libexec     # compiled output
+  exclude-dirs-use-default: true   # also skips vendor/, testdata/, etc.
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters:
+  disable-all: true
+  enable:
+    # Formatting 
+    - gofmt          # canonical Go formatter
+    - goimports      # gofmt + import grouping/ordering
+    # - godot          # comments should end with a period
+
+    # Correctness / Bugs
+    - govet          # go vet (shadow, printf, structtag, …)
+    # - errcheck       # unchecked errors
+    - staticcheck    # SA* rules
+    - ineffassign    # assignments whose value is never used
+    - unused         # unexported/exported identifiers never referenced
+
+    # Style 
+    - revive         # configurable golint replacement
+    - misspell       # common English misspellings in comments/strings
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment   # noisy, opt-in separately if needed
+      - shadow           # err-shadowing is common and intentional in this codebase
+
+  gofmt:
+    simplify: true
+
+  goimports:
+    local-prefixes: github.com/00pauln00/niova-mdsvc
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  revive:
+    min-confidence: 0.8
+    rules:
+      - name: exported
+      - name: error-strings
+      - name: range
+      - name: package-comments
+      - name: error-return
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: receiver-naming
+      # - name: var-naming
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Suppress typecheck errors from external module cache
+    # These arise from toolchain/dep-version mismatches in indirect
+    # dependencies.
+    # Our own code is still fully type-checked via go vet in the Makefile.
+    - path: "go/pkg/mod"
+      linters:
+        - typecheck
+    - path: "usr/local/go"
+      linters:
+        - typecheck
+
+    # Relax rules for test files
+    - path: "_test\\.go"
+      linters:
+        - errcheck
+
+    # CGO bridge files
+    - source: "^// #"
+      linters:
+        - revive
+        - godot
