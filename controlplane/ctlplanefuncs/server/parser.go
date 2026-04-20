@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
 )
 
 const ( // Key Prefixes
@@ -29,40 +30,14 @@ type ParseEntity interface {
 	GetEntity(entity Entity) Entity
 }
 
-func ParseEntitiesRR[T Entity](readResult []map[string][]byte, pe ParseEntity) []T {
+func ParseEntities[T Entity](itr storageiface.Iterator, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
-	for i := range readResult {
-		for k, v := range readResult[i] {
-			parts := strings.Split(strings.Trim(k, "/"), "/")
-			if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
-				continue
-			}
-
-			id := parts[BASE_UUID_PREFIX]
-			entity, exists := entityMap[id]
-			if !exists {
-				entity = pe.NewEntity(id)
-				entityMap[id] = entity
-			}
-			pe.ParseField(entity, parts, v)
-		}
-	}
-
-	result := make([]T, 0, len(entityMap))
-	for _, e := range entityMap {
-		final := pe.GetEntity(e)
-		result = append(result, final.(T))
-	}
-	return result
-}
-
-func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
-	entityMap := make(map[string]Entity)
-
-	for k, v := range readResult {
+	for itr.Valid() {
+		k, v := itr.GetKV()
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+			itr.Next()
 			continue
 		}
 
@@ -72,7 +47,8 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 			entity = pe.NewEntity(id)
 			entityMap[id] = entity
 		}
-		pe.ParseField(entity, parts, v)
+		pe.ParseField(entity, parts, []byte(v))
+		itr.Next()
 	}
 	result := make([]T, 0, len(entityMap))
 	for _, e := range entityMap {
@@ -82,13 +58,15 @@ func ParseEntities[T Entity](readResult map[string][]byte, pe ParseEntity) []T {
 	return result
 }
 
-func ParseEntitiesMap(readResult map[string][]byte, pe ParseEntity) map[string]Entity {
+func ParseEntitiesMap(itr storageiface.Iterator, pe ParseEntity) map[string]Entity {
 	entityMap := make(map[string]Entity)
 
-	for k, v := range readResult {
+	for itr.Valid() {
+		k, v := itr.GetKV()
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		// require at least ELEMENT_KEY to be present and that base key matches parser root
 		if len(parts) <= ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+			itr.Next()
 			continue
 		}
 
@@ -98,7 +76,8 @@ func ParseEntitiesMap(readResult map[string][]byte, pe ParseEntity) map[string]E
 			entity = pe.NewEntity(id)
 			entityMap[id] = entity
 		}
-		pe.ParseField(entity, parts, v)
+		pe.ParseField(entity, parts, []byte(v))
+		itr.Next()
 	}
 	return entityMap
 }

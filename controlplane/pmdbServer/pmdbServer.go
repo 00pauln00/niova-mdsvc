@@ -14,7 +14,6 @@ import (
 	defaultLogger "log"
 	"net"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,32 +75,27 @@ type pmdbServerHandler struct {
 }
 
 func PopulateHierarchy() error {
-	key, prefix := srvctlplanefuncs.NisdCfgKey, srvctlplanefuncs.NisdCfgKey
-	rangeReadContOut := make([]map[string][]byte, 0)
+	key := srvctlplanefuncs.NisdCfgKey
+	prefix := srvctlplanefuncs.NisdCfgKey
+
 	time.Sleep(2 * time.Second)
 	cbargs := PumiceDBServer.PmdbCbArgs{
 		Store: &pumicestore.PumiceStore{},
 	}
-	for {
-		log.Debugf("querying pmdb with key: %s, prefix: %s", key, prefix)
-		readResult, err := cbargs.Store.RangeRead(storageiface.RangeReadArgs{
-			Selector: cpLib.PmdbColumnFamily,
-			Key:      key,
-			Prefix:   prefix,
-			BufSize:  cpLib.MAX_REPLY_SIZE,
-		})
-		if err != nil {
-			log.Warn("RangeReadKV(): ", err)
-			return err
-		}
-		rangeReadContOut = append(rangeReadContOut, readResult.ResultMap)
-		if readResult.LastKey == "" {
-			break
-		}
-		key = readResult.LastKey
-		prefix = filepath.Dir(readResult.LastKey)
+
+	itr, err := cbargs.Store.NewRangeIterator(storageiface.RangeReadArgs{
+		Selector: cpLib.PmdbColumnFamily,
+		Key:      key,
+		Prefix:   prefix,
+		BufSize:  cpLib.MAX_REPLY_SIZE,
+	})
+	if err != nil {
+		log.Warn("NewRangeIterator(): ", err)
+		return err
 	}
-	nisdList := srvctlplanefuncs.ParseEntitiesRR[cpLib.Nisd](rangeReadContOut, srvctlplanefuncs.NisdParser{})
+	defer itr.Close()
+
+	nisdList := srvctlplanefuncs.ParseEntities[cpLib.Nisd](itr, srvctlplanefuncs.NisdParser{})
 	for i := 0; i < len(nisdList); i++ {
 		err := srvctlplanefuncs.HR.AddNisd(&nisdList[i])
 		if err != nil {
@@ -109,7 +103,6 @@ func PopulateHierarchy() error {
 			return err
 		}
 		log.Debug("added nisd to the hierarchy: ", nisdList[i])
-
 	}
 
 	log.Infof("successfully intialized hierarchy")
