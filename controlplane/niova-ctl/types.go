@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
+
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
 
 // Type aliases to use libctlplanefuncs types
@@ -55,8 +56,9 @@ func ParsePortRange(portRange string) (int, int, error) {
 	return start, end, nil
 }
 
-// AllocatePortPair allocates a client and server port pair from the given range,
-// avoiding already allocated ports by querying existing NISDs from the control plane
+// AllocatePortPair allocates a contiguous pair of ports (serverPort=N, clientPort=N+1)
+// from the given range, avoiding already allocated ports by querying existing NISDs
+// from the control plane. Ports are isolated per hypervisor via FailureDomain[HV_IDX].
 func AllocatePortPair(hypervisorUUID string, portRange string, userToken string, cpClient interface{}) (int, int, error) {
 	startPort, endPort, err := ParsePortRange(portRange)
 	if err != nil {
@@ -71,28 +73,24 @@ func AllocatePortPair(hypervisorUUID string, portRange string, userToken string,
 		if client, ok := cpClient.(interface {
 			GetNisds(ctlplfl.GetReq) ([]ctlplfl.Nisd, error)
 		}); ok {
-			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true, UserToken: userToken})
+			// Get all NISDs and filter by hypervisor UUID locally
+			nisds, err := client.GetNisds(ctlplfl.GetReq{GetAll: true})
 			if err == nil {
 				for _, nisd := range nisds {
 					if nisd.FailureDomain[ctlplfl.HV_IDX] == hypervisorUUID {
 						allocatedPorts[int(nisd.PeerPort)] = true
 						allocatedPorts[int(nisd.NetInfo[0].Port)] = true
-						allocatedPorts[int(nisd.NetInfo[0].Port)+1] = true
-						allocatedPorts[int(nisd.NetInfo[0].Port)+2] = true
 					}
 				}
 			}
 		}
 	}
 
-	for port := startPort; port < endPort-3; port += 4 {
+	for port := startPort; port < endPort-1; port += 2 {
 		serverPort := port
-		gapPort1 := port + 1
-		clientPort := port + 2
-		gapPort2 := port + 3
+		clientPort := port + 1
 
-		if !allocatedPorts[serverPort] && !allocatedPorts[gapPort1] &&
-			!allocatedPorts[clientPort] && !allocatedPorts[gapPort2] {
+		if !allocatedPorts[serverPort] && !allocatedPorts[clientPort] {
 			return clientPort, serverPort, nil
 		}
 	}
@@ -158,7 +156,7 @@ func DeleteAllPartitionsFromDevice(hv ctlplfl.Hypervisor, deviceName string) err
 
 	partCmd := fmt.Sprintf("parted -s %s mklabel gpt", devicePath)
 	_, _ = sshClient.RunCommand(partCmd)
-	log.Info("Create partition table on %s (%s): %v", devicePath, partCmd)
+	log.Infof("Create partition table on %s (%s)", devicePath, partCmd)
 
 	time.Sleep(2 * time.Second)
 
@@ -271,14 +269,14 @@ func GetDevicePartitionInfo(hv ctlplfl.Hypervisor, deviceName string) ([]DeviceP
 					sizeStr := parts[1]
 					size, err := strconv.ParseInt(sizeStr, 10, 64)
 					if err != nil {
-						log.Warn("Failed to parse size for partition %s: %v", partitionName, err)
+						log.Warnf("Failed to parse size for partition %s: %v", partitionName, err)
 						size = 0
 					}
 
 					partitionByIdCmd := fmt.Sprintf("ls -la /dev/disk/by-id/ | grep '%s$' | head -1 | awk '{print $9}'", partitionName)
 					partitionByIdOutput, err := sshClient.RunCommand(partitionByIdCmd)
 					if err != nil {
-						log.Warn("Failed to get by-id name for partition %s: %v", partitionName, err)
+						log.Warnf("Failed to get by-id name for partition %s: %v", partitionName, err)
 						partitionInfos = append(partitionInfos, DevicePartitionInfo{
 							Name: partitionName,
 							Size: size,
@@ -400,6 +398,6 @@ func RemoveDevicePartition(hv ctlplfl.Hypervisor, deviceName, partitionID string
 	}
 
 	// Partition may already be deleted
-	log.Warn("Partition %s not found on device %s, may already be removed", partitionID, deviceName)
+	log.Warnf("Partition %s not found on device %s, may already be removed", partitionID, deviceName)
 	return nil
 }

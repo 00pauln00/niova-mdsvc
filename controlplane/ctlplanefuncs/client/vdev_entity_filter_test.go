@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
 
 func TestCreateLargeHierarchy(t *testing.T) {
@@ -119,6 +120,7 @@ func TestCreateLargeHierarchy(t *testing.T) {
 
 	nisdID := 1
 
+	c.SetToken(adminToken)
 	for p := 0; p < pduCount; p++ {
 		pdu := pdus[p]
 
@@ -147,7 +149,6 @@ func TestCreateLargeHierarchy(t *testing.T) {
 							},
 							TotalSize:     1_000_000_000_000,
 							AvailableSize: 1_000_000_000_000,
-							UserToken:     adminToken,
 						}
 
 						mockNisd = append(mockNisd, nisd)
@@ -220,7 +221,7 @@ func TestCreateVdevWithFilters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			log.Infof("[TEST START] %s", tc.name)
 			log.Infof("FilterType=%v FilterID=%q ExpectErr=%v", tc.filterType, tc.filterID, tc.expectErr)
-
+			c.SetToken(adminToken)
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
 					Size:       16 * 1024 * 1024 * 1024,
@@ -230,7 +231,6 @@ func TestCreateVdevWithFilters(t *testing.T) {
 					Type: tc.filterType,
 					ID:   tc.filterID,
 				},
-				UserToken: adminToken,
 			}
 
 			resp, err := c.CreateVdev(vdevReq)
@@ -239,12 +239,13 @@ func TestCreateVdevWithFilters(t *testing.T) {
 				assert.Error(t, err)
 				return
 			}
-			assert.NoError(t, err)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
 			assert.NotEmpty(t, resp.ID)
 
 			log.Infof("Created Vdev ID=%s", resp.ID)
 
-			getReq := &cpLib.GetReq{ID: resp.ID, UserToken: adminToken}
+			getReq := &cpLib.GetReq{ID: resp.ID}
 
 			vdevs, err := c.GetVdevsWithChunkInfo(getReq)
 			log.Infof("GetVdevsWithChunkInfo response: count=%d err=%v", len(vdevs), err)
@@ -302,68 +303,82 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 	adminToken := getAdminToken(t)
 
 	tests := []struct {
-		name       string
-		filterType cpLib.FD
-		filterID   string
+		name        string
+		filter      cpLib.Filter
+		expectedErr string
 	}{
 		{
-			name:       "Invalid Filter Entity",
-			filterType: cpLib.FD(99), // undefined entity
-			filterID:   "9bc244bc-df29-11f0-a93b-277aec17e401",
+			name: "Invalid Filter Entity (undefined FD)",
+			filter: cpLib.Filter{
+				Type: cpLib.FD(99), // undefined failure domain
+				ID:   "9bc244bc-df29-11f0-a93b-277aec17e401",
+			},
+			expectedErr: "failed to allocate nisd from fd: -1, invalid failure domain: -1",
 		},
 		{
-			name:       "Invalid Filter ID - malformed UUID",
-			filterType: cpLib.FD_PDU,
-			filterID:   "not-a-valid-id",
+			name: "Malformed UUID",
+			filter: cpLib.Filter{
+				Type: cpLib.FD_PDU,
+				ID:   "not-a-valid-id",
+			},
+			expectedErr: "failed to allocate nisd from fd: 0, entityID not-a-valid-id not found in fd 0",
 		},
 		{
-			name:       "Invalid Filter ID - non-existent UUID",
-			filterType: cpLib.FD_RACK,
-			filterID:   "11111111-2222-3333-4444-555555555555",
+			name: "Non-existent UUID",
+			filter: cpLib.Filter{
+				Type: cpLib.FD_RACK,
+				ID:   "11111111-2222-3333-4444-555555555555",
+			},
+			expectedErr: "failed to allocate nisd from fd: 1, entityID 11111111-2222-3333-4444-555555555555 not found in fd 1",
 		},
 		{
-			name:       "Entity-ID Mismatch - Rack ID used with PDU filter",
-			filterType: cpLib.FD_PDU,
-			filterID:   "3f082930-df29-11f0-ab7b-4bd430991103", // Rack ID
+			name: "Entity type mismatch - Rack ID used with PDU filter",
+			filter: cpLib.Filter{
+				Type: cpLib.FD_PDU,
+				ID:   "3f082930-df29-11f0-ab7b-4bd430991103", // this is actually a Rack ID
+			},
+			expectedErr: "failed to allocate nisd from fd: 0, entityID 3f082930-df29-11f0-ab7b-4bd430991103 not found in fd 0",
 		},
 		{
-			name:       "Entity-ID Mismatch - Device ID used with HV filter",
-			filterType: cpLib.FD_HV,
-			filterID:   "nvme-fb6358163008",
+			name: "Entity type mismatch - Device ID used with HV filter",
+			filter: cpLib.Filter{
+				Type: cpLib.FD_HV,
+				ID:   "nvme-fb6358163008",
+			},
+			expectedErr: "failed to allocate nisd from fd: 2, entityID nvme-fb6358163008 not found in fd 2",
 		},
 		{
-			name:       "Invalid Partition Filter - non-existent partition ID",
-			filterType: cpLib.FD_PARTITION,
-			filterID:   "pt-nonexistent-device-99",
+			name: "Non-existent partition ID",
+			filter: cpLib.Filter{
+				Type: cpLib.FD_PARTITION,
+				ID:   "pt-nonexistent-device-99",
+			},
+			expectedErr: "failed to allocate nisd from fd: 4, entityID pt-nonexistent-device-99 not found in fd 4",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			log.Infof("[TEST START] %s", tc.name)
-			log.Infof("FilterType=%v FilterID=%q", tc.filterType, tc.filterID)
+			log.Infof("FilterType=%v FilterID=%q", tc.filter.Type, tc.filter.ID)
+
+			c.SetToken(adminToken)
 
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
-					Size:       1 * 1024 * 1024 * 1024,
+					Size:       1 * 1024 * 1024 * 1024, // 1 GiB
 					NumReplica: 2,
 				},
-				Filter: cpLib.Filter{
-					Type: tc.filterType,
-					ID:   tc.filterID,
-				},
-				UserToken: adminToken,
+				Filter: tc.filter,
 			}
 
-			resp, err := c.CreateVdev(vdevReq)
-
-			log.Infof("CreateVdev response: resp=%+v err=%v", resp, err)
-
-			if assert.NotNil(t, resp, "server should return a response even for invalid filters") {
-				assert.False(t, resp.Success)
-				assert.NotEmpty(t, resp.ID)
-				assert.NotEmpty(t, resp.Error)
+			_, err := c.CreateVdev(vdevReq)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
 			}
+
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.expectedErr)
 
 			log.Infof("[TEST END] %s", tc.name)
 		})

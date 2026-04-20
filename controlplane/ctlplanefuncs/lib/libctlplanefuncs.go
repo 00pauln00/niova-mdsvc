@@ -5,17 +5,21 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
-	"hash/fnv"
+	"github.com/google/uuid"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
+
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
-	"github.com/google/uuid"
 )
 
 const (
@@ -82,6 +86,28 @@ const (
 	FD_PARTITION
 )
 
+const logFileName = "client.log"
+
+// DefaultLogPath returns an absolute path for the application log file:
+//   - root:         /var/log/niova/client.log
+//   - regular user: ~/.niova/client.log
+func DefaultLogPath() string {
+	var dir string
+	if os.Getuid() == 0 {
+		dir = "/var/log/niova"
+	} else {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = "/tmp"
+		}
+		dir = filepath.Join(homeDir, ".niova")
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return logFileName
+	}
+	return filepath.Join(dir, logFileName)
+}
+
 func GetFDIdx(t FD) int {
 	switch t {
 	case FD_PDU:
@@ -110,7 +136,7 @@ type SnapResponseXML struct {
 }
 
 type ChunkXML struct {
-	Idx uint32 `xml:Idx,attr`
+	Idx uint32 `xml:"Idx,attr"`
 	Seq uint64 `xml:"Seq"`
 }
 
@@ -132,7 +158,6 @@ type Device struct {
 	Name         string `xml:"Name" json:"Name"` // For display purposes
 	DevicePath   string `xml:"device_path,omitempty" json:"DevicePath"`
 	SerialNumber string `xml:"SerialNumber" json:"SerialNumber"`
-	UserToken    string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	State        uint16 `xml:"State" json:"State"`
 	Size         int64  `xml:"Size" json:"Size"`
 	//Parent info
@@ -146,20 +171,18 @@ type DevicePartition struct {
 	PartitionID   string `json:"partition_id"`
 	PartitionPath string `json:"partition_path"`
 	NISDUUID      string `json:"nisd_uuid"`
-	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	DevID         string `json:"Dev_Id"`
 	Size          int64  `json:"size,omitempty"`
 }
 
 type NisdArgs struct {
 	Defrag               bool   // -g Defrag
+	AllowDefragMCIBCache bool   // -x
 	MBCCnt               int    // -m
 	MergeHCnt            int    // -M
 	MCIBReadCache        int    // -r
 	S3                   string // -s
 	DSync                string // -D
-	UserToken            string // User authentication token
-	AllowDefragMCIBCache bool   // -x
 }
 
 type NetworkInfo struct {
@@ -175,7 +198,6 @@ type Nisd struct {
 	TotalSize     int64       `xml:"TotalSize"`
 	AvailableSize int64       `xml:"AvailableSize"`
 	SocketPath    string      `xml:"SocketPath"`
-	UserToken     string      `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	NetInfo       NetInfoList `xml:"NetInfo"`
 	NetInfoCnt    int         `xml:"NetInfoCnt"`
 }
@@ -186,8 +208,7 @@ type PDU struct {
 	Location      string `xml:"Location" json:"Location" yaml:"location"`
 	PowerCapacity string `xml:"PowerCap" json:"PowerCapacity" yaml:"powercap"`
 	Specification string `xml:"Spec" json:"Spec" yaml:"spec"`
-	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
-	Racks         []Rack `xml:"Racks>rack" json: "Racks" yaml:"racks"`
+	Racks         []Rack `xml:"Racks>rack" json:"Racks" yaml:"racks"`
 }
 
 type Rack struct {
@@ -196,7 +217,6 @@ type Rack struct {
 	PDUID         string // Foreign key to PDU
 	Location      string
 	Specification string
-	UserToken     string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	Hypervisors   []Hypervisor
 }
 
@@ -207,7 +227,6 @@ type Hypervisor struct {
 	IPAddrs     []string
 	PortRange   string
 	SSHPort     string // SSH port for connection
-	UserToken   string `xml:"UserToken,omitempty" json:"userToken,omitempty"`
 	Dev         []Device
 	RDMAEnabled bool
 }
@@ -236,7 +255,6 @@ type VdevCfg struct {
 type Vdev struct {
 	Cfg          VdevCfg
 	NisdToChkMap []NisdChunk
-	UserToken    string
 }
 
 type Filter struct {
@@ -245,23 +263,20 @@ type Filter struct {
 }
 
 type VdevReq struct {
-	Vdev      *VdevCfg
-	Filter    Filter
-	UserToken string
+	Vdev   *VdevCfg
+	Filter Filter
 }
 
 // DeleteVdevReq is the request structure for deleting a Vdev.
 // UserToken is a JWT token used to authenticate and authorize the caller
 // before the delete operation is allowed to proceed.
 type DeleteVdevReq struct {
-	ID        string
-	UserToken string // Bearer JWT token for authentication and RBAC authorization
+	ID string
 }
 
 type GetReq struct {
-	ID        string
-	GetAll    bool
-	UserToken string
+	ID     string
+	GetAll bool
 }
 
 func (vdev *VdevCfg) Init() error {
@@ -337,35 +352,49 @@ type ChunkNisd struct {
 
 func RegisterGOBStructs() {
 	gob.Register(Rack{})
+	gob.Register([]Rack{})
 	gob.Register(GetReq{})
 	gob.Register(Hypervisor{})
+	gob.Register([]Hypervisor{})
 	gob.Register(PDU{})
+	gob.Register([]PDU{})
 	gob.Register(Nisd{})
+	gob.Register([]Nisd{})
 	gob.Register(Device{})
+	gob.Register([]Device{})
 	gob.Register(DevicePartition{})
+	gob.Register([]DevicePartition{})
 	gob.Register(ResponseXML{})
 	gob.Register(Vdev{})
+	gob.Register([]Vdev{})
 	gob.Register(NisdChunk{})
 	gob.Register(SnapResponseXML{})
 	gob.Register(SnapXML{})
 	gob.Register(VdevCfg{})
+	gob.Register([]VdevCfg{})
 	gob.Register(ChunkNisd{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
 	gob.Register(DeleteVdevReq{})
+	gob.Register(CPReq{})
+	gob.Register(CPResp{})
+	gob.Register(CPError{})
+	gob.Register(CPErrCode(""))
+	gob.Register(Pagination{})
 	gob.Register(FD(0))
 	gob.Register(userlib.GetReq{})
 	gob.Register(userlib.UserReq{})
 	gob.Register(userlib.User{})
 	gob.Register(userlib.UserResp{})
+	gob.Register([]userlib.UserResp{})
 	gob.Register(userlib.LoginResp{})
 }
 
 func (req *GetReq) ValidateRequest() error {
 	if req.ID == "" {
-		return fmt.Errorf("Invalid Request: Recieved empty ID")
+		return fmt.Errorf("Invalid Request: Received empty ID")
 	}
 	return nil
 

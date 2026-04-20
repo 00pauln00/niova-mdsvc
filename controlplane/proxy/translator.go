@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
+
 	pmLib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 )
 
@@ -98,28 +100,64 @@ func GetRespStruct(name string) any {
 	return nil
 }
 
-func DecodeRequest(enctype pmLib.Format, name string, req []byte) (any, error) {
-	res := GetReqStruct(name)
-	log.Tracef("decoding request type %s, with %v decoder", name, enctype)
-	err := pmLib.Decoder(enctype, req, res)
+// DecodeCPReq decodes the incoming request body into a CPReq envelope.
+// It pre-populates the Payload field to guide the decoder, allowing it
+// to fill the correct struct in a single pass.
+func DecodeCPReq(enctype pmLib.Format, name string, req []byte) (*cpLib.CPReq, error) {
+	// Pre-populate payload to guide the decoder in a single pass
+	typedPayload := GetReqStruct(name)
+	cpReq := &cpLib.CPReq{
+		Payload: typedPayload,
+	}
+
+	log.Tracef("decoding CPReq for %s with %v decoder", name, enctype)
+	err := pmLib.Decoder(enctype, req, cpReq)
 	if err != nil {
-		log.Error("%v: failed to decode request: ", enctype, err)
+		log.Error("failed to decode CPReq: ", err)
 		return nil, err
 	}
-	return res, nil
+
+	// For downstream compatibility (e.g., GOB encoding of the envelope),
+	// we ensure the value type (not pointer) is stored in the interface.
+	if cpReq.Payload != nil {
+		cpReq.Payload = derefPtr(cpReq.Payload)
+	}
+
+	return cpReq, nil
 }
 
-// EncodeErrorResponse constructs a GOB-encoded error response matching the
-// expected response type for the given operation. Returns nil if the operation
-// does not have a known error-capable response type.
-func EncodeErrorResponse(enctype pmLib.Format, name string, errMsg string) ([]byte, error) {
-	switch name {
-	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS, cpLib.CREATE_VDEV:
-		return pmLib.Encoder(enctype, &cpLib.ResponseXML{Name: name, Success: false, Error: errMsg})
-	case userlib.PutUserAPI, userlib.AdminUserAPI:
-		return pmLib.Encoder(enctype, &userlib.UserResp{Success: false, Error: errMsg})
+// derefPtr dereferences a pointer to return the underlying value.
+// This ensures GOB can encode the Payload correctly as a concrete type.
+func derefPtr(v any) any {
+	switch p := v.(type) {
+	case *cpLib.GetReq:
+		return *p
+	case *cpLib.Rack:
+		return *p
+	case *cpLib.Device:
+		return *p
+	case *cpLib.Hypervisor:
+		return *p
+	case *cpLib.Nisd:
+		return *p
+	case *cpLib.PDU:
+		return *p
+	case *cpLib.DevicePartition:
+		return *p
+	case *cpLib.NisdArgs:
+		return *p
+	case *cpLib.SnapXML:
+		return *p
+	case *cpLib.VdevReq:
+		return *p
+	case *userlib.UserReq:
+		return *p
+	case *userlib.GetReq:
+		return *p
+	case *cpLib.DeleteVdevReq:
+		return *p
 	default:
-		return nil, nil
+		return v
 	}
 }
 
@@ -138,19 +176,16 @@ func EncodeResponse(enctype pmLib.Format, name string, resp *[]byte) error {
 	}
 
 	res := GetRespStruct(name)
-	log.Tracef("Allocated response struct type for %s: %+v", name, res)
-
-	err := pmLib.Decoder(pmLib.GOB, *resp, res)
+	cpresp := &cpLib.CPResp{
+		Payload: res,
+	}
+	err := pmLib.Decoder(pmLib.GOB, *resp, cpresp)
 	if err != nil {
 		log.Errorf("gob: failed to decode response | func=%s size=%d err=%v", name, len(*resp), err)
 		return err
 	}
-
-	log.Tracef("Decoded gob response successfully for %s", name)
-
-	log.Tracef("Encoding response type %s using %v encoder", name, enctype)
-
-	*resp, err = pmLib.Encoder(enctype, res)
+	log.Tracef("encoding response type %s, with %v encoder", name, enctype)
+	*resp, err = pmLib.Encoder(enctype, cpresp)
 	if err != nil {
 		log.Errorf("%v: failed to encode response for %s: %v", enctype, name, err)
 		return err

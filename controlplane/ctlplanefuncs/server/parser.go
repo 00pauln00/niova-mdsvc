@@ -4,9 +4,10 @@ import (
 	"strconv"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
-	log "github.com/sirupsen/logrus"
 )
 
 const ( // Key Prefixes
@@ -141,6 +142,7 @@ func (hvParser) ParseField(entity Entity, parts []string, value []byte) {
 
 func (hvParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Hypervisor) }
 
+/*
 // Device parser
 type deviceParser struct{}
 
@@ -172,7 +174,7 @@ func (deviceParser) ParseField(entity Entity, parts []string, value []byte) {
 	}
 }
 func (deviceParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.Device) }
-
+*/
 // nisd parser
 type NisdParser struct{}
 

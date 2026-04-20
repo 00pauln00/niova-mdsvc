@@ -2,10 +2,11 @@ package userlib
 
 import (
 	"encoding/base64"
+	"fmt"
+	"os"
 	"testing"
 )
 
-/*
 func TestMain(m *testing.M) {
 	// Fixed 32-byte key for reproducible tests (do NOT use this in production!)
 	fixedKey := []byte("0123456789abcdef0123456789abcdef")
@@ -24,7 +25,6 @@ func TestMain(m *testing.M) {
 
 	os.Exit(exitCode)
 }
-*/
 
 func TestGetKeyLength(t *testing.T) {
 	if got := GetKeyLength(); got != 32 {
