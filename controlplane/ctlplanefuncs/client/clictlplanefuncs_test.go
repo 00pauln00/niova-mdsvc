@@ -18,17 +18,6 @@ import (
 	userlib "github.com/00pauln00/niova-mdsvc/controlplane/user/lib"
 )
 
-// Global maps to store test results for reuse between tests
-var (
-	PDUs  = make(map[string]cpLib.PDU)
-	Racks = make(map[string]cpLib.Rack)
-	Hypervisors = make(map[string]cpLib.Hypervisor)
-	Devices = make(map[string]cpLib.Device)
-	Nisds = make(map[string]cpLib.Nisd)
-	TestNisds = make(map[string]cpLib.Nisd)
-	TestNisdsAfter = make(map[string]cpLib.Nisd)
-)
-
 var VDEV_ID string
 
 // Package-level test configuration initialized once in TestMain.
@@ -698,7 +687,7 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 	log.Infof("Inserted %d NISDs, retrieved %d successfully.", len(mockNisd), len(res))
 	assert.NoError(t, err)
 	// all testcases use same data store, so including currently added hypervisors we check the result
-	assert.GreaterOrEqual(t, len(resp), len(hypervisors))
+	assert.GreaterOrEqual(t, len(res), len(Nisds))
 }
 
 func TestVdevLifecycle(t *testing.T) {
@@ -1214,76 +1203,6 @@ func TestCreateVdev(t *testing.T) {
 	resp, err := c.CreateVdev(vdev)
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
-}
-
-func usagePercent(n cpLib.Nisd) int64 {
-	used := n.TotalSize - n.AvailableSize
-	return (used * 100) / n.TotalSize
-}
-
-func TestGetNisd(t *testing.T) {
-	c := newClient(t)
-	req := cpLib.GetReq{
-		GetAll: true,
-	}
-	res, err := c.GetNisds(req)
-	assert.NoError(t, err)
-	for _, n := range res {
-		log.Infof("Nisd ID: %s, usage: %d", n.ID, usagePercent(n))
-	}
-	log.Info("total number of nisd's : ", len(res))
-}
-
-func TestDeleteVdev(t *testing.T) {
-	c := newClient(t)
-
-	nisd := cpLib.Nisd{
-		PeerPort: 9400,
-		ID:       uuid.NewString(),
-		FailureDomain: []string{
-			uuid.NewString(),
-			uuid.NewString(),
-			uuid.NewString(),
-			uuid.NewString(),
-			uuid.NewString(),
-		},
-		TotalSize:     15_000_000_000_000,
-		AvailableSize: 15_000_000_000_000,
-	}
-	_, err := c.PutNisd(&nisd)
-	require.NoError(t, err, "failed to create NISD for delete test")
-
-	vdev := &cpLib.VdevReq{
-		Vdev: &cpLib.VdevCfg{
-			Size:       8 * 1024 * 1024 * 1024,
-			NumReplica: 1,
-		},
-	}
-
-	cvresp, err := c.CreateVdev(vdev)
-	require.NoError(t, err)
-	require.NotEmpty(t, cvresp.ID)
-	vdevID := cvresp.ID
-	t.Logf("Created vdev for deletion test: %s", vdevID)
-
-	// DeleteVdev often returns "empty response buffer" on success
-	dvResp, err := c.DeleteVdev(&cpLib.DeleteVdevReq{ID: vdevID})
-	if err != nil {
-		// This is the expected success path in this codebase
-		assert.Contains(t, err.Error(), "empty response buffer",
-			"DeleteVdev should either succeed or return empty response buffer")
-		t.Logf("DeleteVdev returned expected 'empty response buffer'")
-	} else {
-		assert.NotNil(t, dvResp)
-		t.Log("DeleteVdev succeeded with normal response")
-	}
-
-	// Verify the vdev is gone (with retry for eventual consistency)
-	deleted, getErr := isVdevDeleted(t, c, vdevID)
-	assert.True(t, deleted, "vdev should no longer exist after delete")
-	assert.Error(t, getErr, "GetVdevCfg should return error after successful delete")
-
-	t.Log("Vdev successfully deleted and verified as gone")
 }
 
 func usagePercent(n cpLib.Nisd) int64 {
