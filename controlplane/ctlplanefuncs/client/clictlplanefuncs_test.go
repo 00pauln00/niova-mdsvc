@@ -527,7 +527,6 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 
 	// GET all devices
 	res, err := c.GetDevices(cpLib.GetReq{})
-	log.Infof("fetch single device info: %s, %s, %s", res[0].ID, res[0].HypervisorID, res[0].SerialNumber)
 	assert.NoError(t, err)
 
 	// Store results in the map
@@ -563,7 +562,7 @@ func TestPutAndGetSingleNisd(t *testing.T) {
                "95f62aee-997e-11f0-9f1b-a70cff4b660b",
                "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
                "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-               "nvme-fb6358162001",
+               "nvme-e3f4123",
 			   "pt-nvme-e3f4123-0",
            },
 		   TotalSize:     1_000_000_000_000, // 1 TB
@@ -619,7 +618,7 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
 				"93e2925e-ab23-11f0-958d-87f55a6a9981",
 				"8f70f2a4-ab2a-11f0-a1bb-cb25e1fa6a6b",
-				"nvme-fb6358162002",
+				"nvme-e3f4123",
 				"pt-nvme-e3f4123-0",
 			},
 			TotalSize:     500_000_000_000, // 500 GB
@@ -644,7 +643,8 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
 				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
 				"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-				"nvme-fb6358162003",
+				"nvme-e3f4125",
+				"pt-nvme-e3f4125-0",
 			},
 			TotalSize:     2_000_000_000_000, // 2 TB
 			AvailableSize: 1_500_000_000_000, // 1.5 TB
