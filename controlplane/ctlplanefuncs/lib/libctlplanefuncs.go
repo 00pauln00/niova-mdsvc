@@ -47,6 +47,7 @@ const (
 	GET_ALL_VDEV        = "get_all_vdev"
 	GET_CHUNK_NISD      = "get_chunk_nisd"
 	GET_NISD_INFO       = "get_nisd_info"
+	GET_NISD_LIST_AVAIL_SIZE = "get_nisd_list_avail_size"
 
 	PUT_NISD_ARGS  = "PutNisdArgs"
 	GET_NISD_ARGS  = "GetNisdArgs"
@@ -267,6 +268,11 @@ type VdevReq struct {
 	Filter Filter
 }
 
+type NisdListAvalSize struct {
+	ID            string `json:"ID"`
+	AvailableSize int64  `json:"AvailableSize"`
+}
+
 // DeleteVdevReq is the request structure for deleting a Vdev.
 // UserToken is a JWT token used to authenticate and authorize the caller
 // before the delete operation is allowed to proceed.
@@ -377,6 +383,8 @@ func RegisterGOBStructs() {
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
+	gob.Register(NisdListAvalSize{})
+	gob.Register([]NisdListAvalSize{})
 	gob.Register(DeleteVdevReq{})
 	gob.Register(CPReq{})
 	gob.Register(CPResp{})

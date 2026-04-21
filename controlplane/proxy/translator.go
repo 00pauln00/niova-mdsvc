@@ -25,7 +25,7 @@ func GetEncodingType(r *http.Request) pmLib.Format {
 
 func GetReqStruct(name string) any {
 	switch name {
-	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR, cpLib.GET_PARTITION, cpLib.GET_VDEV_CHUNK_INFO, cpLib.GET_VDEV, cpLib.GET_CHUNK_NISD, cpLib.GET_VDEV_INFO, userlib.LoginAPI:
+	case cpLib.GET_RACK, cpLib.GET_NISD, cpLib.GET_DEVICE, cpLib.GET_PDU, cpLib.GET_HYPERVISOR, cpLib.GET_PARTITION, cpLib.GET_VDEV_CHUNK_INFO, cpLib.GET_VDEV, cpLib.GET_CHUNK_NISD, cpLib.GET_VDEV_INFO, userlib.LoginAPI, cpLib.GET_NISD_LIST_AVAIL_SIZE:
 		return &cpLib.GetReq{}
 	case cpLib.PUT_RACK:
 		return &cpLib.Rack{}
@@ -86,6 +86,8 @@ func GetRespStruct(name string) any {
 		return &cpLib.SnapResponseXML{}
 	case cpLib.GET_NISD_ARGS:
 		return &cpLib.NisdArgs{}
+	case cpLib.GET_NISD_LIST_AVAIL_SIZE:
+		return &[]cpLib.NisdListAvalSize{}
 	case cpLib.PUT_RACK, cpLib.PUT_DEVICE, cpLib.PUT_HYPERVISOR, cpLib.PUT_NISD, cpLib.PUT_PDU, cpLib.PUT_PARTITION, cpLib.PUT_NISD_ARGS, cpLib.CREATE_VDEV:
 		return &cpLib.ResponseXML{}
 	case userlib.PutUserAPI, userlib.AdminUserAPI:

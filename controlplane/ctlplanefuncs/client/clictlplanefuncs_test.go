@@ -908,7 +908,12 @@ func TestCreateSmallHierarchy(t *testing.T) {
 			assert.True(t, resp.Success)
 		}
 	}
-
+	req := cpLib.GetReq{
+                GetAll: true,
+        }
+	resp, err := c.GetNisdList(&req)
+	assert.NoError(t, err)
+	log.Info("Returned nisdList with Available size", resp) 
 }
 
 func TestCreateVdev(t *testing.T) {
