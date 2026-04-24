@@ -244,6 +244,7 @@ type NisdVdevAlloc struct {
 type VdevCfg struct {
 	XMLName      xml.Name `xml:"Vdev"`
 	ID           string
+	Name         string
 	Size         int64
 	NumChunks    uint32
 	NumReplica   uint8
@@ -276,6 +277,12 @@ type DeleteVdevReq struct {
 
 type GetReq struct {
 	ID     string
+	GetAll bool
+}
+
+type GetVdevReq struct {
+	Value  string // holds either ID or Name
+	IsID   bool   // true => Value is ID, false => Value is Name
 	GetAll bool
 }
 
@@ -354,6 +361,7 @@ func RegisterGOBStructs() {
 	gob.Register(Rack{})
 	gob.Register([]Rack{})
 	gob.Register(GetReq{})
+	gob.Register(GetVdevReq{})
 	gob.Register(Hypervisor{})
 	gob.Register([]Hypervisor{})
 	gob.Register(PDU{})
@@ -398,6 +406,13 @@ func (req *GetReq) ValidateRequest() error {
 	}
 	return nil
 
+}
+
+func (req *GetVdevReq) ValidateVdevRequest() error {
+        if req.Value == "" {
+                return fmt.Errorf("Invalid Request: Recieved empty vdev name/ID")
+        }
+        return nil
 }
 
 func (a *NisdArgs) BuildCmdArgs() string {

@@ -98,6 +98,7 @@ const (
 	rackKey      = "r"
 	nisdKey      = "n"
 	vdevKey      = "v"
+	vnameKey     = "vname"
 	chunkKey     = "c"
 	hvKey        = "hv"
 	ptKey        = "pt"
@@ -589,6 +590,19 @@ func genAllocationKV(ID, chunk string, nisd *ctlplfl.NisdVdevAlloc, i int, commi
 	log.Debugf("generated kv updates for chunk %s/R.%d", chunk, i)
 }
 
+// isAlphanumeric returns true if s contains only ASCII letters and digits.
+func isAlphanumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
 // Initialize the VDEV during the write preparation stage.
 // Since the VDEV ID is derived from a randomly generated UUID,
 // It needs to be generated within the Write Prep Phase.
@@ -612,6 +626,9 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Errorf("WPCreateVdev: auth failure: %v", err)
 		return ctlplfl.WPAuthError(err)
 	}
+	if !isAlphanumeric(req.Vdev.Name) {
+		return ctlplfl.WPFuncError(fmt.Errorf("vdev name %q is invalid: must be non-empty and contain only letters and digits", req.Vdev.Name))
+	}
 
 	err = req.Vdev.Init()
 	if err != nil {
@@ -620,7 +637,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 	}
 	log.Infof("initializing vdev: %+v for user: %s", req.Vdev, tc.UserID)
 	key := getConfKey(vdevKey, req.Vdev.ID)
-	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS} {
+	for _, field := range []string{SIZE, NUM_CHUNKS, NUM_REPLICAS, NAME} {
 		var value string
 		switch field {
 		case SIZE:
@@ -629,6 +646,8 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			value = strconv.Itoa(int(req.Vdev.NumChunks))
 		case NUM_REPLICAS:
 			value = strconv.Itoa(int(req.Vdev.NumReplica))
+		case NAME:
+			value = req.Vdev.Name
 		default:
 			continue
 		}
@@ -638,6 +657,13 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		})
 	}
 
+	// Add reverse-index key so duplicate name lookups are O(1)
+	reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
+	commitChgs = append(commitChgs, funclib.CommitChg{
+		Key:   []byte(reverseNameKey),
+		Value: []byte(req.Vdev.ID),
+	})
+
 	// Add ownership key to mark user as owner of this vdev
 	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.Vdev.ID)
 	commitChgs = append(commitChgs, funclib.CommitChg{
@@ -645,6 +671,14 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 		Value: []byte("1"),
 	})
 	log.Infof("added ownership key: %s for vdev: %s", ownershipKey, req.Vdev.ID)
+	if req.Vdev.Name != "" {
+		// Add ownership key to mark user as owner of this vdev name
+		ownershipKeybyName := fmt.Sprintf("/u/%s/vname/%s", tc.UserID, req.Vdev.Name)
+		commitChgs = append(commitChgs, funclib.CommitChg{
+			Key:   []byte(ownershipKeybyName),
+			Value: []byte("1"),
+		})
+	}
 
 	//Fill in FuncIntrm structure
 	funcIntrm := funclib.FuncIntrm{
@@ -838,6 +872,15 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		log.Errorf("APCreateVdev: %v", err)
 		return ctlplfl.InternalError(err)
 	}
+	// Check for duplicate vdev name before allocating any resources.
+	if req.Vdev.Name != "" {
+		reverseNameKey := fmt.Sprintf("%s/%s", vnameKey, req.Vdev.Name)
+		existing, readErr := cbArgs.Store.Read(reverseNameKey, colmfamily)
+		if readErr == nil && len(existing) > 0 {
+			return ctlplfl.FuncError(fmt.Errorf("vdev with name %q already exists (ID: %s)", req.Vdev.Name, string(existing)))
+		}
+	}
+
 	allocMap := btree.NewMap[string, *ctlplfl.NisdVdevAlloc](32)
 	defer allocMap.Clear()
 	HR.Dump()
@@ -855,11 +898,10 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 		return pmCmn.Encoder(pmCmn.GOB, cpResp)
 	}
 	resp, ok4 := intrm.Response.(ctlplfl.ResponseXML)
-	if !ok4 {
+	if !ok4 && resp.Error != "" {
 		log.Errorf("APCreateVdev: invalid response type in decoded intermediate data")
 		return ctlplfl.FuncError(fmt.Errorf("invalid response type"))
 	}
-
 	req.Vdev.ID = resp.ID
 	req.Vdev.NumChunks = uint32(ctlplfl.Count8GBChunks(req.Vdev.Size))
 	if err := AllocNISDs(&req, allocMap, &intrm); err != nil {
@@ -1080,7 +1122,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-	req := cpReq.Payload.(ctlplfl.GetReq)
+	req := cpReq.Payload.(ctlplfl.GetVdevReq)
 	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		log.Errorf("ReadVdevsInfoWithChunkMapping: token validation failed: %v", err)
@@ -1095,17 +1137,39 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 			} // ← add this closing brace
 		} else {
 			// Specific vdev: verify RBAC + ABAC ownership
-			attributes := map[string]string{"vdev": req.ID}
+			attributes := map[string]string{"vdev": req.Value}
 			if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.ID)
+				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.Value)
 				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 			}
 		}
 	}
 
+	vdevuuid := req.Value
+        if !req.IsID && !req.GetAll {
+                vnKey := getConfKey(vnameKey, req.Value)
+                var rqResult *storageiface.RangeReadResult
+                rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+                        Selector: colmfamily,
+                        Key:      vnKey,
+                        BufSize:  cbArgs.ReplySize,
+                        Prefix:   vnKey,
+                })
+                if err != nil {
+                        log.Error("RangeReadKV failure: ", err)
+                        return ctlplfl.FuncError(err)
+                }
+                for k, v := range rqResult.ResultMap {
+                        parts := strings.Split(strings.Trim(k, "/"), "/")
+                        if len(parts) == ELEMENT_KEY {
+                                vdevuuid = string(v)
+                        }
+                }
+        }
+
 	key := vdevKey
 	if !req.GetAll {
-		key = getConfKey(vdevKey, req.ID)
+		key = getConfKey(vdevKey, vdevuuid)
 	}
 
 	nisdResult, err := cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
@@ -1138,6 +1202,9 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 
 	for k, value := range readResult.ResultMap {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
+		if len(parts) <= VDEV_CFG_C_KEY {
+			continue
+		}
 		vdevID := parts[BASE_UUID_PREFIX]
 		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
 		if _, ok := vdevMap[vdevID]; !ok {
@@ -1159,7 +1226,8 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 				if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
 					vdev.Cfg.NumReplica = uint8(nr)
 				}
-
+			case NAME:
+				vdev.Cfg.Name = string(value)
 			}
 
 		} else if parts[VDEV_CFG_C_KEY] == chunkKey {
@@ -1227,28 +1295,48 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-	req := cpReq.Payload.(ctlplfl.GetReq)
-
-	err := req.ValidateRequest()
+	req := cpReq.Payload.(ctlplfl.GetVdevReq)
+	err := req.ValidateVdevRequest()
 	if err != nil {
 		log.Errorf("ReadVdevInfo: invalid request: %v", err)
 		return ctlplfl.FuncError(fmt.Errorf("Invalid Request"))
 	}
-
 	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		log.Errorf("ReadVdevInfo: token validation failed: %v", err)
 		return ctlplfl.AuthError(fmt.Errorf("Invalid Token"))
 	}
 	if authorizer != nil {
-		attributes := map[string]string{"vdev": req.ID}
+		attributes := map[string]string{"vdev": req.Value}
+		log.Infof("user attributes: %s, userid: %s, role: %s, cbargsstore: %s, colmfamily: %s", attributes, tc.UserID, tc.Role, cbArgs.Store, colmfamily)
 		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
+			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.Value)
 			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 		}
 	}
-	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.ID)
-	vKey := getConfKey(vdevKey, req.ID)
+	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.Value)
+	vdevID := req.Value
+	if !req.IsID {
+		vnKey := getConfKey(vnameKey, req.Value)
+	        var rqResult *storageiface.RangeReadResult
+        	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
+                	Selector: colmfamily,
+	                Key:      vnKey,
+        	        BufSize:  cbArgs.ReplySize,
+                	Prefix:   vnKey,
+	        })
+		if err != nil {
+			log.Error("RangeReadKV failure: ", err)
+			return ctlplfl.FuncError(err)
+		}
+		for k, v := range rqResult.ResultMap {
+			parts := strings.Split(strings.Trim(k, "/"), "/")
+			if len(parts) == ELEMENT_KEY {
+				vdevID = string(v)
+			}
+		}
+	}
+	vKey := getConfKey(vdevKey, vdevID)
 	var rqResult *storageiface.RangeReadResult
 	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -1267,7 +1355,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 
 	claims := map[string]any{
-		"vdevID": req.ID,
+		"vdevID": req.Value,
 	}
 
 	authtoken, err := authtc.CreateToken(claims)
@@ -1275,13 +1363,13 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Error("Token Creation failed with: ", err)
 		return ctlplfl.FuncError(err)
 	}
-	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
+	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.Value)
 
 	vdevInfo := ctlplfl.VdevCfg{
-		ID:        req.ID,
+		ID:        vdevID,
 		AuthToken: authtoken,
 	}
-
+	
 	// TODO: move this to parsing file
 	for k, v := range rqResult.ResultMap {
 		parts := strings.Split(strings.Trim(k, "/"), "/")
@@ -1303,11 +1391,13 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 				if nr, err := strconv.ParseUint(string(v), 10, 8); err == nil {
 					vdevInfo.NumReplica = uint8(nr)
 				}
+			case NAME:
+				vdevInfo.Name = string(v)
 			}
 		}
 
 	}
-	log.Debugf("ReadVdevInfo: returning vdev config for %s", req.ID)
+	log.Debugf("ReadVdevInfo: returning vdev config for %s ", req.Value)
 	return ctlplfl.EncodeResponse(vdevInfo)
 }
 
@@ -1492,6 +1582,7 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	commitChgs := make([]funclib.CommitChg, 0)
 	deleteChgs := make([]funclib.CommitChg, 0)
 	nisdRefundMap := make(map[string]*ctlplfl.Nisd)
+	var vdevName string
 
 	log.Infof("APDeleteVdev: deleting vdev %q", req.ID)
 	// Validate Vdev exists
@@ -1513,6 +1604,10 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 
 		// Process Vdev keys
 		for k, v := range rrOp.ResultMap {
+			// Capture vdev name so we can remove the reverse-index entry.
+			if strings.HasSuffix(k, "/"+cfgkey+"/"+NAME) {
+				vdevName = string(v)
+			}
 			// Delete
 			deleteChgs = append(deleteChgs, funclib.CommitChg{
 				Key:   []byte(k),
@@ -1574,6 +1669,14 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		commitChgs = append(commitChgs, funclib.CommitChg{
 			Key:   []byte(asKey),
 			Value: []byte(strconv.FormatInt(nisd.AvailableSize, 10)),
+		})
+	}
+
+	// Remove vdev name reverse-index so the name can be reused.
+	if vdevName != "" {
+		deleteChgs = append(deleteChgs, funclib.CommitChg{
+			Key:   []byte(fmt.Sprintf("%s/%s", vnameKey, vdevName)),
+			Value: nil,
 		})
 	}
 
