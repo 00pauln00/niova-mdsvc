@@ -642,7 +642,7 @@ func TestAPDeleteVdev(t *testing.T) {
 
 			t.Log("Running test case:", tc.name)
 
-			ds := newTestDataStore()
+			ds := memstore.NewMemStore()
 			if tc.setupData != nil {
 				tc.setupData(ds)
 			}

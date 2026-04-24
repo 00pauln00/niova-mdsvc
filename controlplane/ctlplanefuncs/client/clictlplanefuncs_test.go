@@ -341,6 +341,7 @@ func TestPutAndGetPDU(t *testing.T) {
 
 	resp, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
 	assert.NoError(t, err)
+	log.Infof("fetech all pdu list: %v", resp)
 	// all testcases use same data store, so including currently added pdus we check the result
 	assert.GreaterOrEqual(t, len(resp), len(pdus))
 }

@@ -220,9 +220,9 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	}
 	defer itr.Close()
 
-	log.Tracef("ReadSnapForVdev: range read returned %d results for vdev %s", len(itr.ResultMap), Snap.Vdev)
+	log.Tracef("ReadSnapForVdev: range read for vdev %s", Snap.Vdev)
 	for itr.Valid() {
-		key := itr.GetKV()
+		key, _ := itr.GetKV()
 		c := strings.Split(key, "/")
 
 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
@@ -437,6 +437,13 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 		return ctlplfl.FuncError(err)
 	}
 	defer itr.Close()
+
+	// Use pagination when the caller supplied a Limit.
+	if cpReq.Page != nil && cpReq.Page.Limit > 0 {
+		nisdList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.Nisd](itr, NisdParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+		log.Debugf("ReadAllNisdConfigs: returning %d nisd configs (hasMore=%v)", len(nisdList), hasMore)
+		return ctlplfl.EncodePagedResponse(nisdList, hasMore, nextToken)
+	}
 
 	nisdList := ParseEntities[ctlplfl.Nisd](itr, NisdParser{})
 	log.Debugf("ReadAllNisdConfigs: returning %d nisd configs", len(nisdList))
@@ -988,6 +995,12 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 	
 	defer itr.Close()
 
+	if req.GetAll && cpReq.Page != nil && cpReq.Page.Limit > 0 {
+		pduList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.PDU](itr, pduParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+		log.Debugf("ReadPDUCfg: returning %d PDU config(s) (hasMore=%v)", len(pduList), hasMore)
+		return ctlplfl.EncodePagedResponse(pduList, hasMore, nextToken)
+	}
+
 	pduList := ParseEntities[ctlplfl.PDU](itr, pduParser{})
 
 	log.Debugf("ReadPDUCfg: returning %d PDU config(s) for key %s", len(pduList), key)
@@ -1039,6 +1052,13 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 	}
 	defer itr.Close()
 
+	// Paginate only on GetAll requests.
+	if req.GetAll && cpReq.Page != nil && cpReq.Page.Limit > 0 {
+		rackList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.Rack](itr, rackParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+		log.Debugf("ReadRackCfg: returning %d rack config(s) (hasMore=%v)", len(rackList), hasMore)
+		return ctlplfl.EncodePagedResponse(rackList, hasMore, nextToken)
+	}
+
 	rackList := ParseEntities[ctlplfl.Rack](itr, rackParser{})
 	log.Debugf("ReadRackCfg: returning %d rack config(s) for key %s", len(rackList), key)
 	return ctlplfl.EncodeResponse(rackList)
@@ -1088,6 +1108,12 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
+	}
+
+	if req.GetAll && cpReq.Page != nil && cpReq.Page.Limit > 0 {
+		hvList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.Hypervisor](itr, hvParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+		log.Debugf("ReadHyperVisorCfg: returning %d hypervisor config(s) (hasMore=%v)", len(hvList), hasMore)
+		return ctlplfl.EncodePagedResponse(hvList, hasMore, nextToken)
 	}
 
 	hvList := ParseEntities[ctlplfl.Hypervisor](itr, hvParser{})
@@ -1337,6 +1363,7 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	cpReq := args[1].(ctlplfl.CPReq)
 	vdevItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vdevKey,
@@ -1349,7 +1376,12 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	}
 	defer vdevItr.Close()
 
-	// TODO: move this to parsing file
+	if cpReq.Page != nil && cpReq.Page.Limit > 0 {
+		vdevList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.VdevCfg](vdevItr, vdevParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+		log.Debugf("ReadAllVdevInfo: returning %d vdev(s) (hasMore=%v)", len(vdevList), hasMore)
+		return ctlplfl.EncodePagedResponse(vdevList, hasMore, nextToken)
+	}
+
 	vdevList := ParseEntities[ctlplfl.VdevCfg](vdevItr, vdevParser{})
 	log.Debugf("ReadAllVdevInfo: returning %d vdev(s)", len(vdevList))
 	return ctlplfl.EncodeResponse(vdevList)
@@ -1582,16 +1614,16 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 				nisd.AvailableSize += ctlplfl.CHUNK_SIZE
 			}
 
-				revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
-				// delete nisd-vdev reverse mapping keys
-				deleteChgs = append(deleteChgs, funclib.CommitChg{
-					Key:   []byte(revKey),
-					Value: nil,
-				})
-			}
+			revKey := fmt.Sprintf("%s/%s/%s", nisdKey, nisdID, req.ID)
+			// delete nisd-vdev reverse mapping keys
+			deleteChgs = append(deleteChgs, funclib.CommitChg{
+				Key:   []byte(revKey),
+				Value: nil,
+			})
 		}
 		rrOp.Next()
 	}
+
 	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.ID)
 	deleteChgs = append(deleteChgs, funclib.CommitChg{
 		Key: []byte(ownershipKey),

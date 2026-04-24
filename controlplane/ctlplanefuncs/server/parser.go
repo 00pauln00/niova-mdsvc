@@ -1,6 +1,8 @@
 package srvctlplanefuncs
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -56,6 +58,141 @@ func ParseEntities[T Entity](itr storageiface.Iterator, pe ParseEntity) []T {
 		result = append(result, final.(T))
 	}
 	return result
+}
+
+// encodePageToken serialises a PageToken to an opaque base64 string.
+func encodePageToken(pt ctlplfl.PageToken) string {
+	b, err := json.Marshal(pt)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// decodePageToken parses a base64 page-token string back to a PageToken.
+func decodePageToken(s string) (ctlplfl.PageToken, error) {
+	var pt ctlplfl.PageToken
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return pt, err
+	}
+	return pt, json.Unmarshal(b, &pt)
+}
+
+// ParseEntitiesPaginated iterates over the KV store and returns at most
+// `limit` complete logical objects.  A logical object boundary is detected
+// when the object ID (parts[1]) changes.  When `limit` is 0 the function
+// behaves identically to ParseEntities (all objects returned).
+//
+// On a non-empty token the iterator is assumed to already be positioned at
+// the start of the prefix; this function skips any remaining KV entries
+// belonging to the previously-completed object before collecting new ones.
+//
+// Returns:
+//   - objects  – the collected objects for this page
+//   - nextToken – opaque token for the next page; empty string on the last page
+//   - hasMore  – true if more objects exist beyond this page
+func ParseEntitiesPaginated[T Entity](
+	itr storageiface.Iterator,
+	pe ParseEntity,
+	limit uint8,
+	token string,
+) (objects []T, nextToken string, hasMore bool) {
+
+	entityMap := make(map[string]Entity)
+	var currentID string   // ID of the object being assembled
+	var completedID string // ID of the last fully appended object
+	var lastKey string     // last KV key *within* the last completed object
+	var prevKey string     // KV key seen in the previous iteration
+	count := uint8(0)
+
+	// ── Resume: skip remaining KV entries from the previous page's last object ──
+	var resumeObjectID string
+	if token != "" {
+		pt, err := decodePageToken(token)
+		if err != nil {
+			log.Warnf("ParseEntitiesPaginated: invalid token %q: %v – starting from beginning", token, err)
+		} else {
+			resumeObjectID = pt.LastObjectID
+		}
+	}
+
+	// If we have a resume object ID, skip all KV entries that belong to it
+	// (they were already returned on the previous page).
+	if resumeObjectID != "" {
+		for itr.Valid() {
+			k, _ := itr.GetKV()
+			parts := strings.Split(strings.Trim(k, "/"), "/")
+			if len(parts) < ELEMENT_KEY || parts[BASE_UUID_PREFIX] != resumeObjectID {
+				break // first key of a new object
+			}
+			itr.Next()
+		}
+	}
+
+	// ── Main scan ──
+	for itr.Valid() {
+		k, v := itr.GetKV()
+		parts := strings.Split(strings.Trim(k, "/"), "/")
+
+		if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+			itr.Next()
+			continue
+		}
+
+		objID := parts[BASE_UUID_PREFIX]
+
+		// Detect object boundary
+		if currentID == "" {
+			currentID = objID
+			entityMap[objID] = pe.NewEntity(objID)
+		}
+
+		if objID != currentID {
+			// Object boundary: finalise the previous object.
+			// prevKey is the last KV that belonged to currentID — not k (which is
+			// the first key of the next object).
+			if e, ok := entityMap[currentID]; ok {
+				objects = append(objects, pe.GetEntity(e).(T))
+				count++
+				completedID = currentID
+				lastKey = prevKey // last KV *inside* the finished object
+			}
+
+			if limit > 0 && count >= uint8(limit) {
+				hasMore = true
+				break
+			}
+
+			// Start the new object.
+			currentID = objID
+			entityMap[objID] = pe.NewEntity(objID)
+		}
+
+		pe.ParseField(entityMap[currentID], parts, []byte(v))
+		prevKey = k // remember this key before advancing
+		itr.Next()
+	}
+
+	// ── Flush the last in-progress object (if we didn't hit the limit) ──
+	if currentID != "" && (limit == 0 || count < limit) {
+		if e, ok := entityMap[currentID]; ok {
+			objects = append(objects, pe.GetEntity(e).(T))
+			completedID = currentID
+			lastKey = prevKey // last KV seen for this object
+		}
+	}
+
+	// ── Build the next-page token ──
+	if hasMore && completedID != "" {
+		nextToken = encodePageToken(ctlplfl.PageToken{
+			LastKey:      lastKey,
+			LastObjectID: completedID,
+		})
+	}
+
+	log.Debugf("ParseEntitiesPaginated: returned %d objects, hasMore=%v", len(objects), hasMore)
+	return objects, nextToken, hasMore
 }
 
 func ParseEntitiesMap(itr storageiface.Iterator, pe ParseEntity) map[string]Entity {

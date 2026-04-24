@@ -17,9 +17,13 @@ type CPError struct {
 }
 
 // Pagination holds cursor-based pagination parameters for read requests.
+// SeqNo is kept inside the continuation Token (PageToken); callers do not
+// need to supply it separately.
 type Pagination struct {
 	SeqNo      uint64 `xml:"SeqNo"`      // Seq number of the last read record
 	Consistent bool   `xml:"Consistent"` // If true, the read is consistent with the last read
+	LastKey    string `xml:"LastKey"`    // The last key read (used for pagination)
+	Limit      uint32 `xml:"Limit"`      // Max number of records to return
 }
 
 // CPReq is the unified request envelope for all control plane operations.
