@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/tidwall/btree"
+
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
-	"github.com/tidwall/btree"
 )
 
 // Nisds is a Counted B-tree containing pointers to Nisd objects, ordered by Nisd.ID.
@@ -178,7 +180,7 @@ func (hr *Hierarchy) PickNISD(ent *Entities, picked map[string]struct{},
 			continue
 		}
 
-		// if the current nisd's available space is > then optimal nisd's avilable space, update the OptimalNisd value
+		// if the current nisd's available space is > then optimal nisd's available space, update the OptimalNisd value
 		if OptimalNisd == nil || nAlloc.AvailableSize > OptimalNisd.AvailableSize {
 			OptimalNisd = nAlloc
 		}

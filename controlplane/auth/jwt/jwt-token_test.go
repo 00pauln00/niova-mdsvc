@@ -1,20 +1,20 @@
 package auth
 
 import (
-	"testing"
-	"time"
+	"encoding/base64"
 	"fmt"
 	"os"
-	"encoding/base64"
 	"strings"
+	"testing"
+	"time"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 func TestMain(m *testing.M) {
-    logLevel := "TRACE" // try TRACE / INFO / ERROR
-    log.InitXlog("", &logLevel)
-    os.Exit(m.Run())
+	logLevel := "TRACE" // try TRACE / INFO / ERROR
+	log.InitXlog("", &logLevel)
+	os.Exit(m.Run())
 }
 
 func TestCreateToken(t *testing.T) {
@@ -27,9 +27,9 @@ func TestCreateToken(t *testing.T) {
 		"vdevID": vdevID,
 		"userID": userID,
 	}
-	tc := &Token {
+	tc := &Token{
 		Secret: []byte(secret),
-		TTL: ttl,
+		TTL:    ttl,
 	}
 	tokenString, err := tc.CreateToken(customclaims)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestCreateToken(t *testing.T) {
 	claims, err := tc.VerifyToken(tokenString)
 	if err != nil {
 		t.Fatalf("VerifyAuthToken failed: %v", err)
-	}	
+	}
 	// ---- CLAIM CHECKS ----
 	// vdevID (custom claim)
 	gotVdevID, ok := claims["vdevID"].(string)
@@ -73,7 +73,7 @@ func TestCreateToken(t *testing.T) {
 	if expTime.After(now.Add(ttl + 5*time.Second)) {
 		t.Fatalf("expiration too far in future: exp=%v", expTime)
 	}
-	t.Logf("PASS: JWT created and validated successfully | vdevID=%s issuer=%s expires_at=%v", gotVdevID, iss, expTime,)
+	t.Logf("PASS: JWT created and validated successfully | vdevID=%s issuer=%s expires_at=%v", gotVdevID, iss, expTime)
 }
 
 func TestVerifyAuthToken(t *testing.T) {
@@ -83,23 +83,22 @@ func TestVerifyAuthToken(t *testing.T) {
 	customClaims := map[string]any{
 		"vdevID": vdevID,
 	}
-	tc := &Token {
-			Secret: []byte(secret),
-			TTL: ttl,
-		}
+	tc := &Token{
+		Secret: []byte(secret),
+		TTL:    ttl,
+	}
 	// Step 1: Create token
 	tokenString, err := tc.CreateToken(customClaims)
-	if err != nil {	
+	if err != nil {
 		t.Fatalf("CreateAuthToken failed: %v", err)
 	}
 	if tokenString == "" {
 		t.Fatal("expected token string, got empty")
 	}
-	testsecret := "testsecret"
-	tc2 := &Token {
-			Secret: []byte(testsecret),
-			TTL: ttl,
-		  }
+	tc2 := &Token{
+		Secret: []byte(secret),
+		TTL:    ttl,
+	}
 	// Step 2: Verify token
 	claims, err := tc2.VerifyToken(tokenString)
 	if err != nil {
@@ -131,7 +130,7 @@ func TestVerifyAuthToken(t *testing.T) {
 		t.Fatalf("token expired unexpectedly: exp=%v", expTime)
 	}
 	// Final success message (only shown with -v)
-	t.Logf("PASS: VerifyAuthToken succeeded | vdevID=%s issuer=%s expires_at=%v", gotVdevID, iss, expTime,)
+	t.Logf("PASS: VerifyAuthToken succeeded | vdevID=%s issuer=%s expires_at=%v", gotVdevID, iss, expTime)
 }
 
 func TestVerifyTamperedToken(t *testing.T) {
@@ -155,14 +154,14 @@ func TestVerifyTamperedToken(t *testing.T) {
 	if len(parts) != 3 {
 		t.Fatal("invalid JWT format")
 	}
-	tamperedPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"iss":"evil","vdevID":"hacked"}`),)
+	tamperedPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"iss":"evil","vdevID":"hacked"}`))
 	tamperedToken := parts[0] + "." + tamperedPayload + "." + parts[2]
 	// Step 3: Verify tampered token
 	_, err = tc.VerifyToken(tamperedToken)
 	if err == nil {
 		t.Fatal("expected verification failure for tampered token")
 	}
-		t.Logf("PASS: tampered JWT correctly rejected | error=%v", err)
+	t.Logf("PASS: tampered JWT correctly rejected | error=%v", err)
 }
 
 func TestVerifyTokenExpiryAfterTTL(t *testing.T) {
@@ -194,5 +193,5 @@ func TestVerifyTokenExpiryAfterTTL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected token verification to fail due to expiration")
 	}
-	t.Logf("PASS: JWT expired as expected | ttl=%s error=%v", ttl, err,)
+	t.Logf("PASS: JWT expired as expected | ttl=%s error=%v", ttl, err)
 }

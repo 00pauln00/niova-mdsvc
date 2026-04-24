@@ -8,15 +8,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tidwall/btree"
+
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
+
 	auth "github.com/00pauln00/niova-mdsvc/controlplane/auth/jwt"
 	authz "github.com/00pauln00/niova-mdsvc/controlplane/authorizer"
 	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
+
 	pmCmn "github.com/00pauln00/niova-pumicedb/go/pkg/pumicecommon"
 	funclib "github.com/00pauln00/niova-pumicedb/go/pkg/pumicefunc/common"
 	PumiceDBServer "github.com/00pauln00/niova-pumicedb/go/pkg/pumiceserver"
 	storageiface "github.com/00pauln00/niova-pumicedb/go/pkg/utils/storage/interface"
-	"github.com/tidwall/btree"
 )
 
 var colmfamily string
@@ -216,13 +219,17 @@ func ReadSnapForVdev(args ...interface{}) (interface{}, error) {
 	}
 
 	log.Tracef("ReadSnapForVdev: range read returned %d results for vdev %s", len(readResult.ResultMap), Snap.Vdev)
-	for key, _ := range readResult.ResultMap {
+	for key := range readResult.ResultMap {
 		c := strings.Split(key, "/")
 
 		idx, err := strconv.ParseUint(c[len(c)-2], 10, 32)
+		if err != nil {
+			log.Errorf("ReadSnapForVdev: failed to parse chunk index from key %q: %v", key, err)
+			return ctlplfl.FuncError(err)
+		}
 		seq, err := strconv.ParseUint(c[len(c)-1], 10, 64)
 		if err != nil {
-			log.Errorf("ReadSnapForVdev: failed to parse chunk index/seq from key %q: %v", key, err)
+			log.Errorf("ReadSnapForVdev: failed to parse chunk seq from key %q: %v", key, err)
 			return ctlplfl.FuncError(err)
 		}
 
@@ -1490,14 +1497,13 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 	// Validate Vdev exists
 	vdevKey := getConfKey(vdevKey, req.ID) // "v/<ID>"
 
+	rrArgs := storageiface.RangeReadArgs{
+		Key:      vdevKey,
+		Prefix:   vdevKey,
+		BufSize:  cbArgs.ReplySize,
+		Selector: colmfamily,
+	}
 	for {
-		rrArgs := storageiface.RangeReadArgs{
-			Selector: colmfamily,
-			Key:      vdevKey,
-			BufSize:  cbArgs.ReplySize,
-			Prefix:   vdevKey,
-		}
-
 		rrOp, err := cbArgs.Store.RangeRead(rrArgs)
 		if err != nil {
 			log.Error("Range read failure ", err)
@@ -1553,8 +1559,8 @@ func APDeleteVdev(args ...interface{}) (interface{}, error) {
 		if rrOp.LastKey == "" {
 			break
 		}
+		// Advance to the next page
 		rrArgs.Key = rrOp.LastKey
-		rrArgs.Prefix = vdevKey
 		rrArgs.SeqNum = rrOp.SeqNum
 	}
 	ownershipKey := fmt.Sprintf("/u/%s/v/%s", tc.UserID, req.ID)

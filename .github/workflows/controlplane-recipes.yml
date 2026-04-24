@@ -105,8 +105,7 @@ jobs:
            mv authClient /home/runner/work/niovad/niovad/build_dir/libexec/niova
 
     - name:  run recipes for controlplane application
-      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
-           export USER_ENCRYPTION_KEY=81gavMyXh9dEMT7kM7gR+gS79ovzPwyjWmV1VA/TUII &&
+      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov &&
             cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
            ../run-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon'
                              '/home/runner/work/niovad/niovad/build_dir'

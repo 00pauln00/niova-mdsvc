@@ -11,9 +11,10 @@ import (
 	"strings"
 	"time"
 
-	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
+
+	ctlplfl "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
 
 type SSHClient struct {
@@ -259,7 +260,7 @@ func parseLsblkDevices(output string) []ctlplfl.Device {
 
 			// Convert size string to bytes
 			sizeBytes := parseSizeToBytes(sizeStr)
-			log.Info("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)
+			log.Infof("Device %s: size string '%s' parsed to %d bytes", name, sizeStr, sizeBytes)
 
 			devices = append(devices, Device{
 				ID:           id,
