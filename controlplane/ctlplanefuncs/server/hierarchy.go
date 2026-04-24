@@ -153,13 +153,14 @@ func (hr *Hierarchy) LookupNAddNisd(nisd *ctlplfl.Nisd, nisdMap *btree.Map[strin
 
 // Pick a  NISD using the hash from a specific failure domain.
 func (hr *Hierarchy) PickNISD(ent *Entities, picked map[string]struct{},
-	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc]) (*cpLib.NisdVdevAlloc, error) {
+	nisdMap *btree.Map[string, *ctlplfl.NisdVdevAlloc], pickedDevices map[string]int) (*cpLib.NisdVdevAlloc, error) {
 
 	// select NISD inside entity
 	nisdCnt := ent.Nisds.Len()
 
-	// nisd with highest available capacity
+	// nisd with highest available capacity among least-allocated devices
 	var OptimalNisd *cpLib.NisdVdevAlloc
+	minAllocCount := -1
 
 	for i := 0; i < nisdCnt; i++ {
 		nisd, ok := ent.Nisds.GetAt(i)
@@ -180,9 +181,17 @@ func (hr *Hierarchy) PickNISD(ent *Entities, picked map[string]struct{},
 			continue
 		}
 
-		// if the current nisd's available space is > then optimal nisd's available space, update the OptimalNisd value
-		if OptimalNisd == nil || nAlloc.AvailableSize > OptimalNisd.AvailableSize {
+		deviceID := nAlloc.Ptr.FailureDomain[cpLib.DEVICE_IDX]
+		allocCount := pickedDevices[deviceID]
+
+		// Select based on minimum allocation count, then maximum available size
+		if minAllocCount == -1 || allocCount < minAllocCount {
+			minAllocCount = allocCount
 			OptimalNisd = nAlloc
+		} else if allocCount == minAllocCount {
+			if OptimalNisd == nil || nAlloc.AvailableSize > OptimalNisd.AvailableSize {
+				OptimalNisd = nAlloc
+			}
 		}
 	}
 
@@ -193,6 +202,9 @@ func (hr *Hierarchy) PickNISD(ent *Entities, picked map[string]struct{},
 	// commit selection
 	OptimalNisd.AvailableSize -= ctlplfl.CHUNK_SIZE
 	picked[OptimalNisd.Ptr.ID] = struct{}{}
+
+	// increment allocation count for this device
+	pickedDevices[OptimalNisd.Ptr.FailureDomain[cpLib.DEVICE_IDX]]++
 
 	return OptimalNisd, nil
 }

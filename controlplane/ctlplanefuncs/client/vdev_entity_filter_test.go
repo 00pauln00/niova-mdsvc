@@ -8,6 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/google/uuid"
 
 	cpLib "github.com/00pauln00/niova-mdsvc/controlplane/ctlplanefuncs/lib"
 )
@@ -383,4 +384,99 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 			log.Infof("[TEST END] %s", tc.name)
 		})
 	}
+}
+
+
+func TestVdevDistributionStats(t *testing.T) {
+        c := newClient(t)
+        adminToken := getAdminToken(t)
+        c.SetToken(adminToken)
+
+        // Hierarchy Setup as per requirement:
+        // 1 PDU, 1 Rack, 2 HVs, 3 Devices/HV (Total 6), 3 Partitions/Device (Total 18)
+        pduID := "7f5dd612-3fcb-11f1-90ce-efb5cbe5160d"
+        rackID := "86187dae-3fcb-11f1-ab82-a3480faf0666"
+        hvs := []string{"918c9374-3fcb-11f1-98f3-233366157547", "918c9374-3fcb-11f1-98f3-233366157547"}
+        
+        deviceList := []string{}
+        nisdIDCounter := 1
+        
+        log.Infof("Setting up hierarchy for distribution test...")
+        for h, hv := range hvs {
+                for d := 1; d <= 3; d++ {
+                        deviceID := fmt.Sprintf("dev-stats-%d-%d", h+1, d)
+                        deviceList = append(deviceList, deviceID)
+                        for p := 1; p <= 3; p++ {
+                                nisd := cpLib.Nisd{
+                                        PeerPort: 12000 + uint16(nisdIDCounter),
+                                        ID:       uuid.New().String(),
+                                        FailureDomain: []string{
+                                                pduID,
+                                                rackID,
+                                                hv,
+                                                deviceID,
+                                                fmt.Sprintf("%s-pt-%d", deviceID, p),
+                                        },
+                                        TotalSize:     4 * 1024 * 1024 * 1024 * 1024, // 4TB
+                                        AvailableSize: 4 * 1024 * 1024 * 1024 * 1024,
+                                }
+                                _, err := c.PutNisd(&nisd)
+                                require.NoError(t, err)
+                                nisdIDCounter++
+                        }
+                }
+        }
+
+        // Create 1TB Vdev (~125 chunks of 8GB each)
+        // Total allocations with 3 replicas = 375.
+        // 375 / 6 devices = ~62 chunks per device.
+        log.Infof("Creating 1TB Vdev with 3 replicas...")
+        vdevReq := &cpLib.VdevReq{
+                Vdev: &cpLib.VdevCfg{
+                        Size:       3072 * 1024 * 1024 * 1024, // 1TB
+                        NumReplica: 1,
+                },
+        }
+
+        resp, err := c.CreateVdev(vdevReq)
+        require.NoError(t, err)
+        require.True(t, resp.Success)
+        vdevID := resp.ID
+        log.Infof("Created Vdev for distribution test: %s", vdevID)
+
+        // Wait for processing
+        time.Sleep(3 * time.Second)
+
+        // Fetch Vdev with Chunk Mapping
+        vdevs, err := c.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdevID})
+	require.NoError(t, err)
+	require.NotEmpty(t, vdevs)
+	for _, vdev := range vdevs {
+		fmt.Printf("Vdev %s: %d chunks\n", vdev.Cfg.ID, vdev.Cfg.NumChunks)
+	}
+	vdev := vdevs[0]
+
+	require.NotNil(t, vdev, "expected vdev with ID %s not found", vdevID)
+        // Calculate Stats per Device
+        deviceStats := make(map[string]int)
+        for _, chunkMap := range vdev.NisdToChkMap {
+                devID := chunkMap.Nisd.FailureDomain[3]
+                deviceStats[devID]+=len(chunkMap.Chunk)
+        }
+
+        fmt.Printf("\n--- Distribution Statistics for Vdev %s ---\n", vdev.Cfg.ID)
+        fmt.Printf("Total chunk-replica mappings: %d\n", vdev.Cfg.NumChunks  * uint32(vdev.Cfg.NumReplica))
+        
+        totalAssignments := 0
+        for _, dev := range deviceList {
+                count := deviceStats[dev]
+                totalAssignments += count
+                fmt.Printf("Device %s: %d chunks\n", dev, count)
+                // With 6 devices and 375 allocations, we expect around 62 each.
+                assert.Greater(t, count, 0, "Device %s should have received at least one chunk", dev)
+        }
+        fmt.Printf("-------------------------------------------\n\n")
+
+	// Clean up
+	c.DeleteVdev(&cpLib.DeleteVdevReq{ID: vdevID})
 }
