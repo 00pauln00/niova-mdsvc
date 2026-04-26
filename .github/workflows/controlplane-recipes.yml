@@ -95,11 +95,6 @@ jobs:
       run: mkdir  /home/runner/work/niovad/niovad/code_cov &&
            export GOCOVERDIR=/work/niovad/niovad/code_cov
 
-    - name: Build the user CLI wrapper and move it to niova bin dir.
-      run: export PATH=$PATH:/home/runner/work/go/go/bin &&
-           go build -o authClient /home/runner/work/niova-mdsvc/niova-mdsvc/controlplane/user/cmd/authClient &&
-           mv authClient /home/runner/work/niovad/niovad/build_dir/libexec/niova
-
     - name:  run recipes for controlplane application
       run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov &&
             cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
