@@ -41,12 +41,12 @@ const testAdminSecret = "test-admin-secret-123"
 
 // Global maps to store test results for reuse between tests
 var (
-	PDUs  = make(map[string]cpLib.PDU)
-	Racks = make(map[string]cpLib.Rack)
-	Hypervisors = make(map[string]cpLib.Hypervisor)
-	Devices = make(map[string]cpLib.Device)
-	Nisds = make(map[string]cpLib.Nisd)
-	TestNisds = make(map[string]cpLib.Nisd)
+	PDUs           = make(map[string]cpLib.PDU)
+	Racks          = make(map[string]cpLib.Rack)
+	Hypervisors    = make(map[string]cpLib.Hypervisor)
+	Devices        = make(map[string]cpLib.Device)
+	Nisds          = make(map[string]cpLib.Nisd)
+	TestNisds      = make(map[string]cpLib.Nisd)
 	TestNisdsAfter = make(map[string]cpLib.Nisd)
 )
 
@@ -174,10 +174,10 @@ func newClientWithToken(t testing.TB, token string) *CliCFuncs {
 }
 
 func TestPutAndGetSinglePDU(t *testing.T) {
-	c := newClient(t) 
+	c := newClient(t)
 
 	pdu := cpLib.PDU{
-		ID: "95f62aee-997e-11f0-9f1b-a70cff4b660b",
+		ID:            "95f62aee-997e-11f0-9f1b-a70cff4b660b",
 		Name:          "pdu-1",
 		Location:      "us-east",
 		PowerCapacity: "15Kw",
@@ -189,12 +189,12 @@ func TestPutAndGetSinglePDU(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 
-	// GET operation 
+	// GET operation
 	res, err := c.GetPDUs(&cpLib.GetReq{GetAll: true})
 	log.Info("Single PDU: ", res)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
-	
+
 	returned := res[0]
 
 	assert.Equal(t, pdu.Name, returned.Name, "Mismatch in Name for PDU %s", pdu.ID)
@@ -320,12 +320,12 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	c := newClient(t)
 
 	hv := cpLib.Hypervisor{
-		RackID:     "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
-		ID:         "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-		IPAddrs:  	[]string{"127.0.0.1", "127.0.0.1"},
-		PortRange:  "8000-9000",
-		SSHPort:    "6999",
-		Name:       "hv-1",
+		RackID:    "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+		ID:        "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+		IPAddrs:   []string{"127.0.0.1", "127.0.0.1"},
+		PortRange: "8000-9000",
+		SSHPort:   "6999",
+		Name:      "hv-1",
 	}
 
 	// Put one hypervisor
@@ -345,7 +345,7 @@ func TestPutAndGetSingleHypervisor(t *testing.T) {
 	assert.Equal(t, hv.PortRange, getResp[0].PortRange)
 	assert.Equal(t, hv.SSHPort, getResp[0].SSHPort)
 
-	log.Infof("Single Hypervisor PUT/GET validation successful for Hypervisor ID: %s", hv.ID)	
+	log.Infof("Single Hypervisor PUT/GET validation successful for Hypervisor ID: %s", hv.ID)
 }
 
 func TestPutAndGetMultipleHypervisors(t *testing.T) {
@@ -553,58 +553,58 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 }
 
 func TestPutAndGetSingleNisd(t *testing.T) {
-   c := newClient(t)
+	c := newClient(t)
 
-   nisd := cpLib.Nisd{
-           PeerPort:      8001,
-           ID:            "3355858e-ea0e-11f0-9768-e71fc352cd1d",
-           FailureDomain: []string{
-               "95f62aee-997e-11f0-9f1b-a70cff4b660b",
-               "8a5303ae-ab23-11f0-bb87-632ad3e09c04",
-               "89944570-ab2a-11f0-b55d-8fc2c05d35f4",
-               "nvme-e3f4123",
-			   "pt-nvme-e3f4123-0",
-           },
-		   TotalSize:     1_000_000_000_000, // 1 TB
-           AvailableSize: 750_000_000_000,   // 750 GB
-           SocketPath:    "/path/sockets1",
-		   NetInfo: cpLib.NetInfoList{
-			 	cpLib.NetworkInfo{
-					IPAddr: "192.168.0.0.1",
-					Port:   5444,
-				},
-				cpLib.NetworkInfo{
-					IPAddr: "192.168.0.0.2",
-					Port:   6444,
-				},
-		   },
-		   NetInfoCnt: 2,
-   }
-
-   // PUT operation
-   resp, err := c.PutNisd(&nisd)
-   assert.NoError(t, err)
-   assert.True(t, resp.Success)
-
-   // GET operation
-   req := cpLib.GetReq{
-		GetAll:    true,
+	nisd := cpLib.Nisd{
+		PeerPort: 8001,
+		ID:       "3355858e-ea0e-11f0-9768-e71fc352cd1d",
+		FailureDomain: []string{
+			"95f62aee-997e-11f0-9f1b-a70cff4b660b",
+			"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
+			"89944570-ab2a-11f0-b55d-8fc2c05d35f4",
+			"nvme-e3f4123",
+			"pt-nvme-e3f4123-0",
+		},
+		TotalSize:     1_000_000_000_000, // 1 TB
+		AvailableSize: 750_000_000_000,   // 750 GB
+		SocketPath:    "/path/sockets1",
+		NetInfo: cpLib.NetInfoList{
+			cpLib.NetworkInfo{
+				IPAddr: "192.168.0.0.1",
+				Port:   5444,
+			},
+			cpLib.NetworkInfo{
+				IPAddr: "192.168.0.0.2",
+				Port:   6444,
+			},
+		},
+		NetInfoCnt: 2,
 	}
-   res, err := c.GetNisds(req)
-   assert.NoError(t, err)
-   log.Info("GetNisd: ", res)
-   assert.NotEmpty(t, res)
-  
-   returned := res[0]
 
-   // Validate all key fields match
-   assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
-   assert.Equal(t, nisd.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
-   assert.Equal(t, nisd.PeerPort, returned.PeerPort, "PeerPort mismatch")
-   assert.Equal(t, nisd.TotalSize, returned.TotalSize, "TotalSize mismatch")
-   assert.Equal(t, nisd.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
+	// PUT operation
+	resp, err := c.PutNisd(&nisd)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 
-   log.Info("Single NISD PUT/GET validations successful.")
+	// GET operation
+	req := cpLib.GetReq{
+		GetAll: true,
+	}
+	res, err := c.GetNisds(req)
+	assert.NoError(t, err)
+	log.Info("GetNisd: ", res)
+	assert.NotEmpty(t, res)
+
+	returned := res[0]
+
+	// Validate all key fields match
+	assert.Equal(t, nisd.ID, returned.ID, "ID mismatch")
+	assert.Equal(t, nisd.FailureDomain, returned.FailureDomain, "FailureDomain mismatch")
+	assert.Equal(t, nisd.PeerPort, returned.PeerPort, "PeerPort mismatch")
+	assert.Equal(t, nisd.TotalSize, returned.TotalSize, "TotalSize mismatch")
+	assert.Equal(t, nisd.AvailableSize, returned.AvailableSize, "AvailableSize mismatch")
+
+	log.Info("Single NISD PUT/GET validations successful.")
 }
 
 func TestPutAndGetMultipleNisds(t *testing.T) {
@@ -612,8 +612,8 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 
 	mockNisd := []cpLib.Nisd{
 		{
-			PeerPort:   8002,
-			ID:         "397fc08c-ea0e-11f0-9e9a-47f5587ee2a6",
+			PeerPort: 8002,
+			ID:       "397fc08c-ea0e-11f0-9e9a-47f5587ee2a6",
 			FailureDomain: []string{
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
 				"93e2925e-ab23-11f0-958d-87f55a6a9981",
@@ -637,8 +637,8 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 			NetInfoCnt: 2,
 		},
 		{
-			PeerPort:   8003,
-			ID:         "397fc08c-ea0e-11f0-9e9a-47f5587ee1f8",
+			PeerPort: 8003,
+			ID:       "397fc08c-ea0e-11f0-9e9a-47f5587ee1f8",
 			FailureDomain: []string{
 				"13ce1c48-9979-11f0-8bd0-4f62ec9356ea",
 				"8a5303ae-ab23-11f0-bb87-632ad3e09c04",
@@ -663,19 +663,19 @@ func TestPutAndGetMultipleNisds(t *testing.T) {
 		},
 	}
 
-	// PUT multiple NISDs 
+	// PUT multiple NISDs
 	for _, n := range mockNisd {
-        resp, err := c.PutNisd(&n)
-        assert.NoError(t, err)
-        assert.True(t, resp.Success)
-        log.Info("NISD created: ", n.ID)
-    }
+		resp, err := c.PutNisd(&n)
+		assert.NoError(t, err)
+		assert.True(t, resp.Success)
+		log.Info("NISD created: ", n.ID)
+	}
 
 	// GET all NISDs
 	req := cpLib.GetReq{
-		GetAll:    true,
+		GetAll: true,
 	}
-    res, err := c.GetNisds(req)
+	res, err := c.GetNisds(req)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 
