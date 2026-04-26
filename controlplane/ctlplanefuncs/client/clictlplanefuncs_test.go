@@ -490,7 +490,7 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 					NISDUUID:      "1",
 					DevID:         "60447cdsad0-ab3e-1342340dd976538",
 					Size:          123467,
-				}, 
+				},
 				{
 					PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
 					PartitionPath: "/part/path2",
