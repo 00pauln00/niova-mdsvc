@@ -483,19 +483,21 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			DevicePath:    "/temp/path2",
 			Name:          "dev-2",
 			Size:          12345689,
-			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
-				PartitionID:   "b97c34qwe-9775558a141a",
-				PartitionPath: "/part/path1",
-				NISDUUID:      "1",
-				DevID:         "60447cdsad0-ab3e-1342340dd976538",
-				Size:          123467,
-			}, cpLib.DevicePartition{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
-				PartitionPath: "/part/path2",
-				NISDUUID:      "1",
-				DevID:         "nvme-fb6358162002",
-				Size:          123467,
-			},
+			Partitions: []cpLib.DevicePartition{
+				{
+					PartitionID:   "b97c34qwe-9775558a141a",
+					PartitionPath: "/part/path1",
+					NISDUUID:      "1",
+					DevID:         "60447cdsad0-ab3e-1342340dd976538",
+					Size:          123467,
+				}, 
+				{
+					PartitionID:   "b97c3464-ab3e-11f0-b32d-977555asdsa",
+					PartitionPath: "/part/path2",
+					NISDUUID:      "1",
+					DevID:         "nvme-fb6358162002",
+					Size:          123467,
+				},
 			},
 		},
 		{
@@ -507,13 +509,14 @@ func TestPutAndGetMultipleDevices(t *testing.T) {
 			DevicePath:    "/temp/path3",
 			Name:          "dev-3",
 			Size:          9999999,
-			Partitions: []cpLib.DevicePartition{cpLib.DevicePartition{
-				PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
-				PartitionPath: "/part/path3",
-				NISDUUID:      "1",
-				DevID:         "nvme-fb6358162003",
-				Size:          123467,
-			},
+			Partitions: []cpLib.DevicePartition{
+				{
+					PartitionID:   "b97c3464-ab3e-11f0-b32d-9775558a141a",
+					PartitionPath: "/part/path3",
+					NISDUUID:      "1",
+					DevID:         "nvme-fb6358162003",
+					Size:          123467,
+				},
 			},
 		},
 	}
