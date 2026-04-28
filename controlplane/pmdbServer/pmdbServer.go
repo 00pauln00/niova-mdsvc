@@ -627,9 +627,9 @@ func (nso *NiovaKVServer) Read(readArgs *PumiceDBServer.PmdbCbArgs) int64 {
 		})
 
 		if err != nil {
-        	log.Errorf("RangeRead failed: err=%v, readResult nil=%v", err, readResult == nil)
-        	return -1
-    	}
+			log.Errorf("RangeRead failed: err=%v, readResult nil=%v", err, readResult == nil)
+			return -1
+		}
 
 		var cRead bool
 		if readResult.LastKey != "" {
