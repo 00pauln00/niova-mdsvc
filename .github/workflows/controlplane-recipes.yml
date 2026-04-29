@@ -39,6 +39,11 @@ jobs:
     - name: Install python libraries
       run:  pip3 install setuptools wheel func_timeout sockets psutil dpath jmespath
 
+    # Update submodules
+    - name: Update submodules
+      run: git submodule update --init --recursive
+      shell: bash
+
     - name: build libbacktrace
       run: cd modules/niova-pumicedb/modules/libbacktrace/ && 
            ./configure && 
@@ -103,8 +108,8 @@ jobs:
       run: mkdir  /home/runner/work/niovad/niovad/code_cov &&
            export GOCOVERDIR=/work/niovad/niovad/code_cov
 
-    - name:  run recipes for controlplane application
-      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov &&
+    - name: run recipes for controlplane application
+      run: export GOCOVERDIR=/home/runner/work/niovad/niovad/code_cov && 
             cd /home/runner/work/niovad/niovad/build_dir/holon/ &&
            ../run-cp-recipes.sh '/home/runner/work/niovad/niovad/build_dir/holon'
                              '/home/runner/work/niovad/niovad/build_dir'
