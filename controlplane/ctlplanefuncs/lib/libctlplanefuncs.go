@@ -23,30 +23,32 @@ import (
 )
 
 const (
-	PUT_DEVICE          = "PutDevice"
-	GET_DEVICE          = "GetDevice"
-	PUT_NISD            = "PutNisd"
-	GET_NISD            = "GetNisd"
-	GET_NISD_LIST       = "GetAllNisd"
-	CREATE_VDEV         = "CreateVdev"
-	DELETE_VDEV         = "DeleteVdev"
-	GET_VDEV_CHUNK_INFO = "GetVdevsWithChunkInfo"
-	GET_VDEV            = "GetVdevs"
-	CREATE_SNAP         = "CreateSnap"
-	READ_SNAP_NAME      = "ReadSnapByName"
-	READ_SNAP_VDEV      = "ReadSnapForVdev"
-	PUT_PDU             = "PutPDU"
-	GET_PDU             = "GetPDU"
-	GET_RACK            = "GetRack"
-	PUT_RACK            = "PutRack"
-	GET_HYPERVISOR      = "GetHypervisor"
-	PUT_HYPERVISOR      = "PutHypervisor"
-	PUT_PARTITION       = "PutPartition"
-	GET_PARTITION       = "GetPartition"
-	GET_VDEV_INFO       = "get_vdev_info" // new
-	GET_ALL_VDEV        = "get_all_vdev"
-	GET_CHUNK_NISD      = "get_chunk_nisd"
-	GET_NISD_INFO       = "get_nisd_info"
+	PUT_DEVICE               = "PutDevice"
+	GET_DEVICE               = "GetDevice"
+	PUT_NISD                 = "PutNisd"
+	GET_NISD                 = "GetNisd"
+	GET_NISD_LIST            = "GetAllNisd"
+	CREATE_VDEV              = "CreateVdev"
+	DELETE_VDEV              = "DeleteVdev"
+	GET_VDEV_CHUNK_INFO      = "GetVdevsWithChunkInfo"
+	GET_VDEV                 = "GetVdevs"
+	CREATE_SNAP              = "CreateSnap"
+	READ_SNAP_NAME           = "ReadSnapByName"
+	READ_SNAP_VDEV           = "ReadSnapForVdev"
+	PUT_PDU                  = "PutPDU"
+	GET_PDU                  = "GetPDU"
+	GET_RACK                 = "GetRack"
+	PUT_RACK                 = "PutRack"
+	GET_HYPERVISOR           = "GetHypervisor"
+	PUT_HYPERVISOR           = "PutHypervisor"
+	PUT_PARTITION            = "PutPartition"
+	GET_PARTITION            = "GetPartition"
+	GET_VDEV_INFO            = "get_vdev_info"
+	GET_ALL_VDEV             = "get_all_vdev"
+	GET_CHUNK_NISD           = "get_chunk_nisd"
+	GET_NISD_INFO            = "get_nisd_info"
+	GET_NISD_LIST_AVAIL_SIZE = "get_nisd_list_avail_size"
+	GET_ALL_RESOURCES        = "GetAllResources"
 
 	PUT_NISD_ARGS  = "PutNisdArgs"
 	GET_NISD_ARGS  = "GetNisdArgs"
@@ -267,6 +269,11 @@ type VdevReq struct {
 	Filter Filter
 }
 
+type NisdListAvailSize struct {
+	ID            string `json:"id"`
+	AvailableSize int64  `json:"available_size"`
+}
+
 // DeleteVdevReq is the request structure for deleting a Vdev.
 // UserToken is a JWT token used to authenticate and authorize the caller
 // before the delete operation is allowed to proceed.
@@ -277,6 +284,33 @@ type DeleteVdevReq struct {
 type GetReq struct {
 	ID     string
 	GetAll bool
+}
+
+type ResourceType string
+
+const (
+	ResourceNisd       ResourceType = "nisd"
+	ResourceRack       ResourceType = "rack"
+	ResourcePDU        ResourceType = "pdu"
+	ResourceHypervisor ResourceType = "hypervisor"
+	ResourceDevice     ResourceType = "device"
+	ResourcePartition  ResourceType = "partition"
+)
+
+type GetResourceReq struct {
+	ResourceType ResourceType
+	ID           string
+	GetAll       bool
+}
+
+type ResourceListResp struct {
+	ResourceType ResourceType
+	Nisds        []Nisd
+	Racks        []Rack
+	PDUs         []PDU
+	Hypervisors  []Hypervisor
+	Devices      []Device
+	Partitions   []DevicePartition
 }
 
 func (vdev *VdevCfg) Init() error {
@@ -377,6 +411,11 @@ func RegisterGOBStructs() {
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})
 	gob.Register(VdevReq{})
+	gob.Register(NisdListAvailSize{})
+	gob.Register([]NisdListAvailSize{})
+	gob.Register(GetResourceReq{})
+	gob.Register(ResourceListResp{})
+	gob.Register(ResourceType(""))
 	gob.Register(DeleteVdevReq{})
 	gob.Register(CPReq{})
 	gob.Register(CPResp{})
