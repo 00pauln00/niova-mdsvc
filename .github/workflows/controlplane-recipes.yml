@@ -39,6 +39,11 @@ jobs:
     - name: Install python libraries
       run:  pip3 install setuptools wheel func_timeout sockets psutil dpath jmespath
 
+    # Update submodules
+    - name: Update submodules
+      run: git submodule update --init --recursive
+      shell: bash
+
     - name: build libbacktrace
       run: cd modules/niova-pumicedb/modules/libbacktrace/ && 
            ./configure && 
@@ -55,7 +60,6 @@ jobs:
 
     - name: Build niova-raft
       run: cd modules/niova-pumicedb/modules/niova-raft/ &&
-           git checkout main &&
            ./prepare.sh &&
            ./configure --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ --enable-devel &&
            make clean && 
@@ -64,7 +68,6 @@ jobs:
 
     - name: Build niova-pumicedb
       run: cd modules/niova-pumicedb/ &&
-           git checkout main &&
            ./prepare.sh &&
            ./configure --enable-devel --with-niova=/home/runner/work/niovad/niovad/build_dir/ --prefix=/home/runner/work/niovad/niovad/build_dir/ &&
            make clean && make -j 4 && make install
