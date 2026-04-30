@@ -17,8 +17,7 @@ type CPError struct {
 }
 
 // Pagination holds cursor-based pagination parameters for read requests.
-// SeqNo is kept inside the continuation Token (PageToken); callers do not
-// need to supply it separately.
+// Iterators resume from the provided `LastKey` up to a predetermined response size cache limit.
 type Pagination struct {
 	SeqNo      uint64 `xml:"SeqNo"`      // Seq number of the last read record
 	Consistent bool   `xml:"Consistent"` // If true, the read is consistent with the last read

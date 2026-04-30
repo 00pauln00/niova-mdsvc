@@ -10,12 +10,14 @@ func EncodeResponse(payload any) (any, error) {
 	return pmCmn.Encoder(pmCmn.GOB, CPResp{Payload: payload})
 }
 
-// EncodePagedResponse encodes a paginated CPResp with HasMore and NextToken.
-func EncodePagedResponse(payload any, hasMore bool, nextToken string) (any, error) {
+// EncodePagedResponse encodes a paginated CPResp with nextKey.
+// When nextKey is empty, there are no more pages remaining.
+func EncodePagedResponse(payload any, hasMore bool, nextKey string) (any, error) {
 	return pmCmn.Encoder(pmCmn.GOB, CPResp{
-		Payload:   payload,
-		HasMore:   hasMore,
-		NextToken: nextToken,
+		Page: &Pagination{
+			LastKey: nextKey,
+		},
+		Payload: payload,
 	})
 }
 

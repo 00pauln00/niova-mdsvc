@@ -274,15 +274,6 @@ type DeleteVdevReq struct {
 	ID string
 }
 
-// PageToken is the internal representation of a pagination continuation token.
-// It is JSON-encoded and base64-encoded before being sent to the client as
-// Pagination.Token / CPResp.NextToken.
-type PageToken struct {
-	LastKey      string `json:"last_key"`       // KV key of the last entry in the completed object
-	LastObjectID string `json:"last_object_id"` // object ID (parts[1]) of the last completed object
-	SeqNo        uint64 `json:"seq_no"`         // DB sequence number at the time of the scan
-}
-
 // GetReq is the generic single-object read request.
 type GetReq struct {
 	ID     string
@@ -394,7 +385,6 @@ func RegisterGOBStructs() {
 	gob.Register(CPErrCode(""))
 	gob.Register(Pagination{})
 	gob.Register(FD(0))
-	gob.Register(PageToken{})
 	gob.Register(userlib.GetReq{})
 	gob.Register(userlib.UserReq{})
 	gob.Register(userlib.User{})

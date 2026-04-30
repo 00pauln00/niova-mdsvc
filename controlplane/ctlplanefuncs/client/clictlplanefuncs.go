@@ -258,22 +258,33 @@ func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) 
 
 func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 	req.GetAll = true
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	ncfg := make([]ctlplfl.Nisd, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_NISD_LIST, &ncfg)
-	if err != nil {
-		log.Error("failed to fetch nisd info: ", err)
-		return nil, err
+	var allNisds []ctlplfl.Nisd
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		ncfg := make([]ctlplfl.Nisd, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_NISD_LIST, &ncfg)
+		if err != nil {
+			log.Error("failed to fetch nisd info: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allNisds = append(allNisds, ncfg...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return ncfg, nil
+	return allNisds, nil
 }
 
 func (ccf *CliCFuncs) GetNisd(req ctlplfl.GetReq) (*ctlplfl.Nisd, error) {
@@ -390,22 +401,33 @@ func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
 }
 
 func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	pdus := make([]ctlplfl.PDU, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_PDU, &pdus)
-	if err != nil {
-		log.Error("GetPDUs failed: ", err)
-		return nil, err
+	var allPDUs []ctlplfl.PDU
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		pdus := make([]ctlplfl.PDU, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_PDU, &pdus)
+		if err != nil {
+			log.Error("GetPDUs failed: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allPDUs = append(allPDUs, pdus...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return pdus, nil
+	return allPDUs, nil
 }
 
 func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
@@ -428,22 +450,33 @@ func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
 }
 
 func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	racks := make([]ctlplfl.Rack, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_RACK, &racks)
-	if err != nil {
-		log.Error("GetRacks failed: ", err)
-		return nil, err
+	var allRacks []ctlplfl.Rack
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		racks := make([]ctlplfl.Rack, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_RACK, &racks)
+		if err != nil {
+			log.Error("GetRacks failed: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allRacks = append(allRacks, racks...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return racks, nil
+	return allRacks, nil
 }
 
 func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseXML, error) {
@@ -466,22 +499,33 @@ func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseX
 }
 
 func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, error) {
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	hypervisors := make([]ctlplfl.Hypervisor, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_HYPERVISOR, &hypervisors)
-	if err != nil {
-		log.Error("GetHypervisor failed: ", err)
-		return nil, err
+	var allHVs []ctlplfl.Hypervisor
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		hypervisors := make([]ctlplfl.Hypervisor, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_HYPERVISOR, &hypervisors)
+		if err != nil {
+			log.Error("GetHypervisor failed: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allHVs = append(allHVs, hypervisors...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return hypervisors, nil
+	return allHVs, nil
 }
 
 func (ccf *CliCFuncs) PutNisdArgs(req *ctlplfl.NisdArgs) (*ctlplfl.ResponseXML, error) {
@@ -542,22 +586,33 @@ func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
 }
 
 func (ccf *CliCFuncs) GetVdevCfgs(req *ctlplfl.GetReq) ([]ctlplfl.VdevCfg, error) {
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	vdevs := make([]ctlplfl.VdevCfg, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_ALL_VDEV, &vdevs)
-	if err != nil {
-		log.Error("Read Vdev Cfg failed: ", err)
-		return nil, err
+	var allVdevs []ctlplfl.VdevCfg
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		vdevs := make([]ctlplfl.VdevCfg, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_ALL_VDEV, &vdevs)
+		if err != nil {
+			log.Error("Read Vdev Cfg failed: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allVdevs = append(allVdevs, vdevs...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return vdevs, nil
+	return allVdevs, nil
 }
 
 func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXML, error) {

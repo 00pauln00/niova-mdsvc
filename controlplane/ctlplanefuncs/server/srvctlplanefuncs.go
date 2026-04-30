@@ -431,6 +431,13 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 		Consistent: false,
 		Prefix:     NisdCfgKey,
 	}
+	var lastKey string
+	if cpReq.Page != nil {
+		lastKey = cpReq.Page.LastKey
+	}
+	if lastKey != "" {
+		rrargs.Key = lastKey
+	}
 	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
@@ -438,16 +445,9 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 	}
 	defer itr.Close()
 
-	// Use pagination when the caller supplied a Limit.
-	if cpReq.Page != nil && cpReq.Page.Limit > 0 {
-		nisdList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.Nisd](itr, NisdParser{}, cpReq.Page.Limit, cpReq.Page.Token)
-		log.Debugf("ReadAllNisdConfigs: returning %d nisd configs (hasMore=%v)", len(nisdList), hasMore)
-		return ctlplfl.EncodePagedResponse(nisdList, hasMore, nextToken)
-	}
-
-	nisdList := ParseEntities[ctlplfl.Nisd](itr, NisdParser{})
-	log.Debugf("ReadAllNisdConfigs: returning %d nisd configs", len(nisdList))
-	return ctlplfl.EncodeResponse(nisdList)
+	nisdList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Nisd](itr, NisdParser{}, lastKey)
+	log.Debugf("ReadAllNisdConfigs: returning %d nisd configs (hasMore=%v)", len(nisdList), hasMore)
+	return ctlplfl.EncodePagedResponse(nisdList, hasMore, nextKey)
 }
 
 func ReadNisdConfig(args ...interface{}) (interface{}, error) {
@@ -982,30 +982,26 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadPDUCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
+	rrargs := storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
-	})
+	}
+	if req.GetAll && cpReq.Page != nil && cpReq.Page.LastKey != "" {
+		rrargs.Key = cpReq.Page.LastKey
+	}
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure: ", err)
 		return ctlplfl.FuncError(err)
 	}
-	
+
 	defer itr.Close()
 
-	if req.GetAll && cpReq.Page != nil && cpReq.Page.Limit > 0 {
-		pduList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.PDU](itr, pduParser{}, cpReq.Page.Limit, cpReq.Page.Token)
-		log.Debugf("ReadPDUCfg: returning %d PDU config(s) (hasMore=%v)", len(pduList), hasMore)
-		return ctlplfl.EncodePagedResponse(pduList, hasMore, nextToken)
-	}
-
-	pduList := ParseEntities[ctlplfl.PDU](itr, pduParser{})
-
-	log.Debugf("ReadPDUCfg: returning %d PDU config(s) for key %s", len(pduList), key)
-	return ctlplfl.EncodeResponse(pduList)
-
+	pduList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.PDU](itr, pduParser{}, cpReq.Page.LastKey)
+	log.Debugf("ReadPDUCfg: returning %d PDU config(s) (hasMore=%v)", len(pduList), hasMore)
+	return ctlplfl.EncodePagedResponse(pduList, hasMore, nextKey)
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
@@ -1040,23 +1036,30 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadRackCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
+	rrargs := storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
-	})
+	}
+	var lastKey string
+	if req.GetAll && cpReq.Page != nil {
+		lastKey = cpReq.Page.LastKey
+	}
+	if lastKey != "" {
+		rrargs.Key = lastKey
+	}
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
 	}
 	defer itr.Close()
 
-	// Paginate only on GetAll requests.
-	if req.GetAll && cpReq.Page != nil && cpReq.Page.Limit > 0 {
-		rackList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.Rack](itr, rackParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+	if req.GetAll {
+		rackList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Rack](itr, rackParser{}, lastKey)
 		log.Debugf("ReadRackCfg: returning %d rack config(s) (hasMore=%v)", len(rackList), hasMore)
-		return ctlplfl.EncodePagedResponse(rackList, hasMore, nextToken)
+		return ctlplfl.EncodePagedResponse(rackList, hasMore, nextKey)
 	}
 
 	rackList := ParseEntities[ctlplfl.Rack](itr, rackParser{})
@@ -1098,26 +1101,33 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadHyperVisorCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
+	rrargs := storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      key,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   key,
-	})
+	}
+	var lastKey string
+	if req.GetAll && cpReq.Page != nil {
+		lastKey = cpReq.Page.LastKey
+	}
+	if lastKey != "" {
+		rrargs.Key = lastKey
+	}
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	defer itr.Close()
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
 	}
 
-	if req.GetAll && cpReq.Page != nil && cpReq.Page.Limit > 0 {
-		hvList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.Hypervisor](itr, hvParser{}, cpReq.Page.Limit, cpReq.Page.Token)
+	if req.GetAll {
+		hvList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Hypervisor](itr, hvParser{}, lastKey)
 		log.Debugf("ReadHyperVisorCfg: returning %d hypervisor config(s) (hasMore=%v)", len(hvList), hasMore)
-		return ctlplfl.EncodePagedResponse(hvList, hasMore, nextToken)
+		return ctlplfl.EncodePagedResponse(hvList, hasMore, nextKey)
 	}
 
 	hvList := ParseEntities[ctlplfl.Hypervisor](itr, hvParser{})
-
 	log.Debugf("ReadHyperVisorCfg: returning %d hypervisor config(s) for key %s", len(hvList), key)
 	return ctlplfl.EncodeResponse(hvList)
 }
@@ -1364,27 +1374,29 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
-	vdevItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
+	vdevItrargs := storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vdevKey,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   vdevKey,
-	})
+	}
+	var lastKey string
+	if cpReq.Page != nil {
+		lastKey = cpReq.Page.LastKey
+	}
+	if lastKey != "" {
+		vdevItrargs.Key = lastKey
+	}
+	vdevItr, err := cbArgs.Store.NewRangeIterator(vdevItrargs)
 	if err != nil {
 		log.Error("RangeReadKV failure: ", err)
 		return ctlplfl.FuncError(err)
 	}
 	defer vdevItr.Close()
 
-	if cpReq.Page != nil && cpReq.Page.Limit > 0 {
-		vdevList, nextToken, hasMore := ParseEntitiesPaginated[ctlplfl.VdevCfg](vdevItr, vdevParser{}, cpReq.Page.Limit, cpReq.Page.Token)
-		log.Debugf("ReadAllVdevInfo: returning %d vdev(s) (hasMore=%v)", len(vdevList), hasMore)
-		return ctlplfl.EncodePagedResponse(vdevList, hasMore, nextToken)
-	}
-
-	vdevList := ParseEntities[ctlplfl.VdevCfg](vdevItr, vdevParser{})
-	log.Debugf("ReadAllVdevInfo: returning %d vdev(s)", len(vdevList))
-	return ctlplfl.EncodeResponse(vdevList)
+	vdevList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.VdevCfg](vdevItr, vdevParser{}, lastKey)
+	log.Debugf("ReadAllVdevInfo: returning %d vdev(s) (hasMore=%v)", len(vdevList), hasMore)
+	return ctlplfl.EncodePagedResponse(vdevList, hasMore, nextKey)
 }
 
 func ReadChunkNisd(args ...interface{}) (interface{}, error) {
