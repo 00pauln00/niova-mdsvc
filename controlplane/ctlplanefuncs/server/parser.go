@@ -16,7 +16,8 @@ const ( // Key Prefixes
 	KEY_LEN          = 3
 	VDEV_CFG_C_KEY   = 2
 	VDEV_ELEMENT_KEY = 3
-
+	BASE_VDEV_PREFIX = 1
+	
 	NET_IDX = 3
 )
 
@@ -397,6 +398,8 @@ func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 			if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
 				vdev.NumReplica = uint8(nr)
 			}
+		case NAME:
+			vdev.Name = string(value)
 		}
 	}
 }

@@ -439,6 +439,7 @@ func TestVdevLifecycle(t *testing.T) {
 	// Step 1: Create first Vdev
 	req1 := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
+			Name:       "vdevtest1",
 			ID:         uuid.NewString(),
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
@@ -449,10 +450,10 @@ func TestVdevLifecycle(t *testing.T) {
 	require.NotNil(t, resp, "vdev1 response should not be nil")
 	assert.NotEmpty(t, resp.ID, "vdev1 ID should not be empty")
 	vdev1ID := resp.ID
-
 	// Step 2: Create second Vdev
 	req2 := &cpLib.VdevReq{
 		Vdev: &cpLib.VdevCfg{
+			Name:       "vdevtest2",
 			ID:         uuid.NewString(),
 			Size:       500 * 1024 * 1024 * 1024,
 			NumReplica: 1,
@@ -463,10 +464,9 @@ func TestVdevLifecycle(t *testing.T) {
 		t.Fatalf("failed to create vdev2: %v", err)
 	}
 	assert.NotEmpty(t, resp.ID, "vdev2 ID should not be empty")
-	log.Info("Created vdev2: ", resp.ID)
 
 	// Step 3: Fetch all Vdevs and validate both exist
-	getAllReq := &cpLib.GetReq{GetAll: true}
+	getAllReq := &cpLib.GetVdevReq{GetAll: true}
 
 	allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
 	if err != nil {
@@ -474,10 +474,10 @@ func TestVdevLifecycle(t *testing.T) {
 	} else {
 		assert.NotNil(t, allCResp, "all vdevs response with chunk mapping should not be nil")
 	}
-
 	// Step 4: Fetch specific Vdev (vdev1)
-	getSpecificReq := &cpLib.GetReq{
-		ID: vdev1ID,
+	getSpecificReq := &cpLib.GetVdevReq{
+		Value: vdev1ID,
+		IsID: true,
 	}
 	specificResp, err := c.GetVdevCfg(getSpecificReq)
 	assert.NoError(t, err, "failed to fetch specific vdev")
@@ -493,6 +493,94 @@ func TestVdevLifecycle(t *testing.T) {
 	assert.Equal(t, 1, len(result), "expected exactly one vdev with chunk mapping in specific fetch")
 	assert.Equal(t, vdev1ID, result[0].Cfg.ID, "fetched vdev ID mismatch")
 	assert.Equal(t, req1.Vdev.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
+}
+
+func TestVdevLifecycleByName(t *testing.T) {
+    c := newClient(t)
+
+    // Step 0: Create a NISD
+    n := cpLib.Nisd{
+        PeerPort: 8001,
+        ID:       uuid.NewString(),
+        FailureDomain: []string{
+            uuid.NewString(),
+            uuid.NewString(),
+            uuid.NewString(),
+            uuid.NewString(),
+            uuid.NewString(),
+        },
+        TotalSize:     15_000_000_000_000,
+        AvailableSize: 15_000_000_000_000,
+    }
+
+    resp, err := c.PutNisd(&n)
+    assert.NoError(t, err)
+    assert.NotEmpty(t, resp.Name)
+    assert.Equal(t, true, resp.Success)
+
+    // Step 1: Create first Vdev
+    vdev1Name := "vdevtest3"
+
+    req1 := &cpLib.VdevReq{
+        Vdev: &cpLib.VdevCfg{
+            Name:       vdev1Name,
+            ID:         uuid.NewString(),
+            Size:       500 * 1024 * 1024 * 1024,
+            NumReplica: 1,
+        },
+    }
+
+    resp, err = c.CreateVdev(req1)
+    assert.NoError(t, err)
+    require.NotNil(t, resp)
+    assert.NotEmpty(t, resp.ID)
+
+
+    // Step 2: Create second Vdev
+    vdev2Name := "vdevtest4"
+
+    req2 := &cpLib.VdevReq{
+        Vdev: &cpLib.VdevCfg{
+            Name:       vdev2Name,
+            ID:         uuid.NewString(),
+            Size:       500 * 1024 * 1024 * 1024,
+            NumReplica: 1,
+        },
+    }
+
+    resp, err = c.CreateVdev(req2)
+    require.NoError(t, err)
+    require.NotNil(t, resp)
+    assert.NotEmpty(t, resp.ID)
+
+
+    // Step 3: Fetch all Vdevs
+    getAllReq := &cpLib.GetVdevReq{GetAll: true}
+
+    allCResp, err := c.GetVdevsWithChunkInfo(getAllReq)
+    assert.NoError(t, err)
+    assert.NotNil(t, allCResp)
+
+
+    // Step 4: Fetch specific Vdev using NAME
+    getByNameReq := &cpLib.GetVdevReq{
+        Value: vdev1Name,
+        IsID:  false, // important
+    }
+
+    specificResp, err := c.GetVdevCfg(getByNameReq)
+    assert.NoError(t, err)
+    assert.NotNil(t, specificResp)
+
+    assert.Equal(t, req1.Vdev.Size, specificResp.Size, "fetched vdev size mismatch")
+
+    // Step 5: Fetch with chunk info using NAME
+    result, err := c.GetVdevsWithChunkInfo(getByNameReq)
+    assert.NoError(t, err)
+    assert.NotNil(t, result)
+
+    assert.Equal(t, 1, len(result), "expected exactly one vdev")
+    assert.Equal(t, req1.Vdev.Size, result[0].Cfg.Size, "fetched vdev size mismatch")
 }
 
 func TestPutAndGetPartition(t *testing.T) {
@@ -572,7 +660,7 @@ func TestVdevNisdChunk(t *testing.T) {
 	resp, err = c.CreateVdev(vdev)
 	log.Info("Created Vdev Result: ", resp)
 	assert.NoError(t, err)
-	readV, err := c.GetVdevCfg(&cpLib.GetReq{ID: resp.ID})
+	readV, err := c.GetVdevCfg(&cpLib.GetVdevReq{Value: resp.ID, IsID: true})
 	assert.NoError(t, err, "Should be able to get one record")
 	assert.NotNil(t, readV, "get back inserted record")
 	nc, _ := c.GetChunkNisd(&cpLib.GetReq{ID: path.Join(resp.ID, "0")})
@@ -1003,7 +1091,7 @@ func TestDeleteVdev(t *testing.T) {
 func isVdevDeleted(t *testing.T, client *CliCFuncs, id string) (bool, error) {
 	t.Helper()
 	for attempt := range 5 {
-		_, err := client.GetVdevCfg(&cpLib.GetReq{ID: id})
+		_, err := client.GetVdevCfg(&cpLib.GetVdevReq{Value: id, IsID: true})
 		if err != nil {
 			return true, err // successfully deleted
 		}
@@ -1099,7 +1187,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		user2Client := newClientWithToken(t, user2AccessToken)
 
 		// User2 cannot access user1's vdev
-		_, err = user2Client.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		_, err = user2Client.GetVdevCfg(&cpLib.GetVdevReq{Value: vdevID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized")
 		t.Log("User2 correctly denied access to user1's vdev")
 
@@ -1117,13 +1205,13 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		assert.Equal(t, vdev2ID, vdev2Cfg.ID)
 
 		// User1 cannot access user2's vdev
-		_, err = user1Client.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		_, err = user1Client.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		assert.EqualError(t, err, "User is not authorized")
 		t.Log("User1 correctly denied access to user2's vdev")
 
 		// No token: read and create are rejected
 		noTokenClient := newClientWithToken(t, "")
-		_, err = noTokenClient.GetVdevCfg(&cpLib.GetReq{ID: vdevID})
+		_, err = noTokenClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdevID, IsID: true})
 		assert.EqualError(t, err, "Invalid Token")
 		_, err = noTokenClient.CreateVdev(&cpLib.VdevReq{Vdev: &cpLib.VdevCfg{Size: 100 * 1024 * 1024 * 1024, NumReplica: 1}})
 		assert.EqualError(t, err, "user token is required")
@@ -1145,11 +1233,11 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 		vdev2ID := vdev2Resp.ID
 
 		// Any caller can read any vdev — no ownership enforcement
-		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+		cfg1, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
 		assert.Equal(t, vdev1ID, cfg1.ID)
 
-		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetReq{ID: vdev2ID})
+		cfg2, err := ctlClient.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 		require.NoError(t, err, "GetVdevCfg should succeed when auth is disabled")
 		assert.Equal(t, vdev2ID, cfg2.ID)
 		t.Log("Auth disabled: vdev operations succeed without token")
@@ -1162,7 +1250,7 @@ func TestVdevAuthorizationWithUsers(t *testing.T) {
 func getVdevCfgWithRetry(t *testing.T, client *CliCFuncs, id string) (*cpLib.VdevCfg, error) {
 	t.Helper()
 	for attempt := range 3 {
-		cfg, err := client.GetVdevCfg(&cpLib.GetReq{ID: id})
+		cfg, err := client.GetVdevCfg(&cpLib.GetVdevReq{Value: id, IsID: true})
 		if err == nil {
 			return &cfg, nil
 		}
@@ -1170,7 +1258,7 @@ func getVdevCfgWithRetry(t *testing.T, client *CliCFuncs, id string) (*cpLib.Vde
 		time.Sleep(200 * time.Millisecond)
 	}
 	// final attempt (will fail the test if still broken)
-	v, err := client.GetVdevCfg(&cpLib.GetReq{ID: id})
+	v, err := client.GetVdevCfg(&cpLib.GetVdevReq{Value: id, IsID: true})
 	return &v, err
 }
 
@@ -1842,25 +1930,25 @@ func TestABACVdevOwnership(t *testing.T) {
 	t.Logf("User2 created vdev: %s", vdev2ID)
 
 	// 1. GetVdevCfg - own vdev should succeed
-	cfg1, err := user1Client.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+	cfg1, err := user1Client.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 	assert.NoError(t, err, "user1 should read their own vdev")
 	assert.Equal(t, vdev1ID, cfg1.ID)
 
 	// other user's vdev should be denied
-	_, err = user2Client.GetVdevCfg(&cpLib.GetReq{ID: vdev1ID})
+	_, err = user2Client.GetVdevCfg(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 	assert.EqualError(t, err, "User is not authorized")
 
 	// 2. GetVdevsWithChunkInfo
-	_, err = user1Client.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+	_, err = user1Client.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 	assert.NoError(t, err, "user1 should read chunk-info of their own vdev")
 
-	_, err = user2Client.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev1ID})
+	_, err = user2Client.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev1ID, IsID: true})
 	assert.EqualError(t, err, "User is not authorized")
 
-	_, err = user2Client.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
+	_, err = user2Client.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 	assert.NoError(t, err, "user2 should read chunk-info of their own vdev")
 
-	_, err = user1Client.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: vdev2ID})
+	_, err = user1Client.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{Value: vdev2ID, IsID: true})
 	assert.EqualError(t, err, "User is not authorized")
 
 	// 3. GetChunkNisd
