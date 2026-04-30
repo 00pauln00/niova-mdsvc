@@ -397,6 +397,10 @@ func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 			if nr, err := strconv.ParseUint(string(value), 10, 8); err == nil {
 				vdev.NumReplica = uint8(nr)
 			}
+		case FD_TYPE_KEY:
+			vdev.FilterType = string(value)
+		case FD_ID_KEY:
+			vdev.FilterID = string(value)
 		}
 	}
 }

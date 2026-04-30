@@ -34,7 +34,6 @@ const (
 	WPNisdArgs                    FunctionName = "WPNisdArgs"
 	ReadAllNisdConfigs            FunctionName = "ReadAllNisdConfigs"
 	ReadNisdConfig                FunctionName = "ReadNisdConfig"
-	ReadNisdListWithAvailSize     FunctionName = "ReadNisdListWithAvailSize"
 	ReadAllResources              FunctionName = "ReadAllResources"
 	RdDeviceInfo                  FunctionName = "RdDeviceInfo"
 	ReadPartition                 FunctionName = "ReadPartition"
@@ -128,9 +127,6 @@ var defaultPolicies = map[FunctionName]FunctionPolicy{
 		},
 	},
 	RdNisdArgs: {
-		RBAC: []string{"admin"},
-	},
-	ReadNisdListWithAvailSize: {
 		RBAC: []string{"admin"},
 	},
 	ReadAllResources: {
