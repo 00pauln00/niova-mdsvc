@@ -72,7 +72,7 @@ const (
 func TestMain(m *testing.M) {
 	// Initialize xlog to prevent nil pointer errors
 	logLevel := "INFO"
-	log.InitXlog("/tmp/test.log", &logLevel)
+	log.InitXlog("./test.log", &logLevel)
 
 	ctlplfl.RegisterGOBStructs()
 
@@ -687,4 +687,316 @@ func TestAPDeleteVdev(t *testing.T) {
 			t.Log("Test case finished:", tc.name)
 		})
 	}
+}
+
+// ─── Pagination Tests ───────────────────────────────────────────────────────
+
+// seedNisds writes n NISD configs to the datastore for pagination testing.
+func seedNisds(t *testing.T, ds storageiface.DataStore, n int) []string {
+	ids := make([]string, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("nisd-%04d-0000-0000-0000-000000000000", i)
+		ids[i] = id
+		ds.Write(fmt.Sprintf("n_cfg/%s/d", id), fmt.Sprintf("dev-%d", i), "")
+		ds.Write(fmt.Sprintf("n_cfg/%s/pp", id), strconv.Itoa(8000+i), "")
+		ds.Write(fmt.Sprintf("n_cfg/%s/ts", id), "1000000000", "")
+		ds.Write(fmt.Sprintf("n_cfg/%s/as", id), "500000000", "")
+	}
+	return ids
+}
+
+// seedRacks writes n Rack configs to the datastore.
+func seedRacks(t *testing.T, ds storageiface.DataStore, n int) []string {
+	ids := make([]string, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("rack-%04d-0000-0000-0000-000000000000", i)
+		ids[i] = id
+		ds.Write(fmt.Sprintf("r/%s/nm", id), fmt.Sprintf("Rack-%d", i), "")
+		ds.Write(fmt.Sprintf("r/%s/l", id), fmt.Sprintf("location-%d", i), "")
+	}
+	return ids
+}
+
+// seedPDUs writes n PDU configs to the datastore.
+func seedPDUs(t *testing.T, ds storageiface.DataStore, n int) []string {
+	ids := make([]string, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("pdu-%04d-0000-0000-0000-000000000000", i)
+		ids[i] = id
+		ds.Write(fmt.Sprintf("p/%s/nm", id), fmt.Sprintf("PDU-%d", i), "")
+		ds.Write(fmt.Sprintf("p/%s/l", id), fmt.Sprintf("location-%d", i), "")
+	}
+	return ids
+}
+
+// decodePaginatedResponse decodes a paginated CPResp and returns payload and pagination info.
+func decodePaginatedResponse(t *testing.T, result interface{}, target any) *ctlplfl.CPResp {
+	t.Helper()
+	cpResp := &ctlplfl.CPResp{Payload: target}
+	if err := pmCmn.Decoder(pmCmn.GOB, result.([]byte), cpResp); err != nil {
+		t.Fatalf("failed to decode CPResp: %v", err)
+	}
+	if cpResp.Error != nil {
+		t.Fatalf("unexpected error in response: %s", cpResp.Error.Message)
+	}
+	return cpResp
+}
+
+func TestReadAllNisdConfigs_Paginated(t *testing.T) {
+	authorizer = nil
+	defer func() { authorizer = nil }()
+	SetAuthEnabled(false)
+	defer SetAuthEnabled(true)
+
+	ds := memstore.NewMemStore()
+	colmfamily = ""
+	seedNisds(t, ds, 5)
+
+	cbArgs := &PumiceDBServer.PmdbCbArgs{
+		Store:     ds,
+		ReplySize: 4096,
+	}
+
+	token, _ := createTestToken(testAdminID, "admin", testSecret)
+	cpReq := ctlplfl.CPReq{
+		Token:   token,
+		Payload: ctlplfl.GetReq{GetAll: true},
+		Page:    &ctlplfl.Pagination{},
+	}
+
+	result, err := ReadAllNisdConfigs(cbArgs, cpReq)
+	if err != nil {
+		t.Fatalf("ReadAllNisdConfigs failed: %v", err)
+	}
+
+	var nisds []ctlplfl.Nisd
+	cpResp := decodePaginatedResponse(t, result, &nisds)
+
+	if len(nisds) != 5 {
+		t.Errorf("expected 5 nisds, got %d", len(nisds))
+	}
+
+	// With 5 small NISDs, all should fit in one page (under 4MB)
+	if cpResp.Page != nil && cpResp.Page.LastKey != "" {
+		t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+	}
+
+	t.Logf("ReadAllNisdConfigs returned %d nisds in single page", len(nisds))
+}
+
+func TestReadRackCfg_Paginated(t *testing.T) {
+	authorizer = nil
+	defer func() { authorizer = nil }()
+	SetAuthEnabled(false)
+	defer SetAuthEnabled(true)
+
+	ds := memstore.NewMemStore()
+	colmfamily = ""
+	expectedIDs := seedRacks(t, ds, 3)
+
+	cbArgs := &PumiceDBServer.PmdbCbArgs{
+		Store:     ds,
+		ReplySize: 4096,
+	}
+
+	token, _ := createTestToken(testAdminID, "admin", testSecret)
+
+	t.Run("GetAll_SinglePage", func(t *testing.T) {
+		cpReq := ctlplfl.CPReq{
+			Token:   token,
+			Payload: ctlplfl.GetReq{GetAll: true},
+			Page:    &ctlplfl.Pagination{},
+		}
+
+		result, err := ReadRackCfg(cbArgs, cpReq)
+		if err != nil {
+			t.Fatalf("ReadRackCfg failed: %v", err)
+		}
+
+		var racks []ctlplfl.Rack
+		cpResp := decodePaginatedResponse(t, result, &racks)
+
+		if len(racks) != 3 {
+			t.Errorf("expected 3 racks, got %d", len(racks))
+		}
+
+		// Verify all expected IDs are present
+		gotIDs := make(map[string]bool)
+		for _, r := range racks {
+			gotIDs[r.ID] = true
+		}
+		for _, id := range expectedIDs {
+			if !gotIDs[id] {
+				t.Errorf("missing expected rack ID: %s", id)
+			}
+		}
+
+		if cpResp.Page != nil && cpResp.Page.LastKey != "" {
+			t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+		}
+
+		t.Logf("ReadRackCfg GetAll returned %d racks in single page", len(racks))
+	})
+
+	t.Run("GetSingle", func(t *testing.T) {
+		targetID := expectedIDs[0]
+		cpReq := ctlplfl.CPReq{
+			Token:   token,
+			Payload: ctlplfl.GetReq{ID: targetID},
+			Page:    &ctlplfl.Pagination{},
+		}
+
+		result, err := ReadRackCfg(cbArgs, cpReq)
+		if err != nil {
+			t.Fatalf("ReadRackCfg failed: %v", err)
+		}
+
+		var racks []ctlplfl.Rack
+		decodePaginatedResponse(t, result, &racks)
+
+		if len(racks) != 1 {
+			t.Fatalf("expected 1 rack, got %d", len(racks))
+		}
+		if racks[0].ID != targetID {
+			t.Errorf("expected rack ID %q, got %q", targetID, racks[0].ID)
+		}
+
+		t.Logf("ReadRackCfg single return rack ID=%s", racks[0].ID)
+	})
+}
+
+func TestReadPDUCfg_Paginated(t *testing.T) {
+	authorizer = nil
+	defer func() { authorizer = nil }()
+	SetAuthEnabled(false)
+	defer SetAuthEnabled(true)
+
+	ds := memstore.NewMemStore()
+	colmfamily = ""
+	expectedIDs := seedPDUs(t, ds, 4)
+
+	cbArgs := &PumiceDBServer.PmdbCbArgs{
+		Store:     ds,
+		ReplySize: 4096,
+	}
+
+	token, _ := createTestToken(testAdminID, "admin", testSecret)
+
+	t.Run("GetAll_SinglePage", func(t *testing.T) {
+		cpReq := ctlplfl.CPReq{
+			Token: token,
+			Payload: ctlplfl.GetReq{GetAll: true},
+			Page:  &ctlplfl.Pagination{},
+		}
+
+		result, err := ReadPDUCfg(cbArgs, cpReq)
+		if err != nil {
+			t.Fatalf("ReadPDUCfg failed: %v", err)
+		}
+
+		var pdus []ctlplfl.PDU
+		cpResp := decodePaginatedResponse(t, result, &pdus)
+
+		if len(pdus) != 4 {
+			t.Errorf("expected 4 PDUs, got %d", len(pdus))
+		}
+
+		gotIDs := make(map[string]bool)
+		for _, p := range pdus {
+			gotIDs[p.ID] = true
+		}
+		for _, id := range expectedIDs {
+			if !gotIDs[id] {
+				t.Errorf("missing expected PDU ID: %s", id)
+			}
+		}
+
+		if cpResp.Page != nil && cpResp.Page.LastKey != "" {
+			t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+		}
+
+		t.Logf("ReadPDUCfg GetAll returned %d PDUs in single page", len(pdus))
+	})
+
+	t.Run("GetSingle", func(t *testing.T) {
+		targetID := expectedIDs[1]
+		cpReq := ctlplfl.CPReq{
+			Token: token,
+			Payload: ctlplfl.GetReq{ID: targetID},
+			Page:  &ctlplfl.Pagination{},
+		}
+
+		result, err := ReadPDUCfg(cbArgs, cpReq)
+		if err != nil {
+			t.Fatalf("ReadPDUCfg failed: %v", err)
+		}
+
+		var pdus []ctlplfl.PDU
+		decodePaginatedResponse(t, result, &pdus)
+
+		if len(pdus) != 1 {
+			t.Fatalf("expected 1 PDU, got %d", len(pdus))
+		}
+		if pdus[0].ID != targetID {
+			t.Errorf("expected PDU ID %q, got %q", targetID, pdus[0].ID)
+		}
+
+		t.Logf("ReadPDUCfg single returned PDU ID=%s", pdus[0].ID)
+	})
+}
+
+// TestPaginatedResponse_NoDuplicates verifies that paginated multi-page traversal
+// across ReadAllNisdConfigs produces no duplicate IDs.
+func TestPaginatedResponse_NoDuplicates(t *testing.T) {
+	authorizer = nil
+	defer func() { authorizer = nil }()
+	SetAuthEnabled(false)
+	defer SetAuthEnabled(true)
+
+	ds := memstore.NewMemStore()
+	colmfamily = ""
+	expectedIDs := seedNisds(t, ds, 10)
+
+	cbArgs := &PumiceDBServer.PmdbCbArgs{
+		Store:     ds,
+		ReplySize: 4096,
+	}
+
+	token, _ := createTestToken(testAdminID, "admin", testSecret)
+	seen := make(map[string]int)
+	page := &ctlplfl.Pagination{}
+
+	for pageNum := 0; pageNum < 100; pageNum++ { // cap at 100 to avoid infinite loops
+		cpReq := ctlplfl.CPReq{
+			Token:   token,
+			Payload: ctlplfl.GetReq{GetAll: true},
+			Page:    page,
+		}
+
+		result, err := ReadAllNisdConfigs(cbArgs, cpReq)
+		if err != nil {
+			t.Fatalf("page %d: ReadAllNisdConfigs failed: %v", pageNum, err)
+		}
+
+		var nisds []ctlplfl.Nisd
+		cpResp := decodePaginatedResponse(t, result, &nisds)
+
+		for _, n := range nisds {
+			seen[n.ID]++
+			if seen[n.ID] > 1 {
+				t.Errorf("duplicate NISD ID %q on page %d", n.ID, pageNum)
+			}
+		}
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page = cpResp.Page
+	}
+
+	if len(seen) != len(expectedIDs) {
+		t.Errorf("expected %d unique NISDs, got %d", len(expectedIDs), len(seen))
+	}
+
+	t.Logf("traversed all pages, found %d unique NISDs with no duplicates", len(seen))
 }

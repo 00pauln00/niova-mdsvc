@@ -411,6 +411,7 @@ func TestPutAndGetHypervisor(t *testing.T) {
 
 	resp, err := c.GetHypervisor(&cpLib.GetReq{GetAll: true})
 	assert.NoError(t, err)
+	log.Infof("fetech all hypervisor list: %v", resp)
 	// all testcases use same data store, so including currently added hypervisors we check the result
 	assert.GreaterOrEqual(t, len(resp), len(hypervisors))
 }

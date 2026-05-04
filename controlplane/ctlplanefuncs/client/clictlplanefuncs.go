@@ -219,22 +219,33 @@ func (ccf *CliCFuncs) PutDevice(device *ctlplfl.Device) (*ctlplfl.ResponseXML, e
 
 // TODO make changes to use new GetRequest struct
 func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	dev := make([]ctlplfl.Device, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_DEVICE, &dev)
-	if err != nil {
-		log.Error("failed to get device info: ", err)
-		return nil, err
+	var allDevices []ctlplfl.Device
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		dev := make([]ctlplfl.Device, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_DEVICE, &dev)
+		if err != nil {
+			log.Error("failed to get device info: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allDevices = append(allDevices, dev...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return dev, nil
+	return allDevices, nil
 }
 
 func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) {
@@ -363,22 +374,33 @@ func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.Resp
 }
 
 func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartition, error) {
-	cpReq := &ctlplfl.CPReq{
-		Token:   ccf.token,
-		Payload: req,
-	}
-	pts := make([]ctlplfl.DevicePartition, 0)
-	cpResp, err := ccf.get(cpReq, ctlplfl.GET_PARTITION, &pts)
-	if err != nil {
-		log.Error("Get Partition failed: ", err)
-		return nil, err
+	var allPts []ctlplfl.DevicePartition
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		pts := make([]ctlplfl.DevicePartition, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_PARTITION, &pts)
+		if err != nil {
+			log.Error("Get Partition failed: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allPts = append(allPts, pts...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
 	}
 
-	if err := cpResp.Err(); err != nil {
-		return nil, err
-	}
-
-	return pts, nil
+	return allPts, nil
 }
 
 func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
