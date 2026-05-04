@@ -1128,11 +1128,15 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
+	if req.ID == "" {
+		return ctlplfl.FuncError(fmt.Errorf("Invalid request: ID is required"))
+	}
 	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		log.Errorf("ReadVdevsInfoWithChunkMapping: token validation failed: %v", err)
 		return ctlplfl.FuncError(err)
 	}
+	log.Info("ReadVdevsInfoWithChunkMapping: token validation passed")
 	if authorizer != nil {
 		if req.GetAll {
 			// Listing all vdevs with chunk info: admin only, same restriction as ReadAllVdevInfo
@@ -1149,11 +1153,9 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 			}
 		}
 	}
-
-	key := vdevKey
-	if !req.GetAll {
-		key = getConfKey(vdevKey, req.ID)
-	}
+	log.Info("ReadVdevsInfoWithChunkMapping: authorization passed")
+	
+	key := getConfKey(vdevKey, req.ID)
 
 	nisdItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -1275,31 +1277,57 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 	log.Debugf("ReadVdevsInfoWithChunkMapping: returning %d vdev(s) with chunk info", len(vdevList))
 	return ctlplfl.EncodeResponse(vdevList)
 }
-
 func ReadVdevInfo(args ...interface{}) (interface{}, error) {
+	start := time.Now()
+	log.Debug("ReadVdevInfo: entered function")
+
+	// ---- Args parsing ----
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)
 	req := cpReq.Payload.(ctlplfl.GetReq)
 
-	err := req.ValidateRequest()
-	if err != nil {
+	log.Debugf("ReadVdevInfo: request received for vdevID=%s", req.ID)
+
+	// ---- Request validation ----
+	if err := req.ValidateRequest(); err != nil {
 		log.Errorf("ReadVdevInfo: invalid request: %v", err)
 		return ctlplfl.FuncError(fmt.Errorf("Invalid Request"))
 	}
+	log.Debug("ReadVdevInfo: request validation successful")
 
+	// ---- Token validation ----
 	tc, err := ValidateToken(cpReq.Token)
 	if err != nil {
 		log.Errorf("ReadVdevInfo: token validation failed: %v", err)
 		return ctlplfl.AuthError(fmt.Errorf("Invalid Token"))
 	}
+	log.Debugf("ReadVdevInfo: token validated for user=%s role=%s", tc.UserID, tc.Role)
+
+	// ---- Authorization ----
 	if authorizer != nil {
 		attributes := map[string]string{"vdev": req.ID}
-		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.ID)
+		log.Debug("ReadVdevInfo: performing authorization check")
+
+		if !authorizer.Authorize(
+			authz.ReadVdevInfo,
+			tc.UserID,
+			[]string{tc.Role},
+			attributes,
+			cbArgs.Store,
+			colmfamily,
+		) {
+			log.Errorf("ReadVdevInfo: authorization failed for user %s role %s vdev %s",
+				tc.UserID, tc.Role, req.ID)
 			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
 		}
+		log.Debug("ReadVdevInfo: authorization successful")
 	}
+
+	// ---- Iterator creation ----
 	vKey := getConfKey(vdevKey, req.ID)
+	log.Debugf("ReadVdevInfo: creating iterator for key=%s", vKey)
+
+	iterStart := time.Now()
 	vdevItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
 		Key:      vKey,
@@ -1307,11 +1335,17 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		Prefix:   vKey,
 	})
 	if err != nil {
-		log.Error("RangeReadKV failure: ", err)
+		log.Error("ReadVdevInfo: RangeReadKV failure: ", err)
 		return ctlplfl.FuncError(err)
 	}
-	defer vdevItr.Close()
+	log.Debugf("ReadVdevInfo: iterator created in %v", time.Since(iterStart))
+	defer func() {
+		log.Debug("ReadVdevInfo: closing iterator")
+		vdevItr.Close()
+	}()
 
+	// ---- Token creation ----
+	log.Debug("ReadVdevInfo: creating auth token")
 	authtc := &auth.Token{
 		Secret: []byte(ctlplfl.NISD_SECRET),
 		TTL:    time.Minute,
@@ -1321,48 +1355,36 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		"vdevID": req.ID,
 	}
 
+	tokenStart := time.Now()
 	authtoken, err := authtc.CreateToken(claims)
 	if err != nil {
-		log.Error("Token Creation failed with: ", err)
+		log.Error("ReadVdevInfo: token creation failed: ", err)
 		return ctlplfl.FuncError(err)
 	}
-	log.Trace("Created AuthToken ", authtoken, " for vdev ", req.ID)
+	log.Debugf("ReadVdevInfo: token created in %v", time.Since(tokenStart))
 
-	vdevInfo := ctlplfl.VdevCfg{
-		ID:        req.ID,
-		AuthToken: authtoken,
+	// ---- Parsing ----
+	log.Debug("ReadVdevInfo: parsing iterator results")
+
+	parseStart := time.Now()
+	vdevList := ParseEntities[ctlplfl.VdevCfg](vdevItr, vdevParser{})
+	log.Debugf("ReadVdevInfo: parsing completed in %v, count=%d",
+		time.Since(parseStart), len(vdevList))
+
+	if len(vdevList) == 0 {
+		log.Warnf("ReadVdevInfo: no vdev found for ID=%s", req.ID)
+		return ctlplfl.FuncError(fmt.Errorf("vdev not found"))
 	}
 
-	// TODO: move this to parsing file
-	for vdevItr.Valid() {
-		k, v := vdevItr.GetKV()
-		parts := strings.Split(strings.Trim(k, "/"), "/")
-		if parts[BASE_UUID_PREFIX] != vdevInfo.ID {
-			continue
-		}
-		switch parts[VDEV_CFG_C_KEY] {
-		case cfgkey:
-			switch parts[VDEV_ELEMENT_KEY] {
-			case SIZE:
-				if sz, err := strconv.ParseInt(v, 10, 64); err == nil {
-					vdevInfo.Size = sz
-				}
-			case NUM_CHUNKS:
-				if nc, err := strconv.ParseUint(v, 10, 32); err == nil {
-					vdevInfo.NumChunks = uint32(nc)
-				}
-			case NUM_REPLICAS:
-				if nr, err := strconv.ParseUint(v, 10, 8); err == nil {
-					vdevInfo.NumReplica = uint8(nr)
-				}
-			}
-		}
-		vdevItr.Next()
-	}
-	log.Debugf("ReadVdevInfo: returning vdev config for %s", req.ID)
+	vdevInfo := vdevList[0]
+	vdevInfo.AuthToken = authtoken
+
+	// ---- Response ----
+	log.Debugf("ReadVdevInfo: returning response for vdevID=%s (total time=%v)",
+		req.ID, time.Since(start))
+
 	return ctlplfl.EncodeResponse(vdevInfo)
 }
-
 func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
 	cpReq := args[1].(ctlplfl.CPReq)

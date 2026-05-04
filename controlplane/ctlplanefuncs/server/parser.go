@@ -31,6 +31,7 @@ type ParseEntity interface {
 	GetEntity(entity Entity) Entity
 }
 
+
 func ParseEntities[T Entity](itr storageiface.Iterator, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
