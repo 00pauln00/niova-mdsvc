@@ -1,6 +1,10 @@
 package libctlplanefuncs
 
-import "errors"
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+)
 
 type CPErrCode string
 
@@ -19,10 +23,42 @@ type CPError struct {
 // Pagination holds cursor-based pagination parameters for read requests.
 // Iterators resume from the provided `LastKey` up to a predetermined response size cache limit.
 type Pagination struct {
-	SeqNo      uint64 `xml:"SeqNo"`      // Seq number of the last read record
 	Consistent bool   `xml:"Consistent"` // If true, the read is consistent with the last read
-	LastKey    string `xml:"LastKey"`    // The last key read (used for pagination)
-	Limit      uint32 `xml:"Limit"`      // Max number of records to return
+	Token      string `xml:"Token"`      // Encoded LastKey and SeqNo
+}
+
+type TokenData struct {
+	SeqNo   uint64 `json:"SeqNo"`
+	LastKey string `json:"LastKey"`
+}
+
+// GetTokenData decodes the SeqNo and LastKey from the Pagination Token.
+func (p *Pagination) GetTokenData() (uint64, string) {
+	if p == nil || p.Token == "" {
+		return 0, ""
+	}
+	b, err := base64.StdEncoding.DecodeString(p.Token)
+	if err != nil {
+		return 0, ""
+	}
+	var td TokenData
+	if err := json.Unmarshal(b, &td); err != nil {
+		return 0, ""
+	}
+	return td.SeqNo, td.LastKey
+}
+
+// SetTokenData encodes SeqNo and LastKey into the Pagination Token.
+func (p *Pagination) SetTokenData(seqNo uint64, lastKey string) {
+	if p == nil {
+		return
+	}
+	if lastKey == "" && seqNo == 0 {
+		p.Token = ""
+		return
+	}
+	b, _ := json.Marshal(TokenData{SeqNo: seqNo, LastKey: lastKey})
+	p.Token = base64.StdEncoding.EncodeToString(b)
 }
 
 // CPReq is the unified request envelope for all control plane operations.

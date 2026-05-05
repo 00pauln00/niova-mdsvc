@@ -239,10 +239,10 @@ func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
 		}
 		allDevices = append(allDevices, dev...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allDevices, nil
@@ -289,10 +289,10 @@ func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 		}
 		allNisds = append(allNisds, ncfg...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allNisds, nil
@@ -394,10 +394,10 @@ func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartitio
 		}
 		allPts = append(allPts, pts...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allPts, nil
@@ -443,10 +443,10 @@ func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
 		}
 		allPDUs = append(allPDUs, pdus...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allPDUs, nil
@@ -492,10 +492,10 @@ func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
 		}
 		allRacks = append(allRacks, racks...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allRacks, nil
@@ -541,10 +541,10 @@ func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, 
 		}
 		allHVs = append(allHVs, hypervisors...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allHVs, nil
@@ -628,10 +628,10 @@ func (ccf *CliCFuncs) GetVdevCfgs(req *ctlplfl.GetReq) ([]ctlplfl.VdevCfg, error
 		}
 		allVdevs = append(allVdevs, vdevs...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allVdevs, nil
@@ -684,10 +684,10 @@ func (ccf *CliCFuncs) GetChunksInfoPaginated(req *ctlplfl.GetReq) ([]ctlplfl.Chu
 		}
 		allChunks = append(allChunks, chunks...)
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
-		page.LastKey = cpResp.Page.LastKey
+		page.Token = cpResp.Page.Token
 	}
 
 	return allChunks, nil

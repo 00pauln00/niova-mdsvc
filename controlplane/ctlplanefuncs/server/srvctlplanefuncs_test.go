@@ -777,8 +777,8 @@ func TestReadAllNisdConfigs_Paginated(t *testing.T) {
 	}
 
 	// With 5 small NISDs, all should fit in one page (under 4MB)
-	if cpResp.Page != nil && cpResp.Page.LastKey != "" {
-		t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+	if cpResp.Page != nil && cpResp.Page.Token != "" {
+		t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.Token)
 	}
 
 	t.Logf("ReadAllNisdConfigs returned %d nisds in single page", len(nisds))
@@ -831,8 +831,8 @@ func TestReadRackCfg_Paginated(t *testing.T) {
 			}
 		}
 
-		if cpResp.Page != nil && cpResp.Page.LastKey != "" {
-			t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+		if cpResp.Page != nil && cpResp.Page.Token != "" {
+			t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.Token)
 		}
 
 		t.Logf("ReadRackCfg GetAll returned %d racks in single page", len(racks))
@@ -884,9 +884,9 @@ func TestReadPDUCfg_Paginated(t *testing.T) {
 
 	t.Run("GetAll_SinglePage", func(t *testing.T) {
 		cpReq := ctlplfl.CPReq{
-			Token: token,
+			Token:   token,
 			Payload: ctlplfl.GetReq{GetAll: true},
-			Page:  &ctlplfl.Pagination{},
+			Page:    &ctlplfl.Pagination{},
 		}
 
 		result, err := ReadPDUCfg(cbArgs, cpReq)
@@ -911,8 +911,8 @@ func TestReadPDUCfg_Paginated(t *testing.T) {
 			}
 		}
 
-		if cpResp.Page != nil && cpResp.Page.LastKey != "" {
-			t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+		if cpResp.Page != nil && cpResp.Page.Token != "" {
+			t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.Token)
 		}
 
 		t.Logf("ReadPDUCfg GetAll returned %d PDUs in single page", len(pdus))
@@ -921,9 +921,9 @@ func TestReadPDUCfg_Paginated(t *testing.T) {
 	t.Run("GetSingle", func(t *testing.T) {
 		targetID := expectedIDs[1]
 		cpReq := ctlplfl.CPReq{
-			Token: token,
+			Token:   token,
 			Payload: ctlplfl.GetReq{ID: targetID},
-			Page:  &ctlplfl.Pagination{},
+			Page:    &ctlplfl.Pagination{},
 		}
 
 		result, err := ReadPDUCfg(cbArgs, cpReq)
@@ -988,7 +988,7 @@ func TestPaginatedResponse_NoDuplicates(t *testing.T) {
 			}
 		}
 
-		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+		if cpResp.Page == nil || cpResp.Page.Token == "" {
 			break
 		}
 		page = cpResp.Page
@@ -1065,8 +1065,8 @@ func TestReadChunksInfoPaginated(t *testing.T) {
 	}
 
 	// Verify no more pages
-	if cpResp.Page != nil && cpResp.Page.LastKey != "" {
-		t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+	if cpResp.Page != nil && cpResp.Page.Token != "" {
+		t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.Token)
 	}
 
 	// Build a map of chunkIdx → NisdUUIDs for easier assertions

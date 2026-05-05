@@ -432,8 +432,17 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 		Prefix:     NisdCfgKey,
 	}
 	var lastKey string
+
+	var seqNo uint64
+
 	if cpReq.Page != nil {
-		lastKey = cpReq.Page.LastKey
+
+		seqNo, lastKey = cpReq.Page.GetTokenData()
+
+	}
+	if cpReq.Page != nil {
+		rrargs.SeqNum = seqNo
+		rrargs.Consistent = cpReq.Page.Consistent
 	}
 	if lastKey != "" {
 		rrargs.Key = lastKey
@@ -447,7 +456,7 @@ func ReadAllNisdConfigs(args ...interface{}) (interface{}, error) {
 
 	nisdList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Nisd](itr, NisdParser{}, lastKey)
 	log.Debugf("ReadAllNisdConfigs: returning %d nisd configs (hasMore=%v)", len(nisdList), hasMore)
-	return ctlplfl.EncodePagedResponse(nisdList, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(nisdList, hasMore, nextKey, itr.SeqNum())
 }
 
 func ReadNisdConfig(args ...interface{}) (interface{}, error) {
@@ -561,7 +570,7 @@ func RdDeviceInfo(args ...interface{}) (interface{}, error) {
 	}
 	deviceList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Device](itr, deviceWithPartitionParser{}, "")
 	log.Debugf("RdDeviceInfo: returning device info for key %s", key)
-	return ctlplfl.EncodePagedResponse(deviceList, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(deviceList, hasMore, nextKey, itr.SeqNum())
 }
 
 func WPDeviceInfo(args ...interface{}) (interface{}, error) {
@@ -933,25 +942,32 @@ func ReadPartition(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadPartition: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	itr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
-		Selector: colmfamily,
-		Key:      key,
-		BufSize:  cbArgs.ReplySize,
-		Prefix:   key,
-	})
+	var lastKey string
+	var seqNo uint64
+	if cpReq.Page != nil {
+		seqNo, lastKey = cpReq.Page.GetTokenData()
+	}
+	rrargs := storageiface.RangeReadArgs{
+		Selector:   colmfamily,
+		Key:        key,
+		BufSize:    cbArgs.ReplySize,
+		Prefix:     key,
+		SeqNum:     seqNo,
+		Consistent: cpReq.Page != nil && cpReq.Page.Consistent,
+	}
+	if lastKey != "" {
+		rrargs.Key = lastKey
+	}
+	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
 		log.Error("Range read failure ", err)
 		return ctlplfl.FuncError(err)
 	}
 	defer itr.Close()
 
-	var lastKey string
-	if cpReq.Page != nil {
-		lastKey = cpReq.Page.LastKey
-	}
 	pt, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.DevicePartition](itr, ptParser{}, lastKey)
 	log.Debugf("ReadPartition: returning %d partition(s) for key %s (hasMore=%v)", len(pt), key, hasMore)
-	return ctlplfl.EncodePagedResponse(pt, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(pt, hasMore, nextKey, itr.SeqNum())
 }
 
 func WPPDUCfg(args ...interface{}) (interface{}, error) {
@@ -986,14 +1002,21 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadPDUCfg: auth failure: %v", err)
 		return ctlplfl.AuthError(err)
 	}
-	rrargs := storageiface.RangeReadArgs{
-		Selector: colmfamily,
-		Key:      key,
-		BufSize:  cbArgs.ReplySize,
-		Prefix:   key,
+	var lastKey string
+	var seqNo uint64
+	if cpReq.Page != nil {
+		seqNo, lastKey = cpReq.Page.GetTokenData()
 	}
-	if req.GetAll && cpReq.Page != nil && cpReq.Page.LastKey != "" {
-		rrargs.Key = cpReq.Page.LastKey
+	rrargs := storageiface.RangeReadArgs{
+		Selector:   colmfamily,
+		Key:        key,
+		BufSize:    cbArgs.ReplySize,
+		Prefix:     key,
+		SeqNum:     seqNo,
+		Consistent: cpReq.Page != nil && cpReq.Page.Consistent,
+	}
+	if req.GetAll && lastKey != "" {
+		rrargs.Key = lastKey
 	}
 	itr, err := cbArgs.Store.NewRangeIterator(rrargs)
 	if err != nil {
@@ -1003,9 +1026,9 @@ func ReadPDUCfg(args ...interface{}) (interface{}, error) {
 
 	defer itr.Close()
 
-	pduList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.PDU](itr, pduParser{}, cpReq.Page.LastKey)
+	pduList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.PDU](itr, pduParser{}, lastKey)
 	log.Debugf("ReadPDUCfg: returning %d PDU config(s) (hasMore=%v)", len(pduList), hasMore)
-	return ctlplfl.EncodePagedResponse(pduList, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(pduList, hasMore, nextKey, itr.SeqNum())
 }
 
 func WPRackCfg(args ...interface{}) (interface{}, error) {
@@ -1047,8 +1070,17 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 		Prefix:   key,
 	}
 	var lastKey string
+
+	var seqNo uint64
+
 	if cpReq.Page != nil {
-		lastKey = cpReq.Page.LastKey
+
+		seqNo, lastKey = cpReq.Page.GetTokenData()
+
+	}
+	if cpReq.Page != nil {
+		rrargs.SeqNum = seqNo
+		rrargs.Consistent = cpReq.Page.Consistent
 	}
 	if lastKey != "" {
 		rrargs.Key = lastKey
@@ -1062,7 +1094,7 @@ func ReadRackCfg(args ...interface{}) (interface{}, error) {
 
 	rackList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Rack](itr, rackParser{}, lastKey)
 	log.Debugf("ReadRackCfg: returning %d rack config(s) (hasMore=%v)", len(rackList), hasMore)
-	return ctlplfl.EncodePagedResponse(rackList, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(rackList, hasMore, nextKey, itr.SeqNum())
 }
 
 func WPHyperVisorCfg(args ...interface{}) (interface{}, error) {
@@ -1106,8 +1138,17 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 		Prefix:   key,
 	}
 	var lastKey string
+
+	var seqNo uint64
+
 	if cpReq.Page != nil {
-		lastKey = cpReq.Page.LastKey
+
+		seqNo, lastKey = cpReq.Page.GetTokenData()
+
+	}
+	if cpReq.Page != nil {
+		rrargs.SeqNum = seqNo
+		rrargs.Consistent = cpReq.Page.Consistent
 	}
 	if lastKey != "" {
 		rrargs.Key = lastKey
@@ -1121,7 +1162,7 @@ func ReadHyperVisorCfg(args ...interface{}) (interface{}, error) {
 
 	hvList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.Hypervisor](itr, hvParser{}, lastKey)
 	log.Debugf("ReadHyperVisorCfg: returning %d hypervisor config(s) (hasMore=%v)", len(hvList), hasMore)
-	return ctlplfl.EncodePagedResponse(hvList, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(hvList, hasMore, nextKey, itr.SeqNum())
 }
 
 func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
@@ -1154,8 +1195,6 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		}
 	}
 	log.Info("ReadVdevsInfoWithChunkMapping: authorization passed")
-	
-	key := getConfKey(vdevKey, req.ID)
 
 	nisdItr, err := cbArgs.Store.NewRangeIterator(storageiface.RangeReadArgs{
 		Selector: colmfamily,
@@ -1168,7 +1207,8 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		return ctlplfl.FuncError(err)
 	}
 	defer nisdItr.Close()
-
+	key := getConfKey(vdevKey, req.ID)
+	log.Info("Read Vdevs :", key)
 	// ParseEntitiesMap now returns map[string]Entity
 	nisdEntityMap := ParseEntitiesMap(nisdItr, NisdParser{})
 
@@ -1190,6 +1230,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 
 	for vdevItr.Valid() {
 		k, value := vdevItr.GetKV()
+		log.Info("ReadVdevsInfoWithChunkMapping: processing key ", string(k))
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 		vdevID := parts[BASE_UUID_PREFIX]
 		// expect something like: /<root>/<vdevID>/c/<chunkIndex> -> <nisdID>
@@ -1395,8 +1436,17 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 		Prefix:   vdevKey,
 	}
 	var lastKey string
+
+	var seqNo uint64
+
 	if cpReq.Page != nil {
-		lastKey = cpReq.Page.LastKey
+
+		seqNo, lastKey = cpReq.Page.GetTokenData()
+
+	}
+	if cpReq.Page != nil {
+		vdevItrargs.SeqNum = seqNo
+		vdevItrargs.Consistent = cpReq.Page.Consistent
 	}
 	if lastKey != "" {
 		vdevItrargs.Key = lastKey
@@ -1410,7 +1460,7 @@ func ReadAllVdevInfo(args ...interface{}) (interface{}, error) {
 
 	vdevList, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.VdevCfg](vdevItr, vdevParser{}, lastKey)
 	log.Debugf("ReadAllVdevInfo: returning %d vdev(s) (hasMore=%v)", len(vdevList), hasMore)
-	return ctlplfl.EncodePagedResponse(vdevList, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(vdevList, hasMore, nextKey, vdevItr.SeqNum())
 }
 
 func ReadChunkNisd(args ...interface{}) (interface{}, error) {
@@ -1510,8 +1560,13 @@ func ReadChunksInfoPaginated(args ...interface{}) (interface{}, error) {
 	chunkPrefix := path.Clean(getConfKey(vdevKey, path.Join(req.ID, chunkKey))) + "/"
 
 	var lastKey string
+
+	var seqNo uint64
+
 	if cpReq.Page != nil {
-		lastKey = cpReq.Page.LastKey
+
+		seqNo, lastKey = cpReq.Page.GetTokenData()
+
 	}
 
 	rrArgs := storageiface.RangeReadArgs{
@@ -1519,6 +1574,10 @@ func ReadChunksInfoPaginated(args ...interface{}) (interface{}, error) {
 		Key:      chunkPrefix,
 		BufSize:  cbArgs.ReplySize,
 		Prefix:   chunkPrefix,
+	}
+	if cpReq.Page != nil {
+		rrArgs.SeqNum = seqNo
+		rrArgs.Consistent = cpReq.Page.Consistent
 	}
 	if lastKey != "" {
 		rrArgs.Key = lastKey
@@ -1538,7 +1597,7 @@ func ReadChunksInfoPaginated(args ...interface{}) (interface{}, error) {
 
 	log.Debugf("ReadChunksInfoPaginated: vdev=%s returning %d chunks (hasMore=%v)",
 		req.ID, len(chunks), hasMore)
-	return ctlplfl.EncodePagedResponse(chunks, hasMore, nextKey)
+	return ctlplfl.EncodePagedResponse(chunks, hasMore, nextKey, itr.SeqNum())
 }
 
 func WPNisdArgs(args ...interface{}) (interface{}, error) {
