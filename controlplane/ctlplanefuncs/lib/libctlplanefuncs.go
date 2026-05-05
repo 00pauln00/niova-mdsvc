@@ -45,8 +45,9 @@ const (
 	GET_PARTITION       = "GetPartition"
 	GET_VDEV_INFO       = "get_vdev_info" // new
 	GET_ALL_VDEV        = "get_all_vdev"
-	GET_CHUNK_NISD      = "get_chunk_nisd"
-	GET_NISD_INFO       = "get_nisd_info"
+	GET_CHUNK_NISD               = "get_chunk_nisd"
+	GET_NISD_INFO                = "get_nisd_info"
+	GET_CHUNKS_INFO_PAGINATED    = "get_chunks_info_paginated"
 
 	PUT_NISD_ARGS  = "PutNisdArgs"
 	GET_NISD_ARGS  = "GetNisdArgs"
@@ -345,10 +346,13 @@ func MatchIPs(a, b []string) bool {
 	return true
 }
 
-type ChunkNisd struct {
-	XMLName     xml.Name `xml:"ChunkNisd"`
-	NumReplicas uint8    `xml:"NREPLICAS"`
-	NisdUUIDs   string   `xml:"NISDs"`
+// ChunkInfo holds the NISD assignments for a single logical chunk.
+// It is used by single-chunk (ReadChunkNisd) and paginated (ReadChunksInfoPaginated) handlers.
+type ChunkInfo struct {
+	XMLName     xml.Name `xml:"ChunkInfo"`
+	ChunkIdx    int      `json:"ChunkIdx"`
+	NisdUUIDs   []string `json:"NisdUUIDs" xml:"NISDs"`
+	NumReplicas uint8    `xml:"NREPLICAS" json:"NumReplicas"`
 }
 
 func RegisterGOBStructs() {
@@ -373,7 +377,8 @@ func RegisterGOBStructs() {
 	gob.Register(SnapXML{})
 	gob.Register(VdevCfg{})
 	gob.Register([]VdevCfg{})
-	gob.Register(ChunkNisd{})
+	gob.Register(ChunkInfo{})
+	gob.Register([]ChunkInfo{})
 	gob.Register(NisdArgs{})
 	gob.Register(NetworkInfo{})
 	gob.Register(Filter{})

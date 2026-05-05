@@ -44,6 +44,7 @@ const (
 	APDeleteVdev                  FunctionName = "APDeleteVdev"
 	ReadAllVdevInfo               FunctionName = "ReadAllVdevInfo"
 	ReadChunkNisd                 FunctionName = "ReadChunkNisd"
+	ReadChunksInfoPaginated       FunctionName = "ReadChunksInfoPaginated"
 	RdNisdArgs                    FunctionName = "RdNisdArgs"
 	PutUser                       FunctionName = "PutUser"
 	GetUser                       FunctionName = "GetUser"
@@ -120,6 +121,12 @@ var defaultPolicies = map[FunctionName]FunctionPolicy{
 		RBAC: []string{"admin"},
 	},
 	ReadChunkNisd: {
+		RBAC: []string{"user", "admin"},
+		ABAC: []ABACRule{
+			{Argument: "vdev", Prefix: "v/"},
+		},
+	},
+	ReadChunksInfoPaginated: {
 		RBAC: []string{"user", "admin"},
 		ABAC: []ABACRule{
 			{Argument: "vdev", Prefix: "v/"},

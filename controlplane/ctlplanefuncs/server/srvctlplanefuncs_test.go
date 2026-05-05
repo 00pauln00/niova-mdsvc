@@ -1000,3 +1000,105 @@ func TestPaginatedResponse_NoDuplicates(t *testing.T) {
 
 	t.Logf("traversed all pages, found %d unique NISDs with no duplicates", len(seen))
 }
+
+// TestReadChunksInfoPaginated verifies that ReadChunksInfoPaginated correctly reads
+// all chunk-to-NISD mappings for a vdev, grouping replica entries per chunk.
+func TestReadChunksInfoPaginated(t *testing.T) {
+	authorizer = nil
+	defer func() { authorizer = nil }()
+	SetAuthEnabled(false)
+	defer SetAuthEnabled(true)
+
+	const (
+		testVdev  = "019df469-da70-705d-ad48-0444cda4a67e"
+		testNisd0 = "ed7914c3-2e96-4f3e-8e0d-000000000001"
+		testNisd1 = "ed7914c3-2e96-4f3e-8e0d-000000000002"
+		testNisd2 = "f438cfd7-03c8-4a40-8a12-000000000001"
+		testNisd3 = "f438cfd7-03c8-4a40-8a12-000000000002"
+		testNisd4 = "a1b2c3d4-0000-0000-0000-000000000001"
+		testNisd5 = "a1b2c3d4-0000-0000-0000-000000000002"
+	)
+
+	ds := memstore.NewMemStore()
+	colmfamily = ""
+
+	// Seed: 3 chunks, each with 2 replicas
+	// chunk 0 → replica R.0 → testNisd0, R.1 → testNisd1
+	// chunk 1 → replica R.0 → testNisd2, R.1 → testNisd3
+	// chunk 2 → replica R.0 → testNisd4, R.1 → testNisd5
+	entries := []struct{ key, val string }{
+		{fmt.Sprintf("v/%s/c/0/R.0", testVdev), testNisd0},
+		{fmt.Sprintf("v/%s/c/0/R.1", testVdev), testNisd1},
+		{fmt.Sprintf("v/%s/c/1/R.0", testVdev), testNisd2},
+		{fmt.Sprintf("v/%s/c/1/R.1", testVdev), testNisd3},
+		{fmt.Sprintf("v/%s/c/2/R.0", testVdev), testNisd4},
+		{fmt.Sprintf("v/%s/c/2/R.1", testVdev), testNisd5},
+	}
+	for _, e := range entries {
+		if err := ds.Write(e.key, e.val, ""); err != nil {
+			t.Fatalf("failed to seed datastore: %v", err)
+		}
+	}
+
+	cbArgs := &PumiceDBServer.PmdbCbArgs{
+		Store:     ds,
+		ReplySize: 4 * 1024 * 1024,
+	}
+	token, _ := createTestToken(testAdminID, "admin", testSecret)
+	cpReq := ctlplfl.CPReq{
+		Token:   token,
+		Payload: ctlplfl.GetReq{ID: testVdev},
+		Page:    &ctlplfl.Pagination{},
+	}
+
+	result, err := ReadChunksInfoPaginated(cbArgs, cpReq)
+	if err != nil {
+		t.Fatalf("ReadChunksInfoPaginated returned error: %v", err)
+	}
+
+	var chunks []ctlplfl.ChunkInfo
+	cpResp := decodePaginatedResponse(t, result, &chunks)
+
+	// Verify: 3 chunks returned in a single page
+	if len(chunks) != 3 {
+		t.Errorf("expected 3 chunks, got %d", len(chunks))
+	}
+
+	// Verify no more pages
+	if cpResp.Page != nil && cpResp.Page.LastKey != "" {
+		t.Errorf("expected no more pages, but got nextKey=%q", cpResp.Page.LastKey)
+	}
+
+	// Build a map of chunkIdx → NisdUUIDs for easier assertions
+	chunkMap := make(map[int][]string)
+	for _, ci := range chunks {
+		chunkMap[ci.ChunkIdx] = ci.NisdUUIDs
+		if ci.NumReplicas != 2 {
+			t.Errorf("chunk %d: expected NumReplicas=2, got %d", ci.ChunkIdx, ci.NumReplicas)
+		}
+	}
+
+	expected := map[int][]string{
+		0: {testNisd0, testNisd1},
+		1: {testNisd2, testNisd3},
+		2: {testNisd4, testNisd5},
+	}
+	for idx, wantNisds := range expected {
+		gotNisds, ok := chunkMap[idx]
+		if !ok {
+			t.Errorf("chunk %d missing from response", idx)
+			continue
+		}
+		gotSet := make(map[string]struct{}, len(gotNisds))
+		for _, n := range gotNisds {
+			gotSet[n] = struct{}{}
+		}
+		for _, n := range wantNisds {
+			if _, found := gotSet[n]; !found {
+				t.Errorf("chunk %d: expected NISD %s not found in %v", idx, n, gotNisds)
+			}
+		}
+	}
+
+	t.Logf("TestReadChunksInfoPaginated passed: %d chunks returned", len(chunks))
+}

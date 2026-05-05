@@ -51,6 +51,8 @@ func GetReqStruct(name string) any {
 		return &userlib.GetReq{}
 	case cpLib.DELETE_VDEV:
 		return &cpLib.DeleteVdevReq{}
+	case cpLib.GET_CHUNKS_INFO_PAGINATED:
+		return &cpLib.GetReq{}
 	default:
 		return &cpLib.GetReq{}
 	}
@@ -63,7 +65,9 @@ func GetRespStruct(name string) any {
 	case cpLib.GET_DEVICE:
 		return &[]cpLib.Device{}
 	case cpLib.GET_CHUNK_NISD:
-		return &cpLib.ChunkNisd{}
+		return &cpLib.ChunkInfo{}
+	case cpLib.GET_CHUNKS_INFO_PAGINATED:
+		return &[]cpLib.ChunkInfo{}
 	case cpLib.GET_VDEV_INFO:
 		return &cpLib.VdevCfg{}
 	case cpLib.GET_ALL_VDEV:

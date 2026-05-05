@@ -63,7 +63,12 @@ func ParseEntities[T Entity](itr storageiface.Iterator, pe ParseEntity) []T {
 // ParseEntitiesPaginated iterates over the KV store and returns complete
 // logical objects until the total JSON size of the collected objects reaches
 // approximately 4MB. A logical object boundary is detected when the object
-// ID (parts[1]) changes.
+// ID changes.
+//
+// The optional objIDIdx parameter specifies which part of the key (after
+// splitting on "/") is used as the object ID. It defaults to BASE_UUID_PREFIX
+// (index 1), which is correct for all top-level entity types. Pass 3 for
+// chunk-level keys whose boundary is at the chunk-index position.
 //
 // On a non-empty requestLastKey (which identifies the last KV of the previously
 // processed object), the function locates the object ID and skips all remaining
@@ -73,7 +78,13 @@ func ParseEntities[T Entity](itr storageiface.Iterator, pe ParseEntity) []T {
 //   - objects  – the collected objects for this page
 //   - nextKey  – the last key inside the final returned object (use as next requestLastKey)
 //   - hasMore  – true if more objects exist beyond this page
-func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity, requestLastKey string) (objects []T, nextKey string, hasMore bool) {
+func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity, requestLastKey string, objIDIdx ...int) (objects []T, nextKey string, hasMore bool) {
+
+	// Resolve the object-ID index (default = BASE_UUID_PREFIX).
+	idIdx := BASE_UUID_PREFIX
+	if len(objIDIdx) > 0 {
+		idIdx = objIDIdx[0]
+	}
 
 	entityMap := make(map[string]Entity)
 	var currentID string                  // ID of the object being assembled
@@ -87,8 +98,8 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 	var resumeObjectID string
 	if requestLastKey != "" {
 		parts := strings.Split(strings.Trim(requestLastKey, "/"), "/")
-		if len(parts) > BASE_UUID_PREFIX {
-			resumeObjectID = parts[BASE_UUID_PREFIX]
+		if len(parts) > idIdx {
+			resumeObjectID = parts[idIdx]
 		} else {
 			log.Warnf("ParseEntitiesPaginated: invalid requestLastKey %q – starting from beginning", requestLastKey)
 		}
@@ -100,7 +111,7 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 		for itr.Valid() {
 			k, _ := itr.GetKV()
 			parts := strings.Split(strings.Trim(k, "/"), "/")
-			if len(parts) <= BASE_UUID_PREFIX || parts[BASE_UUID_PREFIX] != resumeObjectID {
+			if len(parts) <= idIdx || parts[idIdx] != resumeObjectID {
 				break // first key of a new object
 			}
 			itr.Next()
@@ -112,12 +123,12 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 		k, v := itr.GetKV()
 		parts := strings.Split(strings.Trim(k, "/"), "/")
 
-		if len(parts) < ELEMENT_KEY || parts[BASE_KEY] != pe.GetRootKey() {
+		if len(parts) <= idIdx || parts[BASE_KEY] != pe.GetRootKey() {
 			itr.Next()
 			continue
 		}
 
-		objID := parts[BASE_UUID_PREFIX]
+		objID := parts[idIdx]
 
 		// Detect object boundary
 		if currentID == "" {
@@ -495,3 +506,29 @@ func (vdevParser) ParseField(entity Entity, parts []string, value []byte) {
 }
 
 func (vdevParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.VdevCfg) }
+
+// chunkInfoParser parses chunk-to-NISD mapping entries under a vdev.
+// Key schema: v/<vdevID>/c/<chunkIdx>/R.<replicaIdx>  →  <nisdID>
+// The logical object is a single chunk index; all its R.* replica entries
+// are grouped together into one ChunkInfo.
+type chunkInfoParser struct{}
+
+func (chunkInfoParser) GetRootKey() string { return vdevKey }
+
+func (chunkInfoParser) NewEntity(id string) Entity {
+	idx, _ := strconv.Atoi(id)
+	return &ctlplfl.ChunkInfo{ChunkIdx: idx}
+}
+
+func (chunkInfoParser) ParseField(entity Entity, parts []string, value []byte) {
+	ci := entity.(*ctlplfl.ChunkInfo)
+	// parts: v / <vdevID> / c / <chunkIdx> / R.<replicaIdx>
+	// len(parts) must be >= 5 and parts[4] must start with "R."
+	if len(parts) >= 5 && (parts[2] == chunkKey) && strings.HasPrefix(parts[4], "R.") {
+		nisdID := string(value)
+		ci.NisdUUIDs = append(ci.NisdUUIDs, nisdID)
+		ci.NumReplicas = uint8(len(ci.NisdUUIDs))
+	}
+}
+
+func (chunkInfoParser) GetEntity(entity Entity) Entity { return *entity.(*ctlplfl.ChunkInfo) }

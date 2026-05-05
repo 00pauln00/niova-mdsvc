@@ -1464,14 +1464,81 @@ func ReadChunkNisd(args ...interface{}) (interface{}, error) {
 		ids = append(ids, string(itr.Value()))
 		itr.Next()
 	}
-	chunkInfo := ctlplfl.ChunkNisd{
-		NisdUUIDs:   strings.Join(ids, ","),
+	chunkIdx, _ := strconv.Atoi(chunk)
+	chunkInfo := ctlplfl.ChunkInfo{
+		ChunkIdx:    chunkIdx,
+		NisdUUIDs:   ids,
 		NumReplicas: uint8(len(ids)),
 	}
 
 	log.Debugf("ReadChunkNisd: returning chunk-nisd info for vdev %s chunk %s", vdevID, chunk)
 	return ctlplfl.EncodeResponse(chunkInfo)
 
+}
+
+// ReadChunksInfoPaginated performs a paginated range-read over all chunk-to-NISD
+// mappings stored under a single vdev (v/<vdevID>/c/...). Each page contains up to
+// 4 MB of JSON-serialised ChunkInfo objects. Pagination follows the same
+// continuation-token pattern used by ReadAllVdevInfo, ReadRackCfg, etc.
+func ReadChunksInfoPaginated(args ...interface{}) (interface{}, error) {
+	cbArgs := args[0].(*PumiceDBServer.PmdbCbArgs)
+	cpReq := args[1].(ctlplfl.CPReq)
+	req := cpReq.Payload.(ctlplfl.GetReq)
+
+	if err := req.ValidateRequest(); err != nil {
+		log.Error("ReadChunksInfoPaginated: invalid request:", err)
+		return ctlplfl.FuncError(err)
+	}
+
+	tc, err := ValidateToken(cpReq.Token)
+	if err != nil {
+		log.Errorf("ReadChunksInfoPaginated: token validation failed: %v", err)
+		return ctlplfl.AuthError(err)
+	}
+
+	if authorizer != nil {
+		attributes := map[string]string{"vdev": req.ID}
+		if !authorizer.Authorize(authz.ReadChunksInfoPaginated, tc.UserID, []string{tc.Role},
+			attributes, cbArgs.Store, colmfamily) {
+			log.Errorf("ReadChunksInfoPaginated: user %s role %s not authorized for vdev %s",
+				tc.UserID, tc.Role, req.ID)
+			return ctlplfl.AuthError(fmt.Errorf("authorization failed"))
+		}
+	}
+
+	// Range key: v/<vdevID>/c/
+	chunkPrefix := path.Clean(getConfKey(vdevKey, path.Join(req.ID, chunkKey))) + "/"
+
+	var lastKey string
+	if cpReq.Page != nil {
+		lastKey = cpReq.Page.LastKey
+	}
+
+	rrArgs := storageiface.RangeReadArgs{
+		Selector: colmfamily,
+		Key:      chunkPrefix,
+		BufSize:  cbArgs.ReplySize,
+		Prefix:   chunkPrefix,
+	}
+	if lastKey != "" {
+		rrArgs.Key = lastKey
+	}
+
+	itr, err := cbArgs.Store.NewRangeIterator(rrArgs)
+	if err != nil {
+		log.Error("ReadChunksInfoPaginated: range read failure: ", err)
+		return ctlplfl.FuncError(err)
+	}
+	defer itr.Close()
+
+	// Use objIDIdx=3 so the paginator groups by parts[3] (chunk index)
+	// rather than parts[1] (vdevID), ensuring each ChunkInfo is complete.
+	chunks, nextKey, hasMore := ParseEntitiesPaginated[ctlplfl.ChunkInfo](
+		itr, chunkInfoParser{}, lastKey, 3)
+
+	log.Debugf("ReadChunksInfoPaginated: vdev=%s returning %d chunks (hasMore=%v)",
+		req.ID, len(chunks), hasMore)
+	return ctlplfl.EncodePagedResponse(chunks, hasMore, nextKey)
 }
 
 func WPNisdArgs(args ...interface{}) (interface{}, error) {

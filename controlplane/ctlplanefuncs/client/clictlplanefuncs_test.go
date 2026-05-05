@@ -1880,3 +1880,50 @@ func TestABACVdevOwnership(t *testing.T) {
 
 	t.Log("ABAC Vdev Ownership Test Completed Successfully")
 }
+
+func TestGetChunksInfoPaginated(t *testing.T) {
+	c := newClient(t)
+
+	// Step 1: Create a NISD
+	mockNisd := cpLib.Nisd{
+		PeerPort: 8003,
+		ID:       uuid.NewString(), // unique NISD for this test
+		FailureDomain: []string{
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+		},
+		TotalSize:     5_000_000_000_000,
+		AvailableSize: 5_000_000_000_000,
+	}
+	resp, err := c.PutNisd(&mockNisd)
+	require.NoError(t, err)
+	require.True(t, resp.Success)
+
+	// Step 2: Create a Vdev
+	vdevCfg := &cpLib.VdevReq{
+		Vdev: &cpLib.VdevCfg{
+			Size:       8 * 1024 * 1024 * 1024,
+			NumReplica: 1, // single replica for simplicity, implies it maps to the NISD we created
+		},
+	}
+	vdevResp, err := c.CreateVdev(vdevCfg)
+	require.NoError(t, err, "CreateVdev should succeed")
+	require.NotNil(t, vdevResp)
+	require.NotEmpty(t, vdevResp.ID)
+	vdevID := vdevResp.ID
+
+	// Step 3: Fetch pagination info
+	chunksInfo, err := c.GetChunksInfoPaginated(&cpLib.GetReq{ID: vdevID})
+	require.NoError(t, err, "GetChunksInfoPaginated should succeed")
+	require.NotEmpty(t, chunksInfo, "Should have chunks generated for the new vdev")
+
+	// Validate chunk info output
+	for _, chunk := range chunksInfo {
+		log.Infof("chunk %v", chunk)
+	}
+
+	t.Logf("Successfully fetched %d paginated chunks for vdev %s", len(chunksInfo), vdevID)
+}

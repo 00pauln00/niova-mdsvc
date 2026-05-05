@@ -641,8 +641,8 @@ func (ccf *CliCFuncs) PutDeviceInfo(device *ctlplfl.Device) (*ctlplfl.ResponseXM
 	return ccf.PutDevice(device)
 }
 
-func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, error) {
-	cn := ctlplfl.ChunkNisd{}
+func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkInfo, error) {
+	cn := ctlplfl.ChunkInfo{}
 	log.Info("fetching chunk Info for:", req.ID)
 	cpReq := &ctlplfl.CPReq{
 		Token:   ccf.token,
@@ -650,7 +650,7 @@ func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, erro
 	}
 	cpResp, err := ccf.get(cpReq, ctlplfl.GET_CHUNK_NISD, &cn)
 	if err != nil {
-		log.Error("GetHypervisor failed: ", err)
+		log.Error("GetChunkNisd failed: ", err)
 		return cn, err
 	}
 
@@ -659,6 +659,38 @@ func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkNisd, erro
 	}
 
 	return cn, nil
+}
+
+// GetChunksInfoPaginated fetches all chunk-to-NISD mappings for a vdev,
+// automatically following pagination tokens until all chunks are returned.
+func (ccf *CliCFuncs) GetChunksInfoPaginated(req *ctlplfl.GetReq) ([]ctlplfl.ChunkInfo, error) {
+	var allChunks []ctlplfl.ChunkInfo
+	page := &ctlplfl.Pagination{}
+
+	for {
+		cpReq := &ctlplfl.CPReq{
+			Token:   ccf.token,
+			Page:    page,
+			Payload: req,
+		}
+		chunks := make([]ctlplfl.ChunkInfo, 0)
+		cpResp, err := ccf.get(cpReq, ctlplfl.GET_CHUNKS_INFO_PAGINATED, &chunks)
+		if err != nil {
+			log.Error("GetChunksInfoPaginated failed: ", err)
+			return nil, err
+		}
+		if err := cpResp.Err(); err != nil {
+			return nil, err
+		}
+		allChunks = append(allChunks, chunks...)
+
+		if cpResp.Page == nil || cpResp.Page.LastKey == "" {
+			break
+		}
+		page.LastKey = cpResp.Page.LastKey
+	}
+
+	return allChunks, nil
 }
 
 func (ccf *CliCFuncs) DeleteVdev(req *ctlplfl.DeleteVdevReq) (*ctlplfl.ResponseXML, error) {
