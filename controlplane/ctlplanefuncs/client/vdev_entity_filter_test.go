@@ -364,6 +364,7 @@ func TestCreateVdevWithInvalidFilters(t *testing.T) {
 
 			c.SetToken(adminToken)
 
+			c.SetToken(adminToken)
 			vdevReq := &cpLib.VdevReq{
 				Vdev: &cpLib.VdevCfg{
 					Size:       1 * 1024 * 1024 * 1024, // 1 GiB
