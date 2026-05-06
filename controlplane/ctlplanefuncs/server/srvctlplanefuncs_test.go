@@ -1042,7 +1042,7 @@ func TestReadChunksInfoPaginated(t *testing.T) {
 
 	cbArgs := &PumiceDBServer.PmdbCbArgs{
 		Store:     ds,
-		ReplySize: 4 * 1024 * 1024,
+		ReplySize: ctlplfl.MAX_REPLY_SIZE,
 	}
 	token, _ := createTestToken(testAdminID, "admin", testSecret)
 	cpReq := ctlplfl.CPReq{

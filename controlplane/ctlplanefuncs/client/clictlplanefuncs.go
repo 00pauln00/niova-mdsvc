@@ -220,7 +220,7 @@ func (ccf *CliCFuncs) PutDevice(device *ctlplfl.Device) (*ctlplfl.ResponseXML, e
 // TODO make changes to use new GetRequest struct
 func (ccf *CliCFuncs) GetDevices(req ctlplfl.GetReq) ([]ctlplfl.Device, error) {
 	var allDevices []ctlplfl.Device
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -270,7 +270,7 @@ func (ccf *CliCFuncs) PutNisd(ncfg *ctlplfl.Nisd) (*ctlplfl.ResponseXML, error) 
 func (ccf *CliCFuncs) GetNisds(req ctlplfl.GetReq) ([]ctlplfl.Nisd, error) {
 	req.GetAll = true
 	var allNisds []ctlplfl.Nisd
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -375,7 +375,7 @@ func (ccf *CliCFuncs) PutPartition(devp *ctlplfl.DevicePartition) (*ctlplfl.Resp
 
 func (ccf *CliCFuncs) GetPartition(req ctlplfl.GetReq) ([]ctlplfl.DevicePartition, error) {
 	var allPts []ctlplfl.DevicePartition
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -424,7 +424,7 @@ func (ccf *CliCFuncs) PutPDU(req *ctlplfl.PDU) (*ctlplfl.ResponseXML, error) {
 
 func (ccf *CliCFuncs) GetPDUs(req *ctlplfl.GetReq) ([]ctlplfl.PDU, error) {
 	var allPDUs []ctlplfl.PDU
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -473,7 +473,7 @@ func (ccf *CliCFuncs) PutRack(req *ctlplfl.Rack) (*ctlplfl.ResponseXML, error) {
 
 func (ccf *CliCFuncs) GetRacks(req *ctlplfl.GetReq) ([]ctlplfl.Rack, error) {
 	var allRacks []ctlplfl.Rack
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -522,7 +522,7 @@ func (ccf *CliCFuncs) PutHypervisor(req *ctlplfl.Hypervisor) (*ctlplfl.ResponseX
 
 func (ccf *CliCFuncs) GetHypervisor(req *ctlplfl.GetReq) ([]ctlplfl.Hypervisor, error) {
 	var allHVs []ctlplfl.Hypervisor
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -609,7 +609,7 @@ func (ccf *CliCFuncs) GetVdevCfg(req *ctlplfl.GetReq) (ctlplfl.VdevCfg, error) {
 
 func (ccf *CliCFuncs) GetVdevCfgs(req *ctlplfl.GetReq) ([]ctlplfl.VdevCfg, error) {
 	var allVdevs []ctlplfl.VdevCfg
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{
@@ -665,7 +665,7 @@ func (ccf *CliCFuncs) GetChunkNisd(req *ctlplfl.GetReq) (ctlplfl.ChunkInfo, erro
 // automatically following pagination tokens until all chunks are returned.
 func (ccf *CliCFuncs) GetChunksInfoPaginated(req *ctlplfl.GetReq) ([]ctlplfl.ChunkInfo, error) {
 	var allChunks []ctlplfl.ChunkInfo
-	page := &ctlplfl.Pagination{}
+	page := &ctlplfl.Pagination{Consistent: true}
 
 	for {
 		cpReq := &ctlplfl.CPReq{

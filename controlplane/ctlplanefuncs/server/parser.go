@@ -31,7 +31,6 @@ type ParseEntity interface {
 	GetEntity(entity Entity) Entity
 }
 
-
 func ParseEntities[T Entity](itr storageiface.Iterator, pe ParseEntity) []T {
 	entityMap := make(map[string]Entity)
 
@@ -87,36 +86,11 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 	}
 
 	entityMap := make(map[string]Entity)
-	var currentID string                  // ID of the object being assembled
-	var completedID string                // ID of the last fully appended object
-	var lastKey string                    // last KV key *within* the last completed object
-	var prevKey string                    // KV key seen in the previous iteration
-	totalSize := 0                        // Accumulated approximate byte size of objects
-	const maxBufferSize = 4 * 1024 * 1024 // 4 MB chunk size
-
-	// ── Resume: skip remaining KV entries from the previous page's last object ──
-	var resumeObjectID string
-	if requestLastKey != "" {
-		parts := strings.Split(strings.Trim(requestLastKey, "/"), "/")
-		if len(parts) > idIdx {
-			resumeObjectID = parts[idIdx]
-		} else {
-			log.Warnf("ParseEntitiesPaginated: invalid requestLastKey %q – starting from beginning", requestLastKey)
-		}
-	}
-
-	// If we have a resume object ID, skip all KV entries that belong to it
-	// (they were already returned on the previous page).
-	if resumeObjectID != "" {
-		for itr.Valid() {
-			k, _ := itr.GetKV()
-			parts := strings.Split(strings.Trim(k, "/"), "/")
-			if len(parts) <= idIdx || parts[idIdx] != resumeObjectID {
-				break // first key of a new object
-			}
-			itr.Next()
-		}
-	}
+	var currentID string   // ID of the object being assembled
+	var completedID string // ID of the last fully appended object
+	var lastKey string     // last KV key *within* the last completed object
+	var prevKey string     // KV key seen in the previous iteration
+	totalSize := 0         // Accumulated approximate byte size of objects
 
 	// ── Main scan ──
 	for itr.Valid() {
@@ -149,7 +123,7 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 				lastKey = prevKey // last KV *inside* the finished object
 			}
 
-			if totalSize >= maxBufferSize {
+			if totalSize >= ctlplfl.MAX_REPLY_SIZE {
 				hasMore = true
 				break
 			}
@@ -165,7 +139,7 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 	}
 
 	// ── Flush the last in-progress object (if we didn't hit the limit) ──
-	if currentID != "" && totalSize < maxBufferSize {
+	if currentID != "" && totalSize < ctlplfl.MAX_REPLY_SIZE {
 		if e, ok := entityMap[currentID]; ok {
 			obj := pe.GetEntity(e).(T)
 			objects = append(objects, obj)
@@ -524,7 +498,7 @@ func (chunkInfoParser) ParseField(entity Entity, parts []string, value []byte) {
 	ci := entity.(*ctlplfl.ChunkInfo)
 	// parts: v / <vdevID> / c / <chunkIdx> / R.<replicaIdx>
 	// len(parts) must be >= 5 and parts[4] must start with "R."
-	if len(parts) >= 5 && (parts[2] == chunkKey) && strings.HasPrefix(parts[4], "R.") {
+	if parts[ELEMENT_KEY] == chunkKey {
 		nisdID := string(value)
 		ci.NisdUUIDs = append(ci.NisdUUIDs, nisdID)
 		ci.NumReplicas = uint8(len(ci.NisdUUIDs))
