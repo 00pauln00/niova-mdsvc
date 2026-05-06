@@ -37,6 +37,7 @@ Edit `prometheus/prometheus.yml` — one block per node:
 ```bash
 ssh -L 3005:localhost:3005 \
     -L 9093:localhost:9093 \
+    -L 9092:localhost:9092 \
     <user>@<groot1.niova.io>
 ```
 
