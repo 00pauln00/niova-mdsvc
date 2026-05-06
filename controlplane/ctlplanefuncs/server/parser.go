@@ -85,6 +85,14 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 		idIdx = objIDIdx[0]
 	}
 
+	var skipID string
+	if requestLastKey != "" {
+		parts := strings.Split(strings.Trim(requestLastKey, "/"), "/")
+		if len(parts) > idIdx {
+			skipID = parts[idIdx]
+		}
+	}
+
 	entityMap := make(map[string]Entity)
 	var currentID string   // ID of the object being assembled
 	var completedID string // ID of the last fully appended object
@@ -103,6 +111,11 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 		}
 
 		objID := parts[idIdx]
+
+		if skipID != "" && objID == skipID {
+			itr.Next()
+			continue
+		}
 
 		// Detect object boundary
 		if currentID == "" {
@@ -153,7 +166,7 @@ func ParseEntitiesPaginated[T Entity](itr storageiface.Iterator, pe ParseEntity,
 		nextKey = lastKey
 	}
 
-	log.Debugf("ParseEntitiesPaginated: returned %d objects, hasMore=%v", len(objects), hasMore)
+	log.Debugf("ParseEntitiesPaginated: returned %d objects, hasMore=%v, totalSize=%d", len(objects), hasMore, totalSize)
 	return objects, nextKey, hasMore
 }
 
