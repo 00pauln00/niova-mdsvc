@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -534,7 +535,7 @@ func runPutAndGetRack(b testing.TB, c *CliCFuncs) {
 func BenchmarkPutAndGetRack(b *testing.B) {
 	c := newClient(b)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		runPutAndGetRack(b, c)
 	}
 }
@@ -789,6 +790,133 @@ func TestParallelVdevCreation(t *testing.T) {
 
 }
 
+func TestEvenChunkDistribution(t *testing.T) {
+	c := newClient(t)
+
+	pdus := []string{
+		"aef100bc-df29-11f0-a93b-277aec17e401",
+		"aef100bc-df29-11f0-a93b-277aec17e402",
+		"aef100bc-df29-11f0-a93b-277aec17e403",
+		"aef100bc-df29-11f0-a93b-277aec17e404",
+		"aef100bc-df29-11f0-a93b-277aec17e405",
+	}
+	racks := []string{
+		"bef200bc-df29-11f0-ab7b-4bd430991101",
+		"bef200bc-df29-11f0-ab7b-4bd430991102",
+		"bef200bc-df29-11f0-ab7b-4bd430991103",
+		"bef200bc-df29-11f0-ab7b-4bd430991104",
+		"bef200bc-df29-11f0-ab7b-4bd430991105",
+		"bef200bc-df29-11f0-ab7b-4bd430991106",
+		"bef200bc-df29-11f0-ab7b-4bd430991107",
+		"bef200bc-df29-11f0-ab7b-4bd430991108",
+		"bef200bc-df29-11f0-ab7b-4bd430991109",
+		"bef200bc-df29-11f0-ab7b-4bd430991110",
+	}
+	hvs := []string{
+		"cef300bc-df63-11f0-88ef-430ddec19901",
+		"cef300bc-df63-11f0-88ef-430ddec19902",
+		"cef300bc-df63-11f0-88ef-430ddec19903",
+		"cef300bc-df63-11f0-88ef-430ddec19904",
+		"cef300bc-df63-11f0-88ef-430ddec19905",
+		"cef300bc-df63-11f0-88ef-430ddec19906",
+		"cef300bc-df63-11f0-88ef-430ddec19907",
+		"cef300bc-df63-11f0-88ef-430ddec19908",
+		"cef300bc-df63-11f0-88ef-430ddec19909",
+		"cef300bc-df63-11f0-88ef-430ddec19910",
+		"cef300bc-df63-11f0-88ef-430ddec19911",
+		"cef300bc-df63-11f0-88ef-430ddec19912",
+		"cef300bc-df63-11f0-88ef-430ddec19913",
+		"cef300bc-df63-11f0-88ef-430ddec19914",
+		"cef300bc-df63-11f0-88ef-430ddec19915",
+		"cef300bc-df63-11f0-88ef-430ddec19916",
+		"cef300bc-df63-11f0-88ef-430ddec19917",
+		"cef300bc-df63-11f0-88ef-430ddec19918",
+		"cef300bc-df63-11f0-88ef-430ddec19919",
+		"cef300bc-df63-11f0-88ef-430ddec19920",
+	}
+
+	// 5 PDUs x 2 racks x 2 HVs x 2 devices x 4 NISDs = 160 NISDs
+	numPDUs := len(pdus)
+	rackPerPdu := 2
+	hvPerRack := 2
+	devPerHv := 2
+	nisdPerDev := 4
+
+	rackIdx, hvIdx, devIdx, nisdID := 0, 0, 0, 1
+
+	// register all NISDs before any VDev is created.
+	for p := range numPDUs {
+		for range rackPerPdu {
+			rack := racks[rackIdx]
+			rackIdx++
+			for range hvPerRack {
+				hv := hvs[hvIdx]
+				hvIdx++
+				for range devPerHv {
+					dev := fmt.Sprintf("nvme-dist%04d", devIdx)
+					devIdx++
+					for n := range nisdPerDev {
+						nisd := cpLib.Nisd{
+							PeerPort: 9000 + uint16(nisdID),
+							ID:       fmt.Sprintf("ffa00000-0000-0000-0000-%012x", nisdID),
+							FailureDomain: []string{
+								pdus[p],
+								rack,
+								hv,
+								dev,
+								fmt.Sprintf("pt-%s-%d", dev, n),
+							},
+							TotalSize:     1_000_000_000_000,
+							AvailableSize: 1_000_000_000_000,
+						}
+						resp, err := c.PutNisd(&nisd)
+						if assert.NoError(t, err) {
+							assert.True(t, resp.Success)
+						}
+						nisdID++
+						time.Sleep(10 * time.Millisecond)
+					}
+				}
+			}
+		}
+	}
+
+	// create VDevs and verify even chunk distribution.
+	//
+	// 100 GB VDev -> 13 chunks, 5 PDU entities.
+	const vdevSize = 100 * 1024 * 1024 * 1024
+	numChunks := int(cpLib.Count8GBChunks(vdevSize))
+	maxAllowed := (numChunks + numPDUs - 1) / numPDUs // ceil(numChunks / numPDUs)
+
+	for range 20 {
+		resp, err := c.CreateVdev(&cpLib.VdevReq{
+			Vdev: &cpLib.VdevCfg{
+				Size:       vdevSize,
+				NumReplica: 1,
+			},
+		})
+		if !assert.NoError(t, err) || !assert.NotNil(t, resp) {
+			time.Sleep(30 * time.Millisecond)
+			continue
+		}
+
+		vdevs, err := c.GetVdevsWithChunkInfo(&cpLib.GetReq{ID: resp.ID})
+		if !assert.NoError(t, err) || !assert.Len(t, vdevs, 1) {
+			time.Sleep(30 * time.Millisecond)
+			continue
+		}
+
+		for _, nc := range vdevs[0].NisdToChkMap {
+			chunks := len(nc.Chunk)
+			assert.LessOrEqualf(t, chunks, maxAllowed,
+				"VDev %s: NISD %s has %d chunks, want <= %d (ceil(%d/%d)); hash skew detected",
+				resp.ID, nc.Nisd.ID, chunks, maxAllowed, numChunks, numPDUs)
+		}
+
+		time.Sleep(30 * time.Millisecond)
+	}
+}
+
 func TestCreateSmallHierarchy(t *testing.T) {
 	c := newClient(t)
 
@@ -908,7 +1036,6 @@ func TestCreateSmallHierarchy(t *testing.T) {
 			assert.True(t, resp.Success)
 		}
 	}
-
 }
 
 func TestCreateVdev(t *testing.T) {
@@ -1613,7 +1740,7 @@ func TestFullHierarchyAuthorizationWithUsers(t *testing.T) {
 	hvID := uuid.NewString()
 	nisdID := uuid.NewString()
 
-	// buildHierarchy creates the full PDU→Rack→HV→NISD chain using whatever
+	// buildHierarchy creates the full PDU->Rack->HV->NISD chain using whatever
 	// token is currently set on ctlClient.
 	buildHierarchy := func() {
 		pduResp, err := ctlClient.PutPDU(&cpLib.PDU{
@@ -1877,4 +2004,304 @@ func TestABACVdevOwnership(t *testing.T) {
 	assert.Error(t, err, "user1 must not read user2's chunk")
 
 	t.Log("ABAC Vdev Ownership Test Completed Successfully")
+}
+
+func TestGetNisdListWithAvailSize(t *testing.T) {
+	c := newClient(t)
+
+	// Seed a known NISD so we can assert it appears in the result.
+	nisdID := uuid.NewString()
+	_, err := c.PutNisd(&cpLib.Nisd{
+		PeerPort: 9600,
+		ID:       nisdID,
+		FailureDomain: []string{
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			"nvme-availsize-test",
+			"pt-nvme-availsize-test-0",
+		},
+		TotalSize:     2_000_000_000_000,
+		AvailableSize: 1_500_000_000_000,
+		SocketPath:    "/tmp/nisd-availsize-test.sock",
+		NetInfo:       cpLib.NetInfoList{{IPAddr: "127.0.0.1", Port: 9600}},
+		NetInfoCnt:    1,
+	})
+	require.NoError(t, err, "PutNisd setup for TestGetNisdListWithAvailSize")
+
+	resp, err := c.GetNisdListWithAvailSize(&cpLib.GetReq{GetAll: true})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp, "expected at least one entry in the list")
+
+	var found *cpLib.NisdListAvailSize
+	for i := range resp {
+		if resp[i].ID == nisdID {
+			found = &resp[i]
+			break
+		}
+	}
+	require.NotNil(t, found, "seeded NISD %s must appear in GetNisdListWithAvailSize result", nisdID)
+	assert.Equal(t, int64(1_500_000_000_000), found.AvailableSize)
+
+	// Authorization checks
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
+
+		// No token -> rejected.
+		c.SetToken("")
+		_, err = c.GetNisdListWithAvailSize(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token request correctly rejected")
+
+		// Regular user -> rejected (admin-only RBAC).
+		c.SetToken(userToken)
+		_, err = c.GetNisdListWithAvailSize(&cpLib.GetReq{GetAll: true})
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user request correctly rejected")
+
+		// Admin -> accepted.
+		c.SetToken(adminToken)
+		adminResp, err := c.GetNisdListWithAvailSize(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err, "admin should be able to call GetNisdListWithAvailSize")
+		assert.NotEmpty(t, adminResp)
+		t.Logf("Admin received %d NISD(s) with available size", len(adminResp))
+	} else {
+		// Auth disabled: empty token must still work.
+		c.SetToken("")
+		noAuthResp, err := c.GetNisdListWithAvailSize(&cpLib.GetReq{GetAll: true})
+		assert.NoError(t, err, "GetNisdListWithAvailSize should succeed when auth is disabled")
+		assert.NotEmpty(t, noAuthResp)
+		t.Log("Auth disabled: GetNisdListWithAvailSize succeeds without token")
+	}
+}
+
+func TestGetResources(t *testing.T) {
+	c := newClient(t)
+
+	// Insert one of each resource type so we can verify it appears in the response.
+	nisdID := uuid.NewString()
+	_, err := c.PutNisd(&cpLib.Nisd{
+		PeerPort: 9500,
+		ID:       nisdID,
+		FailureDomain: []string{
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			"nvme-getresources-test",
+			"pt-nvme-getresources-test-0",
+		},
+		TotalSize:     2_000_000_000_000,
+		AvailableSize: 2_000_000_000_000,
+		SocketPath:    "/tmp/nisd-getresources.sock",
+		NetInfo:       cpLib.NetInfoList{{IPAddr: "127.0.0.1", Port: 9500}},
+		NetInfoCnt:    1,
+	})
+	require.NoError(t, err, "PutNisd setup for TestGetResources")
+
+	pduID := uuid.NewString()
+	_, err = c.PutPDU(&cpLib.PDU{
+		ID:            pduID,
+		Name:          "pdu-getresources",
+		Location:      "test-dc",
+		PowerCapacity: "10Kw",
+		Specification: "getresources-test",
+	})
+	require.NoError(t, err, "PutPDU setup for TestGetResources")
+
+	rackID := uuid.NewString()
+	_, err = c.PutRack(&cpLib.Rack{
+		ID:            rackID,
+		PDUID:         pduID,
+		Name:          "rack-getresources",
+		Location:      "test-dc-slot-1",
+		Specification: "getresources-test",
+	})
+	require.NoError(t, err, "PutRack setup for TestGetResources")
+
+	hvID := uuid.NewString()
+	_, err = c.PutHypervisor(&cpLib.Hypervisor{
+		ID:        hvID,
+		RackID:    rackID,
+		Name:      "hv-getresources",
+		IPAddrs:   []string{"10.0.1.1"},
+		PortRange: "6000-7000",
+		SSHPort:   "22",
+	})
+	require.NoError(t, err, "PutHypervisor setup for TestGetResources")
+
+	deviceID := uuid.NewString()
+	_, err = c.PutDevice(&cpLib.Device{
+		ID:            deviceID,
+		SerialNumber:  "SN-getresources-001",
+		State:         1,
+		HypervisorID:  hvID,
+		FailureDomain: "fd-getresources",
+		DevicePath:    "/dev/getresources",
+		Name:          "dev-getresources",
+	})
+	require.NoError(t, err, "PutDevice setup for TestGetResources")
+
+	ptID := "pt-getresources-" + uuid.New().String()[:8]
+	_, err = c.PutPartition(&cpLib.DevicePartition{
+		PartitionID:   ptID,
+		DevID:         deviceID,
+		Size:          5 * 1024 * 1024 * 1024,
+		PartitionPath: "/dev/getresources-pt",
+		NISDUUID:      nisdID,
+	})
+	require.NoError(t, err, "PutPartition setup for TestGetResources")
+
+	contains := func(id string, ids []string) bool {
+		return slices.Contains(ids, id)
+	}
+
+	t.Run("GetAll_Nisd", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{ResourceType: cpLib.ResourceNisd, GetAll: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourceNisd, resp.ResourceType)
+		assert.Empty(t, resp.Racks)
+		assert.Empty(t, resp.PDUs)
+		assert.Empty(t, resp.Hypervisors)
+		assert.Empty(t, resp.Devices)
+		assert.Empty(t, resp.Partitions)
+		ids := make([]string, 0, len(resp.Nisds))
+		for _, n := range resp.Nisds {
+			ids = append(ids, n.ID)
+		}
+		assert.True(t, contains(nisdID, ids), "inserted NISD %s must appear in GetResources result", nisdID)
+	})
+
+	t.Run("GetAll_PDU", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{ResourceType: cpLib.ResourcePDU, GetAll: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourcePDU, resp.ResourceType)
+		assert.Empty(t, resp.Nisds)
+		ids := make([]string, 0, len(resp.PDUs))
+		for _, p := range resp.PDUs {
+			ids = append(ids, p.ID)
+		}
+		assert.True(t, contains(pduID, ids), "inserted PDU %s must appear in GetResources result", pduID)
+	})
+
+	t.Run("GetAll_Rack", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{ResourceType: cpLib.ResourceRack, GetAll: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourceRack, resp.ResourceType)
+		assert.Empty(t, resp.Nisds)
+		ids := make([]string, 0, len(resp.Racks))
+		for _, r := range resp.Racks {
+			ids = append(ids, r.ID)
+		}
+		assert.True(t, contains(rackID, ids), "inserted Rack %s must appear in GetResources result", rackID)
+	})
+
+	t.Run("GetAll_Hypervisor", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{ResourceType: cpLib.ResourceHypervisor, GetAll: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourceHypervisor, resp.ResourceType)
+		assert.Empty(t, resp.Nisds)
+		ids := make([]string, 0, len(resp.Hypervisors))
+		for _, h := range resp.Hypervisors {
+			ids = append(ids, h.ID)
+		}
+		assert.True(t, contains(hvID, ids), "inserted Hypervisor %s must appear in GetResources result", hvID)
+	})
+
+	t.Run("GetAll_Device", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{ResourceType: cpLib.ResourceDevice, GetAll: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourceDevice, resp.ResourceType)
+		assert.Empty(t, resp.Nisds)
+		ids := make([]string, 0, len(resp.Devices))
+		for _, d := range resp.Devices {
+			ids = append(ids, d.ID)
+		}
+		assert.True(t, contains(deviceID, ids), "inserted Device %s must appear in GetResources result", deviceID)
+	})
+
+	t.Run("GetAll_Partition", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{ResourceType: cpLib.ResourcePartition, GetAll: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourcePartition, resp.ResourceType)
+		assert.Empty(t, resp.Nisds)
+		ids := make([]string, 0, len(resp.Partitions))
+		for _, p := range resp.Partitions {
+			ids = append(ids, p.PartitionID)
+		}
+		assert.True(t, contains(ptID, ids), "inserted Partition %s must appear in GetResources result", ptID)
+	})
+
+	t.Run("SingleFetch_Nisd", func(t *testing.T) {
+		resp, err := c.GetResources(&cpLib.GetResourceReq{
+			ResourceType: cpLib.ResourceNisd,
+			ID:           nisdID,
+			GetAll:       false,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Len(t, resp.Nisds, 1, "single fetch should return exactly one NISD")
+		assert.Equal(t, nisdID, resp.Nisds[0].ID)
+		assert.Equal(t, int64(2_000_000_000_000), resp.Nisds[0].TotalSize)
+	})
+
+	t.Run("UnknownResourceType", func(t *testing.T) {
+		_, err := c.GetResources(&cpLib.GetResourceReq{
+			ResourceType: "unknown",
+			GetAll:       true,
+		})
+		assert.Error(t, err, "unknown resource type should return an error")
+	})
+}
+
+func TestGetResourcesAuthorization(t *testing.T) {
+	ctlClient := newClient(t)
+
+	req := &cpLib.GetResourceReq{
+		ResourceType: cpLib.ResourceNisd,
+		GetAll:       true,
+	}
+
+	if authEnabled {
+		authClient, tearDown := newUserClient(t)
+		defer tearDown()
+		adminToken := getAdminToken(t)
+		userToken := createRegularUserAndLogin(t, authClient, adminToken)
+
+		// No token rejected
+		ctlClient.SetToken("")
+		_, err := ctlClient.GetResources(req)
+		assert.EqualError(t, err, "user token is required")
+		t.Log("No-token request correctly rejected")
+
+		// Regular user rejected (admin-only RBAC)
+		ctlClient.SetToken(userToken)
+		_, err = ctlClient.GetResources(req)
+		assert.EqualError(t, err, "authorization failed: insufficient permissions")
+		t.Log("Regular-user request correctly rejected")
+
+		// Admin accepted
+		ctlClient.SetToken(adminToken)
+		resp, err := ctlClient.GetResources(req)
+		assert.NoError(t, err, "admin should be able to call GetResources")
+		require.NotNil(t, resp)
+		assert.Equal(t, cpLib.ResourceNisd, resp.ResourceType)
+		t.Log("Admin GetResources correctly accepted")
+	} else {
+		ctlClient.SetToken("")
+		resp, err := ctlClient.GetResources(req)
+		assert.NoError(t, err, "GetResources should succeed when auth is disabled")
+		assert.NotNil(t, resp)
+		t.Log("Auth disabled: GetResources succeeds without token")
+	}
+
+	t.Log("GetResources Authorization Test Completed Successfully")
 }
