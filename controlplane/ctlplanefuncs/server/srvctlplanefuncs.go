@@ -1128,22 +1128,6 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadVdevsInfoWithChunkMapping: token validation failed: %v", err)
 		return ctlplfl.FuncError(err)
 	}
-	if authorizer != nil {
-		if req.GetAll {
-			// Listing all vdevs with chunk info: admin only, same restriction as ReadAllVdevInfo
-			if !authorizer.Authorize(authz.ReadAllVdevInfo, tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
-				log.Errorf("user %s with role %s not authorized to list all vdevs with chunk info", tc.UserID, tc.Role)
-				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
-			} // ← add this closing brace
-		} else {
-			// Specific vdev: verify RBAC + ABAC ownership
-			attributes := map[string]string{"vdev": req.Value}
-			if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-				log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, req.Value)
-				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
-			}
-		}
-	}
 
 	vdevuuid := req.Value
         if !req.IsID && !req.GetAll {
@@ -1163,6 +1147,22 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
                         parts := strings.Split(strings.Trim(k, "/"), "/")
                         if len(parts) == ELEMENT_KEY {
                                 vdevuuid = string(v)
+                        }
+                }
+        }
+	if authorizer != nil {
+                if req.GetAll {
+                        // Listing all vdevs with chunk info: admin only, same restriction as ReadAllVdevInfo
+                        if !authorizer.Authorize(authz.ReadAllVdevInfo, tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
+                                log.Errorf("user %s with role %s not authorized to list all vdevs with chunk info", tc.UserID, tc.Role)
+                                return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
+                        } // ← add this closing brace
+                } else {
+                        // Specific vdev: verify RBAC + ABAC ownership
+                        attributes := map[string]string{"vdev": vdevuuid}
+                        if !authorizer.Authorize(authz.ReadVdevsInfoWithChunkMapping, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+                                log.Errorf("user %s with role %s not authorized to read vdev %s with chunk info", tc.UserID, tc.Role, vdevuuid)
+                                return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
                         }
                 }
         }
@@ -1306,15 +1306,6 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 		log.Errorf("ReadVdevInfo: token validation failed: %v", err)
 		return ctlplfl.AuthError(fmt.Errorf("Invalid Token"))
 	}
-	if authorizer != nil {
-		attributes := map[string]string{"vdev": req.Value}
-		log.Infof("user attributes: %s, userid: %s, role: %s, cbargsstore: %s, colmfamily: %s", attributes, tc.UserID, tc.Role, cbArgs.Store, colmfamily)
-		if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
-			log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, req.Value)
-			return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
-		}
-	}
-	log.Infof("user %s authorized to read vdev %s", tc.UserID, req.Value)
 	vdevID := req.Value
 	if !req.IsID {
 		vnKey := getConfKey(vnameKey, req.Value)
@@ -1336,6 +1327,15 @@ func ReadVdevInfo(args ...interface{}) (interface{}, error) {
 			}
 		}
 	}
+	if authorizer != nil {
+                attributes := map[string]string{"vdev": vdevID}
+                log.Infof("user attributes: %s, userid: %s, role: %s, cbargsstore: %s, colmfamily: %s", attributes, tc.UserID, tc.Role, cbArgs.Store, colmfamily)
+                if !authorizer.Authorize(authz.ReadVdevInfo, tc.UserID, []string{tc.Role}, attributes, cbArgs.Store, colmfamily) {
+                        log.Errorf("user %s with role %s not authorized to read vdev %s", tc.UserID, tc.Role, vdevID)
+                        return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
+                }
+        }
+	log.Infof("user %s authorized to read vdev %s", tc.UserID, vdevID)
 	vKey := getConfKey(vdevKey, vdevID)
 	var rqResult *storageiface.RangeReadResult
 	rqResult, err = cbArgs.Store.RangeRead(storageiface.RangeReadArgs{
