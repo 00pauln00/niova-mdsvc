@@ -85,6 +85,8 @@ const (
 	stateShowAddedVdev
 	stateVdevCreationProgress
 	stateVdevCreationSummary
+	stateSearchVdev
+	stateSearchVdevResult
 	// User Management States
 	stateUserCreateForm
 	stateUserCreateAdminKey
@@ -116,6 +118,9 @@ const (
 	// inputNISDInstance
 	// inputPartitionSize
 	// Vdev specific
+	inputVdevSearch
+	inputVdevName
+	inputVdevReplica
 	inputVdevCount
 	inputVdevSize
 	inputVdevEntityUUID
@@ -224,6 +229,12 @@ type model struct {
 	vdevViewCursor         int
 	currentVdev            ctlplfl.Vdev
 	selectedDevicesForVdev map[int]bool // Track which devices are selected for Vdev creation
+	vdevSearchInput        textinput.Model
+	vdevSearchResult       *ctlplfl.Vdev
+	vdevSearchErr          string
+	vdevSearchChunkPage    int
+	vdevNameInput          textinput.Model
+	vdevReplicaInput       textinput.Model
 	vdevSizeInput          textinput.Model
 	vdevCountInput         textinput.Model
 	vdevEntityUUIDInput    textinput.Model
@@ -436,6 +447,22 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 	deviceFailureDomainInput.Placeholder = "Enter failure domain for device"
 	deviceFailureDomainInput.CharLimit = 500
 
+	// Initialize vdev search input
+	vdevSearchInput := textinput.New()
+	vdevSearchInput.Placeholder = "vdev name or UUID"
+	vdevSearchInput.CharLimit = 64
+
+	// Initialize vdev name input
+	vdevNameInput := textinput.New()
+	vdevNameInput.Placeholder = "unique name (letters and digits only)"
+	vdevNameInput.CharLimit = 64
+
+	// Initialize vdev replica input
+	vdevReplicaInput := textinput.New()
+	vdevReplicaInput.Placeholder = "1"
+	vdevReplicaInput.CharLimit = 4
+	vdevReplicaInput.SetValue("1")
+
 	// Initialize vdev size input
 	vdevSizeInput := textinput.New()
 	vdevSizeInput.Placeholder = "e.g., 10GB, 1TB, 1PB"
@@ -532,11 +559,14 @@ func initialModel(cpEnabled bool, cpRaftUUID, cpGossipPath, logFile string) mode
 		selectedHypervisorIdx: -1,
 		selectedDeviceIdx:     -1,
 		deviceFailureDomain:   deviceFailureDomainInput,
+		vdevSearchInput:       vdevSearchInput,
+		vdevNameInput:         vdevNameInput,
+		vdevReplicaInput:      vdevReplicaInput,
 		vdevSizeInput:         vdevSizeInput,
 		vdevCountInput:        vdevCountInput,
 		vdevEntityUUIDInput:   vdevEntityUUIDInput,
 		vdevFilterTypeInput:   vdevFilterTypeInput,
-		vdevFormActiveField:   inputVdevCount,
+		vdevFormActiveField:   inputVdevName,
 		// Control plane configuration
 		logFile:      logFile,
 		cpEnabled:    cpEnabled,
@@ -1051,6 +1081,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd = m.updateVdevCreationProgress(msg)
 	case stateVdevCreationSummary:
 		m, cmd = m.updateVdevCreationSummary(msg)
+	case stateSearchVdev:
+		m, cmd = m.updateSearchVdev(msg)
+	case stateSearchVdevResult:
+		m, cmd = m.updateSearchVdevResult(msg)
 	// User Management
 	case stateUserCreateForm:
 		m, cmd = m.updateUserCreateForm(msg)
@@ -3086,6 +3120,10 @@ func (m model) View() string {
 		return m.viewVdevCreationProgress()
 	case stateVdevCreationSummary:
 		return m.viewVdevCreationSummary()
+	case stateSearchVdev:
+		return m.viewSearchVdev()
+	case stateSearchVdevResult:
+		return m.viewSearchVdevResult()
 	// User Management Views
 	case stateUserCreateForm:
 		return m.viewUserCreateForm()
@@ -7918,7 +7956,7 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.vdevMgmtCursor--
 			}
 		case "down", "j":
-			maxItems := 4 // Create Vdev, Edit Vdev, View Vdev, Delete Vdev
+			maxItems := 5 // Create Vdev, Edit Vdev, View Vdev, Delete Vdev, Search Vdev
 			if m.vdevMgmtCursor < maxItems-1 {
 				m.vdevMgmtCursor++
 			}
@@ -7928,12 +7966,16 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.state = stateVdevForm
 				m.message = ""
 				// Initialize input fields
+				m.vdevNameInput.SetValue("")
+				m.vdevReplicaInput.SetValue("1")
 				m.vdevCountInput.SetValue("1")
 				m.vdevSizeInput.SetValue("")
 				m.vdevEntityUUIDInput.SetValue("")
 				m.vdevFilterTypeInput.SetValue("any")
-				m.vdevFormActiveField = inputVdevCount
-				m.vdevCountInput.Focus()
+				m.vdevFormActiveField = inputVdevName
+				m.vdevNameInput.Focus()
+				m.vdevReplicaInput.Blur()
+				m.vdevCountInput.Blur()
 				m.vdevSizeInput.Blur()
 				m.vdevEntityUUIDInput.Blur()
 				m.vdevFilterTypeInput.Blur()
@@ -7956,6 +7998,15 @@ func (m model) updateVdevManagement(msg tea.Msg) (model, tea.Cmd) {
 				m.state = stateDeleteVdev
 				m.message = ""
 				return m, nil
+			case 4: // Search Vdev
+				m.state = stateSearchVdev
+				m.message = ""
+				m.vdevSearchInput.SetValue("")
+				m.vdevSearchResult = nil
+				m.vdevSearchErr = ""
+				m.vdevSearchChunkPage = 0
+				m.vdevSearchInput.Focus()
+				return m, textinput.Blink
 			}
 		case "esc":
 			m.state = stateMenu
@@ -7985,6 +8036,7 @@ func (m model) viewVdevManagement() string {
 		"Edit Vdev",
 		"View Vdev",
 		"Delete Vdev",
+		"Search Vdev",
 	}
 
 	for i, option := range options {
@@ -7997,6 +8049,212 @@ func (m model) viewVdevManagement() string {
 
 	s.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • esc: back"))
 
+	return s.String()
+}
+
+// doVdevSearch is run in a goroutine via tea.Cmd.
+// Step 1: GetVdevCfgs (GetAll) to resolve name/UUID → vdevID.
+// Step 2: GetVdevsWithChunkInfo with the specific ID to fetch chunk mapping.
+func (m model) doVdevSearch(query string) VdevSearchMsg {
+	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{
+		GetAll:    true,
+		// UserToken: m.userToken(),
+	})
+	if err != nil {
+		return VdevSearchMsg{err: fmt.Sprintf("Failed to query vdevs: %v", err)}
+	}
+
+	var matchedID string
+	for _, cfg := range cfgs {
+		if cfg.ID == query || cfg.Name == query {
+			matchedID = cfg.ID
+			break
+		}
+	}
+	if matchedID == "" {
+		return VdevSearchMsg{err: fmt.Sprintf("No vdev found matching %q", query)}
+	}
+
+	// Fetch chunk mapping for the specific vdev (no admin role required).
+	vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetVdevReq{
+		Value:     matchedID,
+		IsID:	   true,
+		GetAll:    false,
+	})
+	if err != nil {
+		return VdevSearchMsg{err: fmt.Sprintf("Failed to get chunk info: %v", err)}
+	}
+	if len(vdevs) == 0 {
+		return VdevSearchMsg{err: fmt.Sprintf("No chunk data found for vdev %q", query)}
+	}
+	found := vdevs[0]
+	return VdevSearchMsg{result: &found}
+}
+
+func (m model) updateSearchVdev(msg tea.Msg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case VdevSearchMsg:
+		m.message = ""
+		m.vdevSearchResult = msg.result
+		m.vdevSearchErr = msg.err
+		m.vdevSearchChunkPage = 0
+		m.state = stateSearchVdevResult
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.state = stateVdevManagement
+			m.message = ""
+			return m, nil
+		case "enter":
+			query := strings.TrimSpace(m.vdevSearchInput.Value())
+			if query == "" {
+				m.message = "Please enter a vdev name or UUID"
+				return m, nil
+			}
+			if m.cpClient == nil || !m.cpConnected {
+				m.vdevSearchResult = nil
+				m.vdevSearchErr = "Control plane not connected"
+				m.state = stateSearchVdevResult
+				return m, nil
+			}
+			m.message = "Searching..."
+			return m, func() tea.Msg { return m.doVdevSearch(query) }
+		}
+	}
+	m.vdevSearchInput, cmd = m.vdevSearchInput.Update(msg)
+	return m, cmd
+}
+
+func (m model) viewSearchVdev() string {
+	title := titleStyle.Render("Search Vdev")
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.message != "" {
+		if m.message == "Searching..." {
+			s.WriteString(successStyle.Render(m.message) + "\n\n")
+		} else {
+			s.WriteString(errorStyle.Render(m.message) + "\n\n")
+		}
+	}
+
+	s.WriteString("Search by name or UUID: ")
+	s.WriteString(m.vdevSearchInput.View())
+	s.WriteString("\n\n")
+	s.WriteString(helpStyle.Render("enter: search • esc: back"))
+	return s.String()
+}
+
+func (m model) updateSearchVdevResult(msg tea.Msg) (model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.state = stateSearchVdev
+			m.message = ""
+			m.vdevSearchInput.Focus()
+			return m, textinput.Blink
+		case "right", "down", "j", "l":
+			if m.vdevSearchResult != nil {
+				chunkKeys, _ := buildChunkToNisds(m.vdevSearchResult)
+				totalPages := (len(chunkKeys) + chunkPageSize - 1) / chunkPageSize
+				if m.vdevSearchChunkPage < totalPages-1 {
+					m.vdevSearchChunkPage++
+				}
+			}
+		case "left", "up", "k", "h":
+			if m.vdevSearchChunkPage > 0 {
+				m.vdevSearchChunkPage--
+			}
+		}
+	}
+	return m, nil
+}
+
+// buildChunkToNisds inverts NisdToChkMap so we can display per-chunk replica sets.
+// Returns a sorted list of chunk indices and a map of chunk → []nisdID (one per replica).
+func buildChunkToNisds(vdev *ctlplfl.Vdev) ([]int, map[int][]string) {
+	chunkToNisds := make(map[int][]string)
+	for _, nc := range vdev.NisdToChkMap {
+		for _, chunkIdx := range nc.Chunk {
+			chunkToNisds[chunkIdx] = append(chunkToNisds[chunkIdx], nc.Nisd.ID)
+		}
+	}
+	// Collect and sort chunk indices for deterministic display
+	keys := make([]int, 0, len(chunkToNisds))
+	for k := range chunkToNisds {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys, chunkToNisds
+}
+
+const chunkPageSize = 10
+
+func (m model) viewSearchVdevResult() string {
+	title := titleStyle.Render("Search Result")
+	var s strings.Builder
+	s.WriteString(title + "\n\n")
+
+	if m.vdevSearchErr != "" {
+		s.WriteString(errorStyle.Render(m.vdevSearchErr) + "\n\n")
+		s.WriteString(helpStyle.Render("esc: search again"))
+		return s.String()
+	}
+
+	v := m.vdevSearchResult
+
+	// ── Vdev config (always visible) ─────────────────────────────────────────
+	s.WriteString(fmt.Sprintf("  Name:     %s\n", v.Cfg.Name))
+	s.WriteString(fmt.Sprintf("  ID:       %s\n", v.Cfg.ID))
+	s.WriteString(fmt.Sprintf("  Size:     %s (%d bytes)\n", formatSize(v.Cfg.Size), v.Cfg.Size))
+	s.WriteString(fmt.Sprintf("  Chunks:   %d\n", v.Cfg.NumChunks))
+	s.WriteString(fmt.Sprintf("  Replicas: %d\n", v.Cfg.NumReplica))
+	s.WriteString("\n")
+
+	if len(v.NisdToChkMap) == 0 {
+		s.WriteString("  No NISD allocation data available.\n\n")
+		s.WriteString(helpStyle.Render("esc: search again"))
+		return s.String()
+	}
+
+	// ── Chunk → replica mapping (paginated) ──────────────────────────────────
+	chunkKeys, chunkToNisds := buildChunkToNisds(v)
+	totalChunks := len(chunkKeys)
+	totalPages := (totalChunks + chunkPageSize - 1) / chunkPageSize
+	page := m.vdevSearchChunkPage
+	if page >= totalPages {
+		page = totalPages - 1
+	}
+
+	start := page * chunkPageSize
+	end := start + chunkPageSize
+	if end > totalChunks {
+		end = totalChunks
+	}
+
+	s.WriteString(fmt.Sprintf("Chunk → Replica Mapping  (page %d of %d, chunks %d–%d of %d):\n",
+		page+1, totalPages, start, end-1, totalChunks))
+	s.WriteString("\n")
+
+	for i := start; i < end; i++ {
+		chunkIdx := chunkKeys[i]
+		nisds := chunkToNisds[chunkIdx]
+		sort.Strings(nisds)
+		s.WriteString(fmt.Sprintf("  Chunk %3d: ", chunkIdx))
+		for r, nisdID := range nisds {
+			s.WriteString(fmt.Sprintf("R.%d→%s", r, nisdID))
+			if r < len(nisds)-1 {
+				s.WriteString("  ")
+			}
+		}
+		s.WriteString("\n")
+	}
+	s.WriteString("\n")
+
+	s.WriteString(helpStyle.Render("←/→: prev/next page • esc: search again"))
 	return s.String()
 }
 
@@ -8069,12 +8327,20 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab", "down":
-			// Cycle forward through fields: count → size → entityUUID → filterType → count
+			// Cycle forward: name → replica → count → size → entityUUID → filterType → name
+			m.vdevNameInput.Blur()
+			m.vdevReplicaInput.Blur()
 			m.vdevCountInput.Blur()
 			m.vdevSizeInput.Blur()
 			m.vdevEntityUUIDInput.Blur()
 			m.vdevFilterTypeInput.Blur()
 			switch m.vdevFormActiveField {
+			case inputVdevName:
+				m.vdevFormActiveField = inputVdevReplica
+				m.vdevReplicaInput.Focus()
+			case inputVdevReplica:
+				m.vdevFormActiveField = inputVdevCount
+				m.vdevCountInput.Focus()
 			case inputVdevCount:
 				m.vdevFormActiveField = inputVdevSize
 				m.vdevSizeInput.Focus()
@@ -8085,17 +8351,25 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 				m.vdevFormActiveField = inputVdevFilterType
 				m.vdevFilterTypeInput.Focus()
 			default:
-				m.vdevFormActiveField = inputVdevCount
-				m.vdevCountInput.Focus()
+				m.vdevFormActiveField = inputVdevName
+				m.vdevNameInput.Focus()
 			}
 			return m, textinput.Blink
 		case "shift+tab", "up":
-			// Cycle backward through fields
+			// Cycle backward
+			m.vdevNameInput.Blur()
+			m.vdevReplicaInput.Blur()
 			m.vdevCountInput.Blur()
 			m.vdevSizeInput.Blur()
 			m.vdevEntityUUIDInput.Blur()
 			m.vdevFilterTypeInput.Blur()
 			switch m.vdevFormActiveField {
+			case inputVdevReplica:
+				m.vdevFormActiveField = inputVdevName
+				m.vdevNameInput.Focus()
+			case inputVdevCount:
+				m.vdevFormActiveField = inputVdevReplica
+				m.vdevReplicaInput.Focus()
 			case inputVdevSize:
 				m.vdevFormActiveField = inputVdevCount
 				m.vdevCountInput.Focus()
@@ -8112,8 +8386,28 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			return m, textinput.Blink
 		case "enter":
 			// Validate inputs and create Vdevs
+			nameStr := strings.TrimSpace(m.vdevNameInput.Value())
+			replicaStr := m.vdevReplicaInput.Value()
 			countStr := m.vdevCountInput.Value()
 			sizeStr := m.vdevSizeInput.Value()
+
+			if nameStr == "" {
+				m.message = "Please enter a Vdev name"
+				return m, nil
+			}
+			if !isAlphanumericStr(nameStr) {
+				m.message = "Vdev name must contain only letters and digits"
+				return m, nil
+			}
+
+			if replicaStr == "" {
+				replicaStr = "1"
+			}
+			replica, err := strconv.Atoi(replicaStr)
+			if err != nil || replica < 1 {
+				m.message = "Replication factor must be a positive integer (e.g. 1, 2, 4)"
+				return m, nil
+			}
 
 			if countStr == "" {
 				m.message = "Please enter number of Vdevs"
@@ -8162,7 +8456,7 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 			m.message = ""
 
 			// Start creating Vdevs
-			return m, m.createVdevsCommand(size, count)
+			return m, m.createVdevsCommand(size, count, replica)
 		case "esc":
 			m.state = stateVdevManagement
 			m.message = ""
@@ -8172,6 +8466,10 @@ func (m model) updateVdevForm(msg tea.Msg) (model, tea.Cmd) {
 
 	// Update the active input field
 	switch m.vdevFormActiveField {
+	case inputVdevName:
+		m.vdevNameInput, cmd = m.vdevNameInput.Update(msg)
+	case inputVdevReplica:
+		m.vdevReplicaInput, cmd = m.vdevReplicaInput.Update(msg)
 	case inputVdevCount:
 		m.vdevCountInput, cmd = m.vdevCountInput.Update(msg)
 	case inputVdevSize:
@@ -8201,6 +8499,16 @@ func (m model) viewVdevForm() string {
 
 	s.WriteString("Enter configuration for Vdev creation:\n\n")
 
+	// Name input
+	s.WriteString("Vdev Name: ")
+	s.WriteString(m.vdevNameInput.View())
+	s.WriteString("\n\n")
+
+	// Replica input
+	s.WriteString("Replication Factor: ")
+	s.WriteString(m.vdevReplicaInput.View())
+	s.WriteString("\n\n")
+
 	// Count input
 	s.WriteString("Number of Vdevs: ")
 	s.WriteString(m.vdevCountInput.View())
@@ -8221,9 +8529,10 @@ func (m model) viewVdevForm() string {
 	s.WriteString(m.vdevFilterTypeInput.View())
 	s.WriteString("\n\n")
 
+	s.WriteString("Name: letters and digits only, unique across all Vdevs\n")
+	s.WriteString("Replication factor: positive integer (default 1); when count > 1 names get a numeric suffix\n")
 	s.WriteString("Examples: 10GB, 1TB, 500MB, 2PB\n")
-	s.WriteString("Failure domain types: any, pdu, rack, hv, device, partition\n")
-	s.WriteString("The control plane will allocate Vdev chunks to the given entity or failure domain.\n\n")
+	s.WriteString("Failure domain types: any, pdu, rack, hv, device, partition\n\n")
 
 	// Show summary if both fields have values
 	countStr := m.vdevCountInput.Value()
@@ -8286,7 +8595,7 @@ func (m model) updateViewVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
+				vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{GetAll: true})
 				if err == nil && len(vdevs) > 0 {
 					// Sort to ensure consistent ordering for navigation bounds
 					sort.Slice(vdevs, func(i, j int) bool {
@@ -8324,7 +8633,7 @@ func (m model) viewViewVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetReq{GetAll: true})
+		vdevs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{GetAll: true})
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
 		} else if len(vdevs) == 0 {
@@ -8371,7 +8680,9 @@ func (m model) viewViewVdev() string {
 				cursor := "  "
 				if m.vdevViewCursor == i {
 					cursor = "▶ "
-					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. ID: %s", cursor, i+1, vdev.ID)))
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("%s%d. %s", cursor, i+1, vdev.Name)))
+					s.WriteString("\n")
+					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   ID: %s", vdev.ID)))
 					s.WriteString("\n")
 					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Size: %d bytes", vdev.Size)))
 					s.WriteString("\n")
@@ -8380,7 +8691,8 @@ func (m model) viewViewVdev() string {
 					s.WriteString(selectedItemStyle.Render(fmt.Sprintf("   Replicas: %d", vdev.NumReplica)))
 					s.WriteString("\n\n")
 				} else {
-					s.WriteString(fmt.Sprintf("%s%d. ID: %s\n", cursor, i+1, vdev.ID))
+					s.WriteString(fmt.Sprintf("%s%d. %s\n", cursor, i+1, vdev.Name))
+					s.WriteString(fmt.Sprintf("   ID: %s\n", vdev.ID))
 					s.WriteString(fmt.Sprintf("   Size: %d bytes\n", vdev.Size))
 					s.WriteString(fmt.Sprintf("   Chunks: %d\n", vdev.NumChunks))
 					s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
@@ -8408,7 +8720,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "down", "j":
 			// Get Vdevs from control plane for navigation
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true}
+				req := &ctlplfl.GetVdevReq{Value: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err == nil {
 					// Sort to ensure consistent ordering for navigation bounds
@@ -8423,7 +8735,7 @@ func (m model) updateDeleteVdev(msg tea.Msg) (model, tea.Cmd) {
 		case "enter", " ":
 			// Delete selected Vdev
 			if m.cpClient != nil && m.cpConnected {
-				req := &ctlplfl.GetReq{ID: "", GetAll: true}
+				req := &ctlplfl.GetVdevReq{Value: "", GetAll: true}
 				vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 				if err != nil {
 					m.message = fmt.Sprintf("Failed to query Vdevs: %v", err)
@@ -8474,7 +8786,7 @@ func (m model) viewDeleteVdev() string {
 
 	// Query Vdevs from control plane
 	if m.cpClient != nil && m.cpConnected {
-		req := &ctlplfl.GetReq{ID: "", GetAll: true}
+		req := &ctlplfl.GetVdevReq{Value: "", GetAll: true}
 		vdevs, err := m.cpClient.GetVdevsWithChunkInfo(req)
 		if err != nil {
 			s.WriteString(errorStyle.Render(fmt.Sprintf("Failed to query Vdevs: %v", err)) + "\n\n")
@@ -8529,6 +8841,7 @@ func (m model) viewShowAddedVdev() string {
 	s.WriteString(title + "\n\n")
 
 	s.WriteString("Vdev Details:\n")
+	s.WriteString(fmt.Sprintf("Name: %s\n", m.currentVdev.Cfg.Name))
 	s.WriteString(fmt.Sprintf("ID: %s\n", m.currentVdev.Cfg.ID))
 	s.WriteString(fmt.Sprintf("Size: %d bytes\n", m.currentVdev.Cfg.Size))
 	s.WriteString(fmt.Sprintf("Chunks: %d\n", m.currentVdev.Cfg.NumChunks))
@@ -8563,9 +8876,15 @@ func (m model) updateVdevCreationProgress(msg tea.Msg) (model, tea.Cmd) {
 		if m.vdevCreationProgress < m.vdevCreationTotal {
 			// Get the size and create next Vdev
 			sizeStr := m.vdevSizeInput.Value()
+			replicaStr := m.vdevReplicaInput.Value()
+			replica := 1
+			if r, err := strconv.Atoi(replicaStr); err == nil && r >= 1 {
+				replica = r
+			}
 			if size, err := parseSize(sizeStr); err == nil {
+				progress := m.vdevCreationProgress
 				return m, func() tea.Msg {
-					return m.createSingleVdev(size, m.vdevCreationProgress)
+					return m.createSingleVdev(size, replica, progress)
 				}
 			} else {
 				// Error parsing size, stop creation
@@ -8664,9 +8983,12 @@ func (m model) viewVdevCreationSummary() string {
 	if successCount > 0 {
 		s.WriteString("✓ Successfully created:\n")
 		for i, vdev := range m.createdVdevs {
-			s.WriteString(fmt.Sprintf("%d. Vdev ID: %s\n", i+1, vdev.ID))
-			s.WriteString(fmt.Sprintf("   Size: %s (%d bytes)\n", formatSize(vdev.Size), vdev.Size))
-			s.WriteString(fmt.Sprintf("   Status: Active\n\n"))
+			s.WriteString(fmt.Sprintf("%d. Name:   %s\n", i+1, vdev.Name))
+			s.WriteString(fmt.Sprintf("   Vdev ID: %s\n", vdev.ID))
+			s.WriteString(fmt.Sprintf("   Size:    %s (%d bytes)\n", formatSize(vdev.Size), vdev.Size))
+			s.WriteString(fmt.Sprintf("   Chunks:  %d\n", vdev.NumChunks))
+			s.WriteString(fmt.Sprintf("   Replicas: %d\n", vdev.NumReplica))
+			s.WriteString(fmt.Sprintf("   Status:  Active\n\n"))
 		}
 	}
 
@@ -8701,12 +9023,30 @@ type VdevCreationMsg struct {
 	Error   error
 }
 
+type VdevSearchMsg struct {
+	result *ctlplfl.Vdev
+	err    string
+}
+
 // createVdevsCommand returns a command that creates multiple Vdevs
-func (m model) createVdevsCommand(size int64, count int) tea.Cmd {
+func (m model) createVdevsCommand(size int64, count int, replica int) tea.Cmd {
 	return func() tea.Msg {
 		// Create the first Vdev
-		return m.createSingleVdev(size, 0)
+		return m.createSingleVdev(size, replica, 0)
 	}
+}
+
+// isAlphanumericStr returns true if s contains only ASCII letters and digits.
+func isAlphanumericStr(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 // parseFDType converts a filter type string to an FD constant.
@@ -8728,7 +9068,7 @@ func parseFDType(s string) ctlplfl.FD {
 }
 
 // createSingleVdev creates a single Vdev and returns a VdevCreationMsg
-func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
+func (m model) createSingleVdev(size int64, replica int, index int) VdevCreationMsg {
 	filter := ctlplfl.Filter{
 		Type: parseFDType(m.vdevFilterTypeInput.Value()),
 	}
@@ -8738,10 +9078,17 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 	if filter.Type != ctlplfl.FD_ANY {
 		filter.ID = strings.TrimSpace(m.vdevEntityUUIDInput.Value())
 	}
+	// When creating multiple Vdevs, append a 1-based numeric suffix to make
+	// each name unique (e.g. "myvol1", "myvol2"). Single Vdev uses the name as-is.
+	name := strings.TrimSpace(m.vdevNameInput.Value())
+	if m.vdevCreationTotal > 1 {
+		name = name + strconv.Itoa(index+1)
+	}
 	vdev := &ctlplfl.VdevReq{
 		Vdev: &ctlplfl.VdevCfg{
+			Name:       name,
 			Size:       size,
-			NumReplica: 1,
+			NumReplica: uint8(replica),
 		},
 		Filter: filter,
 	}
@@ -8767,6 +9114,7 @@ func (m model) createSingleVdev(size int64, index int) VdevCreationMsg {
 		}
 		log.Info("Vdev created successfully: ", resp.ID)
 		vdev.Vdev.ID = resp.ID
+		vdev.Vdev.NumChunks = uint32(ctlplfl.Count8GBChunks(size))
 		return VdevCreationMsg{
 			Index:   index,
 			Success: true,

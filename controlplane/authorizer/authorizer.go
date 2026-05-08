@@ -105,12 +105,14 @@ var defaultPolicies = map[FunctionName]FunctionPolicy{
 		RBAC: []string{"user", "admin"},
 		ABAC: []ABACRule{
 			{Argument: "vdev", Prefix: "v/"},
+			{Argument: "vdev", Prefix: "vname/"},
 		},
 	},
 	ReadVdevInfo: {
 		RBAC: []string{"user", "admin"},
 		ABAC: []ABACRule{
 			{Argument: "vdev", Prefix: "v/"},
+			{Argument: "vdev", Prefix: "vname/"},
 		},
 	},
 	APDeleteVdev: {
@@ -203,10 +205,24 @@ func (a *Authorizer) CheckABAC(fn FunctionName, userID string, attributes map[st
 	if !ok {
 		return false
 	}
-
-	for _, rule := range policy.ABAC {
-		value, exists := attributes[rule.Argument]
-		if !exists || !prefixQuery(rule.Prefix, userID, value, ds, colFamily) {
+	// Group prefixes by argument
+        argToPrefixes := make(map[string][]string)
+        for _, rule := range policy.ABAC {
+            argToPrefixes[rule.Argument] = append(argToPrefixes[rule.Argument], rule.Prefix)
+        }
+	for arg, prefixes := range argToPrefixes {
+		value, exists := attributes[arg]
+		if !exists {
+			return false
+		}
+		matched := false
+        	for _, prefix := range prefixes {
+            		if prefixQuery(prefix, userID, value, ds, colFamily) {
+                		matched = true
+                		break
+            		}	
+        	}
+		if !matched{
 			return false
 		}
 	}
