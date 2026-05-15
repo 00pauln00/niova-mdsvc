@@ -8057,7 +8057,7 @@ func (m model) viewVdevManagement() string {
 // Step 2: GetVdevsWithChunkInfo with the specific ID to fetch chunk mapping.
 func (m model) doVdevSearch(query string) VdevSearchMsg {
 	cfgs, err := m.cpClient.GetVdevCfgs(&ctlplfl.GetVdevReq{
-		GetAll:    true,
+		GetAll: true,
 		// UserToken: m.userToken(),
 	})
 	if err != nil {
@@ -8077,9 +8077,9 @@ func (m model) doVdevSearch(query string) VdevSearchMsg {
 
 	// Fetch chunk mapping for the specific vdev (no admin role required).
 	vdevs, err := m.cpClient.GetVdevsWithChunkInfo(&ctlplfl.GetVdevReq{
-		Value:     matchedID,
-		IsID:	   true,
-		GetAll:    false,
+		Value:  matchedID,
+		IsID:   true,
+		GetAll: false,
 	})
 	if err != nil {
 		return VdevSearchMsg{err: fmt.Sprintf("Failed to get chunk info: %v", err)}

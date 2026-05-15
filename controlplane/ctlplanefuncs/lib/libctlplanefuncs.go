@@ -409,10 +409,10 @@ func (req *GetReq) ValidateRequest() error {
 }
 
 func (req *GetVdevReq) ValidateVdevRequest() error {
-        if req.Value == "" {
-                return fmt.Errorf("Invalid Request: Recieved empty vdev name/ID")
-        }
-        return nil
+	if req.Value == "" {
+		return fmt.Errorf("Invalid Request: Received empty vdev name/ID")
+	}
+	return nil
 }
 
 func (a *NisdArgs) BuildCmdArgs() string {
