@@ -1156,7 +1156,7 @@ func ReadVdevsInfoWithChunkMapping(args ...interface{}) (interface{}, error) {
 			if !authorizer.Authorize(authz.ReadAllVdevInfo, tc.UserID, []string{tc.Role}, map[string]string{}, nil, "") {
 				log.Errorf("user %s with role %s not authorized to list all vdevs with chunk info", tc.UserID, tc.Role)
 				return ctlplfl.AuthError(fmt.Errorf("User is not authorized"))
-			} // ← add this closing brace
+			}
 		} else {
 			// Specific vdev: verify RBAC + ABAC ownership
 			attributes := map[string]string{"vdev": vdevuuid}
