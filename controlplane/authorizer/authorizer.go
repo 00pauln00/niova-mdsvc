@@ -206,23 +206,23 @@ func (a *Authorizer) CheckABAC(fn FunctionName, userID string, attributes map[st
 		return false
 	}
 	// Group prefixes by argument
-        argToPrefixes := make(map[string][]string)
-        for _, rule := range policy.ABAC {
-            argToPrefixes[rule.Argument] = append(argToPrefixes[rule.Argument], rule.Prefix)
-        }
+	argToPrefixes := make(map[string][]string)
+	for _, rule := range policy.ABAC {
+		argToPrefixes[rule.Argument] = append(argToPrefixes[rule.Argument], rule.Prefix)
+	}
 	for arg, prefixes := range argToPrefixes {
 		value, exists := attributes[arg]
 		if !exists {
 			return false
 		}
 		matched := false
-        	for _, prefix := range prefixes {
-            		if prefixQuery(prefix, userID, value, ds, colFamily) {
-                		matched = true
-                		break
-            		}	
-        	}
-		if !matched{
+		for _, prefix := range prefixes {
+			if prefixQuery(prefix, userID, value, ds, colFamily) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}

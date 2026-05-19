@@ -1194,7 +1194,7 @@ func main() {
 		}
 		vdev, err := c.GetVdevsWithChunkInfo(&cpLib.GetVdevReq{
 			Value: *vdevID,
-			IsID: true,
+			IsID:  true,
 		})
 		if err != nil {
 			log.Errorf("Failed to fetch Vdev details for VdevID=%s: %v", *vdevID, err)

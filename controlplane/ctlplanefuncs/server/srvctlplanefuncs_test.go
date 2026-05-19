@@ -467,8 +467,9 @@ func TestReadVdevInfo(t *testing.T) {
 			}
 
 			// Build CPReq with GetReq as payload
-			req := ctlplfl.GetReq{
-				ID:     tc.vdevID,
+			req := ctlplfl.GetVdevReq{
+				Value:  tc.vdevID,
+				IsID:   true,
 				GetAll: false,
 			}
 			cpReq := ctlplfl.CPReq{
