@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/btree"
 	"github.com/google/uuid"
+	"github.com/tidwall/btree"
 
 	log "github.com/00pauln00/niova-lookout/pkg/xlog"
 
@@ -654,7 +654,7 @@ func WPCreateVdev(args ...interface{}) (interface{}, error) {
 			Value: []byte(req.Vdev.PFSID),
 		})
 		commitChgs = append(commitChgs, funclib.CommitChg{
-			Key:   []byte(fmt.Sprintf("%s/%s/v/%s", pfsKey, req.Vdev.PFSID, req.Vdev.ID)),
+			Key: []byte(fmt.Sprintf("%s/%s/v/%s", pfsKey, req.Vdev.PFSID, req.Vdev.ID)),
 		})
 	}
 
@@ -920,14 +920,14 @@ func APCreateVdev(args ...interface{}) (interface{}, error) {
 	if req.Vdev.PFSID != "" {
 		offsetKey := fmt.Sprintf("%s/%s/offset", pfsKey, req.Vdev.PFSID)
 		res, err := cbArgs.Store.Read(offsetKey, colmfamily)
-		if err != nil {		
+		if err != nil {
 			log.Errorf("APCreateVdev: failed to read offset for vdev %s: %v", req.Vdev.ID, err)
-			return ctlplfl.FuncError(err)	
+			return ctlplfl.FuncError(err)
 		}
 		parsed, err := strconv.Atoi(string(res))
 		if err != nil {
 			log.Errorf("APCreateVdev: failed to parse offset for vdev %s: %v", req.Vdev.ID, err)
-			return ctlplfl.FuncError(err)	
+			return ctlplfl.FuncError(err)
 		}
 		offset = parsed
 	}
@@ -1698,7 +1698,8 @@ func WPPFSCfg(args ...interface{}) (interface{}, error) {
 	}
 
 	resp := &ctlplfl.ResponseXML{
-		Name:    pfs.ID,
+		ID:      pfs.ID,
+		Name:    pfs.Name,
 		Success: true,
 	}
 
